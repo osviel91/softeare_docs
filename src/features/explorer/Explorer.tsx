@@ -27,6 +27,15 @@ export interface ExplorerProps {
   onDeleteProject: (id: string) => void;
   /** Called when the user selects a diagram to load it into the editor. */
   onLoadDiagram: (diagram: DiagramFile) => void;
+  /**
+   * Called when the user clicks "Open folder…". Opens a local folder via the
+   * File System Access API (Phase 5). Absent when the feature is hidden.
+   */
+  onOpenFolder?: () => void;
+  /** The opened folder's name, or `null` for in-browser projects. */
+  folderName?: string | null;
+  /** Whether the browser supports the File System Access API. */
+  folderSupported?: boolean;
 }
 
 const EMPTY_HINT = "No projects yet. Create one to start saving diagrams.";
@@ -40,6 +49,9 @@ export default function Explorer({
   onCreateProject,
   onDeleteProject,
   onLoadDiagram,
+  onOpenFolder,
+  folderName = null,
+  folderSupported = false,
 }: ExplorerProps) {
   const [pendingName, setPendingName] = useState<string>("");
 
@@ -51,8 +63,33 @@ export default function Explorer({
     }
   };
 
+  const modeLabel = folderName ? `“${folderName}”` : "In-browser projects";
+
   return (
     <nav className="explorer" data-testid="explorer">
+      <div
+        className="explorer__header"
+        data-testid="explorer-header"
+        role="region"
+        aria-label="Workspace source"
+      >
+        <span className="explorer__mode" data-testid="explorer-mode">
+          {modeLabel}
+        </span>
+        {onOpenFolder && (
+          <button
+            type="button"
+            className="explorer__open-button"
+            data-testid="open-folder-button"
+            aria-label={folderName ? "Close folder" : "Open a local folder"}
+            disabled={!folderSupported}
+            onClick={onOpenFolder}
+          >
+            {folderName ? "Close folder" : "Open folder…"}
+          </button>
+        )}
+      </div>
+
       <form
         className="explorer__create"
         onSubmit={(event) => {

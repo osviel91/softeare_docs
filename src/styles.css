@@ -222,6 +222,48 @@ body {
   font-size: 13px;
 }
 
+/* Explorer header (Phase 5): workspace-source label plus the folder picker. */
+.explorer__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+}
+
+.explorer__mode {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.explorer__open-button {
+  flex: 0 0 auto;
+  padding: 3px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.explorer__open-button:hover:not(:disabled) {
+  color: var(--bg-elevated);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.explorer__open-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .app__statusbar {
   display: flex;
   align-items: center;

@@ -74,10 +74,11 @@ Work proceeds in disciplined, commit-per-phase milestones (see
 ## Status
 
 **Phase 0 — Repository Foundation**, **Phase 1 — Sequence Language Core**,
-**Phase 2 — Layout + SVG Rendering**, **Phase 3 — Interactive Live Editor**, and
-**Phase 4 — In-Browser Projects (IndexedDB)** are complete and committed on
-`master`. The branch builds, serves, lints, type-checks, and passes its test
-suite (111 tests).
+**Phase 2 — Layout + SVG Rendering**, **Phase 3 — Interactive Live Editor**,
+**Phase 4 — In-Browser Projects (IndexedDB)**, and
+**Phase 5 — Local Folder Projects (File System Access API)** are complete and
+committed on `master`. The branch builds, serves, lints, type-checks, and passes
+its test suite (131 tests).
 
 Phase 3 wires the pipeline into a live, IDE-style editor. The app shell now owns
 the DSL source and feeds one memoized analysis to both panes: the editor
@@ -97,3 +98,15 @@ explorer (`src/features/explorer`) manages projects and diagram selection; the
 editor saves edits back through a single `useWorkspace` hook. A snapshot
 (`src/workspace/serialize.ts`) exports the whole workspace to human-readable JSON
 for sharing or as a fallback format.
+
+Phase 5 lets the user open a folder on their machine as the workspace, via the
+File System Access API (`window.showDirectoryPicker`). The opened folder _is_ the
+workspace: a subdirectory is a project and a file is a diagram, so ids are derived
+from paths rather than generated — opening the same folder twice yields the same
+ids. The repository holds no cache; every operation reads the current directory
+tree, so files changed elsewhere appear immediately. The browser API lives behind
+`createFileSystemRepository` (`src/workspace/fs-access/create-file-system-repository.ts`),
+which adapts the native handles to a tiny framework-free adapter
+(`src/workspace/fs-access/fs-access-adapter.ts`) and feature-detects support. The
+explorer swaps the active repository to the folder-backed one when a folder is
+open and back to in-browser projects when it is closed.

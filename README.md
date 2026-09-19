@@ -73,6 +73,12 @@ Work proceeds in disciplined, commit-per-phase milestones (see
 
 ## Status
 
-**Phase 0 — Repository Foundation** is complete and committed. The
-`main` branch builds, serves, lints, type-checks, and passes its baseline test
-suite.
+**Phase 0 — Repository Foundation**, **Phase 1 — Sequence Language Core**, and
+**Phase 2 — Layout + SVG Rendering** are complete and committed on `master`. The
+branch builds, serves, lints, type-checks, and passes its baseline test suite
+(65 tests).
+
+Phase 2 added the layout engine (`src/layout`) and SVG renderer
+(`src/renderer`), closing the pipeline end to end: `DSL → lexer/parser → AST →
+validation → layout → render model → SVG`. Both layers are pure and
+framework-free, and each has its own test suite.

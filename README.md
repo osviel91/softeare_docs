@@ -74,9 +74,10 @@ Work proceeds in disciplined, commit-per-phase milestones (see
 ## Status
 
 **Phase 0 — Repository Foundation**, **Phase 1 — Sequence Language Core**,
-**Phase 2 — Layout + SVG Rendering**, and **Phase 3 — Interactive Live Editor**
-are complete and committed on `master`. The branch builds, serves, lints,
-type-checks, and passes its baseline test suite (81 tests).
+**Phase 2 — Layout + SVG Rendering**, **Phase 3 — Interactive Live Editor**, and
+**Phase 4 — In-Browser Projects (IndexedDB)** are complete and committed on
+`master`. The branch builds, serves, lints, type-checks, and passes its test
+suite (111 tests).
 
 Phase 3 wires the pipeline into a live, IDE-style editor. The app shell now owns
 the DSL source and feeds one memoized analysis to both panes: the editor
@@ -86,3 +87,13 @@ the DSL source and feeds one memoized analysis to both panes: the editor
 across the language → layout → renderer layers, so the editor never computes
 geometry and the renderer never parses text. See `src/features/` for the new
 React feature modules.
+
+Phase 4 adds a local-first workspace of projects and diagram files backed by
+IndexedDB. A framework-free `WorkspaceRepository` interface sits above two
+implementations — an IndexedDB repository (`src/workspace/indexed-db.ts`, behind
+a small promise adapter) and an in-memory fallback — so persistence stays
+testable in isolation and the app works even where IndexedDB is unavailable. The
+explorer (`src/features/explorer`) manages projects and diagram selection; the
+editor saves edits back through a single `useWorkspace` hook. A snapshot
+(`src/workspace/serialize.ts`) exports the whole workspace to human-readable JSON
+for sharing or as a fallback format.

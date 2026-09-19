@@ -21,7 +21,9 @@ export function err<E = Error>(error: E): Result<never, E> {
 }
 
 /** Narrow a `Result` to its success variant. */
-export function isOk<T>(result: Result<T>): result is { ok: true; value: T } {
+export function isOk<T, E = Error>(
+  result: Result<T, E>,
+): result is Extract<Result<T, E>, { ok: true }> {
   return result.ok;
 }
 

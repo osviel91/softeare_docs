@@ -72,6 +72,8 @@ export function formatLocation(range: SourceRange): string {
 
 /** Format a diagnostic for display, including its location when available. */
 export function formatDiagnostic(diagnostic: Diagnostic): string {
-  const location = diagnostic.range ? `${formatLocation(diagnostic.range)}\n` : "";
+  const location = diagnostic.range
+    ? `${formatLocation(diagnostic.range)}\n`
+    : "";
   return `${location}${diagnostic.message}`;
 }

@@ -5,8 +5,14 @@ describe("lexer", () => {
   it("tokenizes a title line", () => {
     const { tokens } = lex("title Authentication Flow");
     expect(tokens[0]).toMatchObject({ type: TokenType.Title, value: "title" });
-    expect(tokens[1]).toMatchObject({ type: TokenType.Identifier, value: "Authentication" });
-    expect(tokens[2]).toMatchObject({ type: TokenType.Identifier, value: "Flow" });
+    expect(tokens[1]).toMatchObject({
+      type: TokenType.Identifier,
+      value: "Authentication",
+    });
+    expect(tokens[2]).toMatchObject({
+      type: TokenType.Identifier,
+      value: "Flow",
+    });
   });
 
   it("distinguishes sync and response arrows", () => {
@@ -35,7 +41,9 @@ describe("lexer", () => {
 
   it("tokenizes a colon-separated label", () => {
     const tokens = lex("User -> API: Login").tokens;
-    expect(tokens.some((t) => t.type === TokenType.Colon && t.value === ":")).toBe(true);
+    expect(
+      tokens.some((t) => t.type === TokenType.Colon && t.value === ":"),
+    ).toBe(true);
   });
 
   it("reads a quoted label as a single string token", () => {
@@ -47,10 +55,9 @@ describe("lexer", () => {
 
   it("treats identifiers with dots and hyphens as one token", () => {
     const tokens = lex("payment-service.v2 -> db").tokens;
-    expect(tokens.filter((t) => t.type === TokenType.Identifier).map((t) => t.value)).toEqual([
-      "payment-service.v2",
-      "db",
-    ]);
+    expect(
+      tokens.filter((t) => t.type === TokenType.Identifier).map((t) => t.value),
+    ).toEqual(["payment-service.v2", "db"]);
   });
 
   it("skips whitespace and blank lines", () => {

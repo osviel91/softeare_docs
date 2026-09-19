@@ -20,7 +20,9 @@ describe("validateSemantics", () => {
     const diagnostics = validateSemantics(diagram);
     expect(
       diagnostics.some(
-        (d) => d.code === DiagnosticCode.UnknownParticipant && d.message.includes("Ghost"),
+        (d) =>
+          d.code === DiagnosticCode.UnknownParticipant &&
+          d.message.includes("Ghost"),
       ),
     ).toBe(true);
   });
@@ -30,7 +32,9 @@ describe("validateSemantics", () => {
     const diagnostics = validateSemantics(diagram);
     expect(
       diagnostics.some(
-        (d) => d.code === DiagnosticCode.UnknownParticipant && d.message.includes("Nobody"),
+        (d) =>
+          d.code === DiagnosticCode.UnknownParticipant &&
+          d.message.includes("Nobody"),
       ),
     ).toBe(true);
   });

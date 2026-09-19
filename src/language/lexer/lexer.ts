@@ -107,7 +107,7 @@ function lexLine(
       if (!closed) {
         // Unterminated string: record a diagnostic and emit what we have.
         diagnostics.push({
-          message: 'Unterminated string literal',
+          message: "Unterminated string literal",
           line: lineIndex,
           column: start.column,
         });
@@ -173,7 +173,12 @@ function lexLine(
       }
       const word = line.slice(i, j);
       const type = classifyKeyword(word);
-      tokens.push({ type, value: word, start, end: { line: lineIndex, column: j } });
+      tokens.push({
+        type,
+        value: word,
+        start,
+        end: { line: lineIndex, column: j },
+      });
       i = j;
       continue;
     }
@@ -188,7 +193,12 @@ function lexLine(
     i += 1;
   }
 
-  tokens.push({ type: TokenType.Eol, value: "", start: { line: lineIndex, column: n }, end: { line: lineIndex, column: n } });
+  tokens.push({
+    type: TokenType.Eol,
+    value: "",
+    start: { line: lineIndex, column: n },
+    end: { line: lineIndex, column: n },
+  });
   return tokens;
 }
 

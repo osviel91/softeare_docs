@@ -118,7 +118,12 @@ class Parser {
     this.advance();
 
     const end = this.previousEnd();
-    return { type: "participant", id: idToken.value, label: idToken.value, range: span(start, end) };
+    return {
+      type: "participant",
+      id: idToken.value,
+      label: idToken.value,
+      range: span(start, end),
+    };
   }
 
   /** Parse a message line: `from arrow to (":" label)?`. */
@@ -144,19 +149,28 @@ class Parser {
 
     const arrow = this.peek();
     if (!arrow) {
-      this.errorHere("Expected an arrow (-> or -->) in the message", DiagnosticCode.MalformedMessage);
+      this.errorHere(
+        "Expected an arrow (-> or -->) in the message",
+        DiagnosticCode.MalformedMessage,
+      );
       return null;
     }
     if (arrow.type === TokenType.SyncArrow) this.advance();
     else if (arrow.type === TokenType.ResponseArrow) this.advance();
     else {
-      this.errorHere("Expected an arrow (-> or -->) in the message", DiagnosticCode.MalformedMessage);
+      this.errorHere(
+        "Expected an arrow (-> or -->) in the message",
+        DiagnosticCode.MalformedMessage,
+      );
       return null;
     }
 
     const to = this.peek();
     if (!to || to.type !== TokenType.Identifier) {
-      this.errorHere("Expected a receiver participant after the arrow", DiagnosticCode.MalformedMessage);
+      this.errorHere(
+        "Expected a receiver participant after the arrow",
+        DiagnosticCode.MalformedMessage,
+      );
       return null;
     }
     this.advance();
@@ -177,7 +191,14 @@ class Parser {
     }
 
     const end = this.previousEnd();
-    return { type: "message", kind, from: from.value, to: to.value, label, range: span(start, end) };
+    return {
+      type: "message",
+      kind,
+      from: from.value,
+      to: to.value,
+      label,
+      range: span(start, end),
+    };
   }
 
   /** Read the remaining text of the current line as a label/title value. */
@@ -214,7 +235,11 @@ class Parser {
   /** Record an error diagnostic at the current token's span. */
   private errorHere(message: string, code: DiagnosticCode): void {
     const token = this.peek()!;
-    const diagnostic = errorDiagnostic(message, code, span(token.start, token.end));
+    const diagnostic = errorDiagnostic(
+      message,
+      code,
+      span(token.start, token.end),
+    );
     this.diagnostics.push(diagnostic);
   }
 

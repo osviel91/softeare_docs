@@ -35,6 +35,11 @@ export interface WorkspaceHook {
   selectedProjectId: string | null;
   /** The id of the loaded diagram, or `null` when none is loaded. */
   selectedDiagramId: string | null;
+  /**
+   * The loaded diagram file, or `null` when none is loaded. Tabs use this to
+   * open a tab from the full source, name, and project id — not just the id.
+   */
+  selectedDiagram: DiagramFile | null;
   /** The DSL source currently shown in the editor. */
   source: string;
   /** True while the initial load or any action is in flight. */
@@ -117,6 +122,11 @@ export function useWorkspace(repo: WorkspaceRepository): WorkspaceHook {
     setSource,
     setError,
   };
+
+  // The loaded diagram file itself (matched by id), so tabs can open from the
+  // full source, name, and project id rather than the id alone.
+  const selectedDiagram =
+    diagrams.find((diagram) => diagram.id === selectedDiagramId) ?? null;
 
   // Initial load: projects plus the first project's diagrams (if any). The seed
   // above keeps the preview populated until this resolves; on an empty repository
@@ -216,6 +226,7 @@ export function useWorkspace(repo: WorkspaceRepository): WorkspaceHook {
     diagrams,
     selectedProjectId,
     selectedDiagramId,
+    selectedDiagram,
     source,
     isLoading,
     error,

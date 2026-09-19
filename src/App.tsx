@@ -1,12 +1,12 @@
 /**
- * Application shell (Phase 4 + Phase 5).
+ * Application shell (Phase 4 + Phase 5 + Phase 6).
  *
  * App owns the workspace repository and feeds its state to every pane. The
- * explorer manages projects and diagram selection; the editor edits the current
- * diagram, saving changes back through {@link WorkspaceHook.saveCurrentDiagram};
- * the preview renders whatever source is current. The workspace hook seeds the
- * editor with a valid sample diagram on first render, so the preview is populated
- * before the async load resolves.
+ * explorer manages projects and diagram selection; selecting a diagram opens (or
+ * activates) a tab. The editor edits the active tab's source, which is auto-saved
+ * back through {@link useTabs}; the preview renders that same source. Tabs own the
+ * editor source, so several diagrams can be open at once and switching between
+ * them preserves each one's in-progress edits.
  *
  * Two backends are supported and swapped through a single active repository:
  *
@@ -20,8 +20,10 @@ import { useCallback, useState } from "react";
 import Editor from "./features/editor/Editor";
 import Preview from "./features/preview/Preview";
 import Explorer from "./features/explorer/Explorer";
+import TabBar from "./features/tabs/TabBar";
 import { useWorkspace } from "./features/explorer/use-workspace";
 import { useWorkspaceRepository } from "./features/explorer/workspace-factory";
+import { useTabs } from "./features/tabs/use-tabs";
 import { useDiagram } from "./features/preview/use-diagram";
 import {
   openFileSystemRepository,
@@ -61,14 +63,24 @@ export default function App() {
     diagrams,
     selectedProjectId,
     selectedDiagramId,
-    source,
+    selectedDiagram,
     isLoading,
     error,
     loadDiagram,
-    saveCurrentDiagram,
     createProject,
     deleteProject,
   } = useWorkspace(activeRepo);
+
+  // Tabs own the editor source (and auto-save it), so the editor/preview derive
+  // from the active tab rather than from the workspace hook.
+  const {
+    tabs,
+    activeTabId,
+    source,
+    activateTab,
+    closeTab,
+    updateActiveSource,
+  } = useTabs(activeRepo, selectedDiagram);
 
   const { diagnostics } = useDiagram(source);
 
@@ -105,13 +117,19 @@ export default function App() {
               Could not load your local projects: {error.message}
             </p>
           ) : (
-            <Editor
-              value={source}
-              onChange={(next) => {
-                void saveCurrentDiagram(next);
-              }}
-              diagnostics={diagnostics}
-            />
+            <>
+              <TabBar
+                tabs={tabs}
+                activeTabId={activeTabId}
+                onActivateTab={activateTab}
+                onCloseTab={closeTab}
+              />
+              <Editor
+                value={source}
+                onChange={updateActiveSource}
+                diagnostics={diagnostics}
+              />
+            </>
           )}
         </section>
         <section

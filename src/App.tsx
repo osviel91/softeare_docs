@@ -1,15 +1,23 @@
 /**
- * Application shell (Phase 0).
+ * Application shell (Phase 3).
  *
- * This is intentionally minimal. Later phases will replace the placeholder
- * regions below with the real explorer, editor, and preview panes. The layout
- * skeleton (three-pane IDE style) is kept so later work drops into a stable
- * structure.
+ * App is the single source of truth for the DSL source. It runs the language
+ * analysis once (memoized via {@link useDiagram}) and feeds the result to both
+ * the editor and the preview, so editing and rendering stay in lockstep. The
+ * explorer pane is left for a later phase.
  */
+import { useState } from "react";
+import Editor from "./features/editor/Editor";
+import Preview from "./features/preview/Preview";
+import { useDiagram } from "./features/preview/use-diagram";
+import { SAMPLE_SOURCE } from "./sample-source";
 
 const PRODUCT_NAME = "SequenceDiagrams Manager";
 
 export default function App() {
+  const [source, setSource] = useState<string>(SAMPLE_SOURCE);
+  const { diagnostics } = useDiagram(source);
+
   return (
     <div className="app" data-testid="app-shell">
       <header className="app__toolbar">
@@ -26,13 +34,17 @@ export default function App() {
           className="app__pane app__pane--editor"
           aria-label="DSL editor"
         >
-          <span className="app__placeholder">Editor</span>
+          <Editor
+            value={source}
+            onChange={setSource}
+            diagnostics={diagnostics}
+          />
         </section>
         <section
           className="app__pane app__pane--preview"
           aria-label="Diagram preview"
         >
-          <span className="app__placeholder">Preview</span>
+          <Preview source={source} />
         </section>
       </main>
       <footer className="app__statusbar">

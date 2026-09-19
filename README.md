@@ -73,12 +73,16 @@ Work proceeds in disciplined, commit-per-phase milestones (see
 
 ## Status
 
-**Phase 0 — Repository Foundation**, **Phase 1 — Sequence Language Core**, and
-**Phase 2 — Layout + SVG Rendering** are complete and committed on `master`. The
-branch builds, serves, lints, type-checks, and passes its baseline test suite
-(65 tests).
+**Phase 0 — Repository Foundation**, **Phase 1 — Sequence Language Core**,
+**Phase 2 — Layout + SVG Rendering**, and **Phase 3 — Interactive Live Editor**
+are complete and committed on `master`. The branch builds, serves, lints,
+type-checks, and passes its baseline test suite (81 tests).
 
-Phase 2 added the layout engine (`src/layout`) and SVG renderer
-(`src/renderer`), closing the pipeline end to end: `DSL → lexer/parser → AST →
-validation → layout → render model → SVG`. Both layers are pure and
-framework-free, and each has its own test suite.
+Phase 3 wires the pipeline into a live, IDE-style editor. The app shell now owns
+the DSL source and feeds one memoized analysis to both panes: the editor
+(`src/features/editor`) shows the source with a diagnostics list, and the preview
+(`src/features/preview`) renders the SVG. The preview pipeline
+(`src/features/preview/diagram-to-svg.ts`) is the only place the UI reaches
+across the language → layout → renderer layers, so the editor never computes
+geometry and the renderer never parses text. See `src/features/` for the new
+React feature modules.

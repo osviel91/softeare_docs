@@ -58,6 +58,37 @@ npm run test:e2e
 The script exits non-zero when any check fails, so it is CI-ready; set `E2E_PORT`
 to move it off the default port 4173.
 
+## The interface
+
+The app is a three-pane IDE: **explorer → editor → preview**, under a toolbar and
+over a status bar. Everything is themed from one set of CSS custom properties in
+`src/styles.css`, so the dark surface stack and the single accent are defined in
+one place rather than per component.
+
+- **Editor views.** A `Code` / `Docs` segmented control switches the middle pane
+  between the DSL source and a reference for every construct the parser supports
+  (`src/features/docs`). A test asserts each documented keyword really lexes as a
+  keyword, so the reference cannot drift behind the grammar.
+- **Editing.** The editor has a line-number gutter synced to the textarea's scroll
+  position, and a **Snippets** menu (`src/features/editor`) that inserts a
+  construct at the caret, starting it on its own line unless it is already at one.
+- **Auto-update.** With the switch on, the canvas re-renders as you type. Switched
+  off, the canvas keeps the last rendered diagram and a **Render** button appears,
+  so a large diagram does not re-lay out on every keystroke.
+- **Canvas navigation.** The preview is a pan/zoom viewport
+  (`src/features/preview/DiagramViewport.tsx`): drag to pan, scroll to zoom
+  (anchored on the cursor), arrow keys to pan, and a rail with zoom in/out, fit,
+  and reset-to-100%. A minimap in the corner shows the whole diagram with the
+  visible region outlined, and clicking or dragging it recenters the view.
+
+The interaction layer is deliberately thin: all of the geometry lives in
+`src/features/preview/viewport.ts`, a pure module (`zoomAtPoint`, `fitTransform`,
+`panBy`, …) that is unit tested on its own. The viewport itself knows nothing
+about diagram semantics — it receives finished SVG markup plus its pixel size, so
+panning and zooming never re-render the diagram or re-parse the DSL. The minimap
+embeds that SVG as an image rather than inline markup, so a diagram's labels are
+not duplicated in the document.
+
 ## Docker
 
 The app is a static bundle, so it ships as a two-stage image: a Node stage
@@ -84,9 +115,9 @@ src/
   language/       DSL lexer, parser, diagnostics, formatter
   layout/         AST -> geometry (independent of SVG)
   renderer/       SVG rendering of the layout model
-  editor/         Editor adapter (CodeMirror now, others pluggable)
   workspace/      Persistence abstraction + implementations
-  features/       React feature modules (explorer, editor, preview, ...)
+  features/       React feature modules:
+                    explorer, editor, preview (+ viewport), tabs, commands, docs
 tests/            Browser-independent and workflow tests
 ```
 
@@ -114,9 +145,9 @@ Work proceeds in disciplined, commit-per-phase milestones (see
 sequence language core, layout + SVG rendering, the interactive live editor,
 in-browser projects (IndexedDB), local folder projects (File System Access API),
 and editing productivity (tabs, command palette, search). The branch builds,
-serves, lints, type-checks, and passes its test suite — 274 unit tests plus a
-browser smoke test against the production bundle (`npm run test:e2e`), and the
-same bundle is served by the Docker image.
+serves, lints, type-checks, and passes its test suite — 331 unit tests plus 32
+browser checks against the production bundle (`npm run test:e2e`), and the same
+bundle is served by the Docker image.
 
 **Phase 7 (DSL v2) is in progress.** Three constructs have landed:
 
@@ -141,14 +172,13 @@ same bundle is served by the Docker image.
 Still to come in Phase 7: groups, loops, and `alt`/`opt` fragments.
 Phase 8 (export to SVG, then PNG) has not started.
 
-> **Known layout defect (unfixed).** Vertical geometry is inconsistent between
-> titled and untitled diagrams: `ParticipantLayout.topY` is computed with a
-> hard-coded title allowance while the message band uses the title-dependent
-> value. For a titled diagram the first message row lands on the participant
-> boxes (y 52, boxes span 52–76); for an untitled diagram the first row lands
-> _above_ them (y 24) and the canvas is shorter than the boxes (height 68), so
-> they are clipped. Fixing it means choosing the intended band geometry, which
-> the layout comments attribute to a product spec.
+The **interface** was reworked alongside the language work: a modern dark
+three-pane shell with a `Code`/`Docs` view switch, line numbers and snippets in the
+editor, an auto-update switch, and a pan/zoom canvas with a minimap. See
+[The interface](#the-interface) above. That work also corrected the vertical layout
+bands: participant `topY` is now derived from the same title height the message
+band uses, so the first message row clears the name boxes instead of landing on
+them, and an untitled diagram no longer positions its boxes partly off-canvas.
 
 Phase 3 wires the pipeline into a live, IDE-style editor. The app shell now owns
 the DSL source and feeds one memoized analysis to both panes: the editor

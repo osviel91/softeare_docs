@@ -334,6 +334,26 @@ body {
   cursor: not-allowed;
 }
 
+.explorer__search {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.explorer__search-input {
+  width: 100%;
+  padding: 5px 10px;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  outline: none;
+}
+
+.explorer__search-input:focus {
+  border-color: var(--accent);
+}
+
 .app__statusbar {
   display: flex;
   align-items: center;

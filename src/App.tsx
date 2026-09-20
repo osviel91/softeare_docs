@@ -66,6 +66,7 @@ export default function App() {
   const {
     projects,
     diagrams,
+    allDiagrams,
     selectedProjectId,
     selectedDiagramId,
     selectedDiagram,
@@ -136,6 +137,7 @@ export default function App() {
           <Explorer
             projects={projects}
             diagrams={diagrams}
+            allDiagrams={allDiagrams}
             selectedProjectId={selectedProjectId}
             selectedDiagramId={selectedDiagramId}
             isLoading={isLoading}

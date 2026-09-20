@@ -230,6 +230,117 @@ describe("Explorer", () => {
     expect(screen.getByTestId("open-folder-button")).toBeDisabled();
   });
 
+  it("renders a diagram search box", () => {
+    render(
+      <Explorer
+        projects={[project]}
+        diagrams={[diagram]}
+        selectedProjectId={project.id}
+        selectedDiagramId={null}
+        isLoading={false}
+        onCreateProject={vi.fn()}
+        onDeleteProject={vi.fn()}
+        onLoadDiagram={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId("diagram-search-input")).toBeInTheDocument();
+  });
+
+  it("filters the selected project's diagrams by name while searching", () => {
+    const other: DiagramFile = {
+      id: "diag-2",
+      name: "Login",
+      source: "title Login",
+      projectId: "proj-1",
+    };
+    render(
+      <Explorer
+        projects={[project]}
+        diagrams={[diagram, other]}
+        allDiagrams={[diagram, other]}
+        selectedProjectId={project.id}
+        selectedDiagramId={null}
+        isLoading={false}
+        onCreateProject={vi.fn()}
+        onDeleteProject={vi.fn()}
+        onLoadDiagram={vi.fn()}
+      />,
+    );
+
+    fireEvent.change(screen.getByTestId("diagram-search-input"), {
+      target: { value: "welcome" },
+    });
+    expect(screen.getAllByTestId("explorer-diagram")).toHaveLength(1);
+    expect(screen.getByLabelText("Load diagram Welcome")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByTestId("diagram-search-input"), {
+      target: { value: "login" },
+    });
+    expect(screen.getByLabelText("Load diagram Login")).toBeInTheDocument();
+  });
+
+  it("searches across all projects when a query is present", () => {
+    const otherProject: Project = {
+      id: "proj-2",
+      name: "Work",
+      datasetIds: ["diag-3"],
+    };
+    const otherDiagram: DiagramFile = {
+      id: "diag-3",
+      name: "Report",
+      source: "title Report",
+      projectId: "proj-2",
+    };
+    const onLoadDiagram = vi.fn();
+    render(
+      <Explorer
+        projects={[project, otherProject]}
+        diagrams={[diagram]}
+        allDiagrams={[diagram, otherDiagram]}
+        selectedProjectId={project.id}
+        selectedDiagramId={null}
+        isLoading={false}
+        onCreateProject={vi.fn()}
+        onDeleteProject={vi.fn()}
+        onLoadDiagram={onLoadDiagram}
+      />,
+    );
+
+    // The Report diagram lives in a different project; it is not listed without
+    // a search, but the search box surfaces it across projects.
+    expect(screen.queryByLabelText("Load diagram Report")).toBeNull();
+
+    fireEvent.change(screen.getByTestId("diagram-search-input"), {
+      target: { value: "report" },
+    });
+    expect(screen.getByLabelText("Load diagram Report")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText("Load diagram Report"));
+    expect(onLoadDiagram).toHaveBeenCalledWith(otherDiagram);
+  });
+
+  it("shows a no-match hint when nothing matches the query", () => {
+    render(
+      <Explorer
+        projects={[project]}
+        diagrams={[diagram]}
+        allDiagrams={[diagram]}
+        selectedProjectId={project.id}
+        selectedDiagramId={null}
+        isLoading={false}
+        onCreateProject={vi.fn()}
+        onDeleteProject={vi.fn()}
+        onLoadDiagram={vi.fn()}
+      />,
+    );
+    fireEvent.change(screen.getByTestId("diagram-search-input"), {
+      target: { value: "does-not-exist" },
+    });
+    expect(screen.getByTestId("explorer-empty")).toHaveTextContent(
+      "No diagrams match",
+    );
+  });
+
   it("hides the folder button when onOpenFolder is not provided", () => {
     render(
       <Explorer

@@ -75,10 +75,11 @@ Work proceeds in disciplined, commit-per-phase milestones (see
 
 **Phase 0 — Repository Foundation**, **Phase 1 — Sequence Language Core**,
 **Phase 2 — Layout + SVG Rendering**, **Phase 3 — Interactive Live Editor**,
-**Phase 4 — In-Browser Projects (IndexedDB)**, and
-**Phase 5 — Local Folder Projects (File System Access API)** are complete and
-committed on `master`. The branch builds, serves, lints, type-checks, and passes
-its test suite (131 tests).
+**Phase 4 — In-Browser Projects (IndexedDB)**, **Phase 5 — Local Folder Projects
+(File System Access API)**, and
+**Phase 6 — Editing Productivity (tabs, command palette, search)** are complete
+and committed on `master`. The branch builds, serves, lints, type-checks, and
+passes its test suite (189 tests).
 
 Phase 3 wires the pipeline into a live, IDE-style editor. The app shell now owns
 the DSL source and feeds one memoized analysis to both panes: the editor
@@ -110,3 +111,16 @@ which adapts the native handles to a tiny framework-free adapter
 (`src/workspace/fs-access/fs-access-adapter.ts`) and feature-detects support. The
 explorer swaps the active repository to the folder-backed one when a folder is
 open and back to in-browser projects when it is closed.
+
+Phase 6 rounds out editing productivity on top of that workspace: open diagrams
+become closable tabs (`src/features/tabs`), a command palette
+(`src/features/commands`) exposes the frequent actions — new and empty diagrams,
+save, export — from a single keyboard-driven surface, and the explorer gains a
+search box that filters diagram names across _every_ project. The search works
+because `useWorkspace` (`src/features/explorer/use-workspace.ts`) loads all
+projects' diagrams up front into a workspace-wide list (`allDiagrams`), kept
+current as files are created, opened, or saved; the explorer filters that list by
+name while a query is present, so a diagram from another project resolves even
+after navigating away. These stay testable in isolation: the command and tab logic
+drive pure state reducers, and the explorer search is covered with the component
+rendered against the same folder-backed repository the app uses.

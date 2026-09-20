@@ -15,6 +15,12 @@ export interface ExplorerProps {
   projects: Project[];
   /** Diagram files of the selected project, in display order. */
   diagrams: DiagramFile[];
+  /**
+   * Every diagram file in the workspace, across all projects. Used only to
+   * filter by name when the search box is non-empty (see {@link search}) so the
+   * search can match diagrams outside the currently selected project.
+   */
+  allDiagrams?: DiagramFile[];
   /** The selected project id, or `null` when none is selected. */
   selectedProjectId: string | null;
   /** The loaded diagram id, or `null` when none is loaded. */
@@ -43,6 +49,7 @@ const EMPTY_HINT = "No projects yet. Create one to start saving diagrams.";
 export default function Explorer({
   projects,
   diagrams,
+  allDiagrams = [],
   selectedProjectId,
   selectedDiagramId,
   isLoading,
@@ -54,6 +61,9 @@ export default function Explorer({
   folderSupported = false,
 }: ExplorerProps) {
   const [pendingName, setPendingName] = useState<string>("");
+  // The search filters diagrams by name across all projects. It is local UI
+  // state: clearing it restores the normal selected-project view.
+  const [search, setSearch] = useState<string>("");
 
   const create = (): void => {
     const name = pendingName.trim();
@@ -62,6 +72,15 @@ export default function Explorer({
       setPendingName("");
     }
   };
+
+  // With a non-empty query, match diagram names across every project; otherwise
+  // keep the normal view of the selected project's diagrams. Matching is a
+  // case-insensitive substring test on the trimmed query.
+  const query = search.trim().toLowerCase();
+  const matchesQuery = (diagram: DiagramFile): boolean =>
+    query === "" || diagram.name.toLowerCase().includes(query);
+  const displayDiagrams =
+    query === "" ? diagrams : allDiagrams.filter(matchesQuery);
 
   const modeLabel = folderName ? `“${folderName}”` : "In-browser projects";
 
@@ -118,9 +137,28 @@ export default function Explorer({
         </button>
       </form>
 
+      <div className="explorer__search" data-testid="explorer-search">
+        <label className="visually-hidden" htmlFor="diagram-search-input">
+          Search diagrams
+        </label>
+        <input
+          id="diagram-search-input"
+          className="explorer__search-input"
+          data-testid="diagram-search-input"
+          type="search"
+          placeholder="Search diagrams…"
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+        />
+      </div>
+
       {isLoading ? (
         <p className="explorer__loading" data-testid="explorer-loading">
           Loading projects…
+        </p>
+      ) : query !== "" && displayDiagrams.length === 0 ? (
+        <p className="explorer__empty" data-testid="explorer-empty">
+          No diagrams match “{search.trim()}”.
         </p>
       ) : projects.length === 0 ? (
         <p className="explorer__empty" data-testid="explorer-empty">
@@ -162,7 +200,11 @@ export default function Explorer({
                 className="explorer__diagrams"
                 data-testid="explorer-diagrams"
               >
-                {diagrams.length === 0 && selectedProjectId === project.id ? (
+                {displayDiagrams.filter(
+                  (diagram) => diagram.projectId === project.id,
+                ).length === 0 &&
+                query === "" &&
+                selectedProjectId === project.id ? (
                   <li
                     className="explorer__diagram-empty"
                     data-testid="explorer-diagram-empty"
@@ -170,7 +212,7 @@ export default function Explorer({
                     No diagrams.
                   </li>
                 ) : (
-                  diagrams
+                  displayDiagrams
                     .filter((diagram) => diagram.projectId === project.id)
                     .map((diagram) => (
                       <li

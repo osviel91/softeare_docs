@@ -25,16 +25,26 @@ class FakeWritable implements FsWritable {
   async close(): Promise<void> {}
 }
 
-/** A file entry. `getFileHandle` throws when absent unless `createIfNotExists`. */
-class FakeFile implements FsFileHandle {
+/**
+ * A file entry that models the native `FileSystemFileHandle` driven by the app:
+ * its `getFile()` returns a handle whose `arrayBuffer()` yields the file's bytes,
+ * which the production adapter decodes via `TextDecoder`. (The repository test's
+ * fake returns text directly, since that test drives the adapter interface rather
+ * than the native handle.) The bytes come from a `TextEncoder` view because this
+ * jsdom build's `Blob` has no `arrayBuffer()`.
+ */
+class FakeFile {
   readonly kind = "file" as const;
   constructor(
     readonly name: string,
     public source: string,
   ) {}
 
-  async getFile(): Promise<string> {
-    return this.source;
+  async getFile(): Promise<{ arrayBuffer(): Promise<ArrayBuffer> }> {
+    return {
+      arrayBuffer: async () =>
+        new TextEncoder().encode(this.source).buffer.slice(0),
+    };
   }
 
   async createWritable(): Promise<FsWritable> {
@@ -74,8 +84,10 @@ class FakeDirectory {
     }
     if (options?.createIfNotExists) {
       const file = new FakeFile(name, "");
-      this.children.set(name, file);
-      return file;
+      // FakeFile is a native handle (its `getFile()` yields a File-like object),
+      // so it is cast here into the adapter contract the repository expects.
+      this.children.set(name, file as unknown as FsEntryHandle);
+      return file as unknown as FsFileHandle;
     }
     throw new Error(`no such file: ${name}`);
   }
@@ -105,7 +117,10 @@ function buildFakeFolder(): FakeDirectory {
   const project = new FakeDirectory("Onboarding");
   project.children.set(
     "welcome.seq",
-    new FakeFile("welcome.seq", "title Welcome\nA -> B: hi"),
+    new FakeFile(
+      "welcome.seq",
+      "title Welcome\nA -> B: hi",
+    ) as unknown as FsEntryHandle,
   );
   root.children.set("Onboarding", project as unknown as FsEntryHandle);
   return root;
@@ -177,6 +192,67 @@ describe("App — local folder (Phase 5)", () => {
       expect(screen.getByTestId("explorer-mode")).toHaveTextContent(
         "In-browser projects",
       );
+    });
+  });
+
+  it("searches across projects and opens the matched diagram", async () => {
+    // A two-project tree so the search can match a diagram outside the
+    // initially-selected project. Re-mock the picker to point at this tree.
+    const work = new FakeDirectory("Work");
+    work.children.set(
+      "report.seq",
+      new FakeFile(
+        "report.seq",
+        "title Report\nparticipant A\nparticipant B\nA -> B: report",
+      ) as unknown as FsEntryHandle,
+    );
+    const customRoot = new FakeDirectory("Custom");
+    customRoot.children.set(
+      "Onboarding",
+      buildFakeFolder().children.get("Onboarding") as unknown as FsEntryHandle,
+    );
+    customRoot.children.set("Work", work as unknown as FsEntryHandle);
+    vi.spyOn(window, "showDirectoryPicker").mockResolvedValue(
+      customRoot as unknown as FileSystemDirectoryHandle,
+    );
+
+    render(<App />);
+
+    // The app does not auto-open a folder; clicking the button drives the
+    // mocked picker at this tree.
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("open-folder-button"));
+    });
+
+    // The FS repo replaces the default IDB repo. Wait for both projects to load.
+    await waitFor(() => {
+      expect(screen.getAllByTestId("explorer-project")).toHaveLength(2);
+    });
+
+    // The Onboarding project (first in the tree) loads first; its Welcome
+    // diagram is not searchable by "report". The Work file is named
+    // "report.seq", so the search matches on that name across projects.
+    expect(screen.queryByLabelText("Load diagram report.seq")).toBeNull();
+
+    // Searching "report" surfaces the Work project's diagram across projects.
+    await act(async () => {
+      fireEvent.change(screen.getByTestId("diagram-search-input"), {
+        target: { value: "report" },
+      });
+    });
+    await waitFor(() => {
+      expect(
+        screen.getByLabelText("Load diagram report.seq"),
+      ).toBeInTheDocument();
+    });
+
+    // Clicking the matched diagram opens it: the preview reflects "Report".
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Load diagram report.seq"));
+    });
+    await waitFor(() => {
+      const svg = screen.getByTestId("preview-svg");
+      expect(svg.textContent).toContain("Report");
     });
   });
 });

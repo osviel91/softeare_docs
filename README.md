@@ -35,7 +35,28 @@ npm run build # type-check and produce a production build in dist/
 ```
 
 Other scripts: `npm run preview`, `npm run lint`, `npm run lint:fix`,
-`npm run format`, `npm run format:check`, `npm run typecheck`.
+`npm run format`, `npm run format:check`, `npm run typecheck`,
+`npm run test:e2e`.
+
+## Testing in a real browser
+
+`npm test` runs the Vitest suite in jsdom, which never proves that the _built_
+bundle boots in a browser — bundling, the production React build, asset paths,
+and the live editor → preview wiring are all unverified there. `npm run test:e2e`
+closes that gap: it builds the production bundle, serves `dist/` with
+`vite preview`, and drives it with Chromium through the `playwright` library. It
+checks that the app shell mounts, the seeded sample renders to SVG, edits update
+the preview live, and invalid DSL surfaces diagnostics instead of crashing.
+
+Install the browser once, then run it:
+
+```bash
+npx playwright install chromium
+npm run test:e2e
+```
+
+The script exits non-zero when any check fails, so it is CI-ready; set `E2E_PORT`
+to move it off the default port 4173.
 
 ## Docker
 

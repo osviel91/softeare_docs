@@ -85,6 +85,31 @@ describe("App — event flows", () => {
     ).toBeNull();
   });
 
+  it("lists an event flow once, under its own kind, in quick open", async () => {
+    render(<App />);
+    await createProject();
+    await newEventFlow();
+
+    fireEvent.keyDown(document, { key: "p", metaKey: true });
+    await waitFor(() => {
+      expect(screen.getByTestId("quick-open")).toBeInTheDocument();
+    });
+    fireEvent.change(screen.getByTestId("quick-open-input"), {
+      target: { value: "Untitled" },
+    });
+    await waitFor(() => {
+      expect(screen.getAllByTestId("quick-open-item").length).toBeGreaterThan(
+        0,
+      );
+    });
+
+    const items = screen.getAllByTestId("quick-open-item");
+    // The flow is a resource, so it appears exactly once — not once as the file
+    // and again as a symbol mislabelled an "event".
+    expect(items).toHaveLength(1);
+    expect(items[0]).toHaveTextContent("Event flows");
+  });
+
   it("renders a complete flow as a diagram with addressable nodes", async () => {
     render(<App />);
     await createProject();

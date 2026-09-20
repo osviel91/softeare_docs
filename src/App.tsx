@@ -112,6 +112,7 @@ import {
 import {
   SYMBOL_KIND_LABELS,
   embedResourceType,
+  isResourceSymbolKind,
 } from "./domain/project/project-index";
 import { nodeIdAtOffset, nodeRangeById } from "./domain/diagram/node-id";
 import { offsetToPosition, rangeToOffsets } from "./language/source-position";
@@ -949,12 +950,19 @@ export default function App() {
         id: resource.id,
         label: resource.title,
         detail: resource.path,
-        group: resource.type === "sequence-diagram" ? "Diagrams" : "Documents",
+        group:
+          resource.type === "sequence-diagram"
+            ? "Diagrams"
+            : resource.type === "event-flow"
+              ? "Event flows"
+              : "Documents",
         search: `${resource.title} ${resource.path}`,
       });
     }
     for (const symbol of index.participants) {
-      if (symbol.kind === "diagram" || symbol.kind === "document") continue;
+      // A resource is already in the list above; only symbols declared inside
+      // one belong under "Symbols".
+      if (isResourceSymbolKind(symbol.kind)) continue;
       const owner = index.resources.find(
         (entry) => entry.id === symbol.resourceId,
       );

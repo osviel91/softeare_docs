@@ -237,6 +237,7 @@ src/
                     notes (markdown editor/view), history (version timeline),
                     search (project find-in-files), ui (dialogs, context menu)
 tests/            Browser-independent and workflow tests
+docs/plan/        Mission plans: intent, deliverables, and verification
 ```
 
 The early structure is intentionally small; layers are added as phases demand
@@ -245,7 +246,8 @@ them while keeping the boundaries above intact.
 ## Development phases
 
 Work proceeds in disciplined, commit-per-phase milestones (see
-[ARCHITECTURE.md](./ARCHITECTURE.md#phases)):
+[ARCHITECTURE.md](./ARCHITECTURE.md#phases)). Each phase's mission — its goal,
+deliverables and boundaries — is recorded under [`docs/plan/`](./docs/plan/).
 
 0. Repository foundation (this phase)
 1. Sequence language core (DSL, parser, diagnostics, validation)

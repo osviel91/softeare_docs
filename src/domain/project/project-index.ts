@@ -110,6 +110,11 @@ export type SymbolKind =
   | "queue"
   | "diagram"
   | "document"
+  // An event flow is a *resource*, like a diagram or a document, so it has its
+  // own kind rather than borrowing `event` (which means one declared event).
+  // Conflating the two would make `kind === "event"` match a resource title, so
+  // completion would offer a flow's name where an event name belongs.
+  | "event-flow"
   // Event-driven concepts. They arrive with the event-flow language and are
   // first-class here rather than special cases, so find-references, quick open
   // and the overview treat an event exactly as they treat a lifeline.
@@ -535,10 +540,23 @@ export function resourceSymbolKind(type: ResourceType): SymbolKind {
     case "sequence-diagram":
       return "diagram";
     case "event-flow":
-      return "event";
+      return "event-flow";
     default:
       return "document";
   }
+}
+
+/**
+ * Whether a kind describes a resource itself rather than something declared in
+ * one.
+ *
+ * A resource is already offered wherever resources are listed, so a caller that
+ * also walks `symbols` (quick open, for example) uses this to avoid showing the
+ * same file twice. Keeping the rule here means a fourth resource type is one
+ * change, not one per consumer.
+ */
+export function isResourceSymbolKind(kind: SymbolKind): boolean {
+  return kind === "diagram" || kind === "document" || kind === "event-flow";
 }
 
 /** Icons and labels for a symbol kind, kept beside the kind for one source of truth. */
@@ -550,6 +568,7 @@ export const SYMBOL_KIND_LABELS: Record<SymbolKind, string> = {
   queue: "queue",
   diagram: "diagram",
   document: "document",
+  "event-flow": "event flow",
   event: "event",
   channel: "channel",
   broker: "broker",

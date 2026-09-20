@@ -11,7 +11,12 @@ import {
   inferSymbolRole,
 } from "../../../src/domain/project/resource-analysis";
 import type { ProjectSourceFile } from "../../../src/domain/project/indexer";
-import type { ResourceDescriptor } from "../../../src/domain/project/project-index";
+import {
+  SYMBOL_KIND_LABELS,
+  isResourceSymbolKind,
+  resourceSymbolKind,
+  type ResourceDescriptor,
+} from "../../../src/domain/project/project-index";
 import { ProjectDiagnosticCode } from "../../../src/domain/project/validate";
 import { diagramDisplayName } from "../../../src/language/diagram-title";
 import { noteDisplayName } from "../../../src/language/markdown/note-title";
@@ -225,6 +230,57 @@ describe("project index", () => {
     expect(
       built.participants.filter((s) => s.kind === "document"),
     ).toHaveLength(2);
+  });
+
+  it("gives an event flow its own resource kind, never an event's", () => {
+    const source = [
+      "title Order Processing",
+      "event OrderCreated",
+      "producer OrderService",
+      "OrderService publishes OrderCreated",
+    ].join("\n");
+    const descriptor: ResourceDescriptor = {
+      id: "flow-orders",
+      projectId: "payments",
+      path: "orders.eventseq",
+      type: "event-flow",
+      title: "Order Processing",
+    };
+    const built = createProjectIndexer().update(
+      "payments",
+      [{ descriptor, content: source }],
+      reconcileMetadata(null, [
+        {
+          path: "orders.eventseq",
+          type: "event-flow",
+          title: "Order Processing",
+        },
+      ]).metadata,
+    );
+
+    // The resource is a symbol of its own kind, with no declaration site.
+    const resource = built.participants.find(
+      (symbol) => symbol.id === "event-flow:flow-orders",
+    );
+    expect(resource?.kind).toBe("event-flow");
+    expect(resource?.name).toBe("Order Processing");
+    expect(resource?.sourceRange).toBeUndefined();
+    expect(isResourceSymbolKind(resource!.kind)).toBe(true);
+
+    // A declared event is an `event`, and addressable in its own file. This is
+    // the distinction a `kind === "event"` query — completion, for example —
+    // relies on, so a flow's title can never be offered as an event name.
+    const declared = built.participants.find(
+      (symbol) => symbol.name === "OrderCreated",
+    );
+    expect(declared?.kind).toBe("event");
+    expect(declared?.sourceRange).toBeDefined();
+    expect(isResourceSymbolKind(declared!.kind)).toBe(false);
+
+    expect(resourceSymbolKind("event-flow")).toBe("event-flow");
+    expect(resourceSymbolKind("sequence-diagram")).toBe("diagram");
+    expect(resourceSymbolKind("markdown-document")).toBe("document");
+    expect(SYMBOL_KIND_LABELS["event-flow"]).toBe("event flow");
   });
 
   it("resolves path, wiki, embed and stable references", () => {

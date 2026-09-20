@@ -56,7 +56,7 @@ describe("parse — valid input", () => {
     const longLabel = "x".repeat(200);
     const { ast } = parse(`participant A\nparticipant B\nA -> B: ${longLabel}`);
     const statement = (ast as unknown as SequenceDiagram).statements[0];
-    expect(statement.label).toBe(longLabel);
+    expect(statement).toMatchObject({ type: "message", label: longLabel });
   });
 
   it("skips blank lines without error", () => {
@@ -315,5 +315,45 @@ describe("parse — notes", () => {
   it("never throws on a malformed note line", () => {
     expect(() => parse("note\n")).not.toThrow();
     expect(() => parse("note left of")).not.toThrow();
+  });
+});
+
+describe("parse — activations", () => {
+  it("parses activate and deactivate statements in source order", () => {
+    const { ast, diagnostics } = parse(
+      "participant A\nactivate A\nA -> A: work\ndeactivate A",
+    );
+    expect(diagnostics).toEqual([]);
+    const statements = (ast as unknown as SequenceDiagram).statements;
+    expect(statements).toHaveLength(3);
+    expect(statements[0]).toMatchObject({
+      type: "activation",
+      action: "activate",
+      participant: "A",
+    });
+    expect(statements[2]).toMatchObject({
+      type: "activation",
+      action: "deactivate",
+      participant: "A",
+    });
+  });
+
+  it("flags an activation with no participant target", () => {
+    const { diagnostics } = parse("participant A\nactivate");
+    expect(
+      diagnostics.some((d) => d.code === DiagnosticCode.MalformedActivation),
+    ).toBe(true);
+  });
+
+  it("flags trailing text after the activation target", () => {
+    const { diagnostics } = parse("participant A\nactivate A now");
+    expect(
+      diagnostics.some((d) => d.code === DiagnosticCode.MalformedActivation),
+    ).toBe(true);
+  });
+
+  it("never throws on a malformed activation line", () => {
+    expect(() => parse("activate\n")).not.toThrow();
+    expect(() => parse("deactivate\n")).not.toThrow();
   });
 });

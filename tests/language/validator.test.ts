@@ -117,3 +117,69 @@ describe("validateSemantics — aliases", () => {
     ).toBe(true);
   });
 });
+
+describe("validateSemantics — activations", () => {
+  it("accepts a matched activate/deactivate pair", () => {
+    const diagram = diagramOf(
+      "participant A\nparticipant B\nactivate A\nA -> B: work\ndeactivate A",
+    );
+    expect(validateSemantics(diagram)).toEqual([]);
+  });
+
+  it("accepts nested activations on the same participant", () => {
+    const diagram = diagramOf(
+      "participant A\nactivate A\nactivate A\ndeactivate A\ndeactivate A",
+    );
+    expect(validateSemantics(diagram)).toEqual([]);
+  });
+
+  it("accepts an activation left open at the end of the diagram", () => {
+    // An open bar simply runs to the bottom of the message body; that is a
+    // layout decision, not an error.
+    const diagram = diagramOf("participant A\nactivate A\nA -> A: work");
+    expect(validateSemantics(diagram)).toEqual([]);
+  });
+
+  it("flags a deactivate with no matching activate", () => {
+    const diagram = diagramOf("participant A\ndeactivate A");
+    const diagnostics = validateSemantics(diagram);
+    expect(
+      diagnostics.some(
+        (d) =>
+          d.code === DiagnosticCode.UnmatchedDeactivate &&
+          d.message.includes("A"),
+      ),
+    ).toBe(true);
+  });
+
+  it("flags a second deactivate once the stack is empty", () => {
+    const diagram = diagramOf(
+      "participant A\nactivate A\ndeactivate A\ndeactivate A",
+    );
+    const diagnostics = validateSemantics(diagram);
+    expect(
+      diagnostics.filter((d) => d.code === DiagnosticCode.UnmatchedDeactivate),
+    ).toHaveLength(1);
+  });
+
+  it("flags an activation of an unknown participant", () => {
+    const diagram = diagramOf("participant A\nactivate Ghost");
+    const diagnostics = validateSemantics(diagram);
+    expect(
+      diagnostics.some(
+        (d) =>
+          d.code === DiagnosticCode.UnknownParticipant &&
+          d.message.includes("Ghost"),
+      ),
+    ).toBe(true);
+  });
+
+  it("pairs an activation with an alias against the canonical participant", () => {
+    // `activate U` and `deactivate User` name the same participant, so the
+    // pair must balance rather than report an unmatched deactivate.
+    const diagram = diagramOf(
+      "participant User\nalias U = User\nactivate U\ndeactivate User",
+    );
+    expect(validateSemantics(diagram)).toEqual([]);
+  });
+});

@@ -31,6 +31,15 @@ export const ARROW_HEAD_HEIGHT = 12;
 /** Stroke width used for lifelines and message arrows. */
 export const STROKE_WIDTH = 1.5;
 
+/** Width of an activation bar drawn over a lifeline. */
+export const ACTIVATION_WIDTH = 10;
+
+/** Horizontal shift applied per nesting level so stacked bars stay visible. */
+export const ACTIVATION_NEST_OFFSET = 4;
+
+/** Minimum height of an activation bar, so a zero-length span is still drawn. */
+export const ACTIVATION_MIN_HEIGHT = 12;
+
 /** Height of a note box, in pixels. */
 export const NOTE_HEIGHT = 32;
 
@@ -106,6 +115,26 @@ export interface NoteLayout {
   height: number;
 }
 
+/** Geometry of a single activation bar after layout.
+ *
+ * `x` is the horizontal center of the bar (the lifeline it sits on, shifted by
+ * {@link ACTIVATION_NEST_OFFSET} per nesting level); `y`/`height` bound it
+ * vertically. A bar spans from its `activate` statement to the matching
+ * `deactivate`, or to the bottom of the message body when left open.
+ */
+export interface ActivationLayout {
+  /** Canonical id of the participant whose lifeline is activated. */
+  participant: string;
+  /** Horizontal center of the bar. */
+  x: number;
+  /** Top edge of the bar. */
+  y: number;
+  /** Height of the bar. */
+  height: number;
+  /** Zero-based nesting depth; 0 is the outermost bar for that participant. */
+  depth: number;
+}
+
 /** The full geometric description of a diagram, ready to be rendered. */
 export interface DiagramLayout {
   width: number;
@@ -114,5 +143,6 @@ export interface DiagramLayout {
   title?: string;
   participants: ParticipantLayout[];
   messages: MessageLayout[];
+  activations: ActivationLayout[];
   notes: NoteLayout[];
 }

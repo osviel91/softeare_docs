@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { NoteNode, SequenceDiagram } from "../../src/domain/diagram/ast";
+import type {
+  ActivationNode,
+  NoteNode,
+  SequenceDiagram,
+} from "../../src/domain/diagram/ast";
 import {
   MARGIN_X,
   MESSAGE_ROW_HEIGHT,
@@ -498,5 +502,185 @@ describe("layoutDiagram — notes", () => {
   it("leaves an empty notes array when the diagram has none", () => {
     const layout = layoutDiagram(LOGIN);
     expect(layout.notes).toEqual([]);
+  });
+});
+
+/** Build an activation statement node. */
+function activation(
+  action: "activate" | "deactivate",
+  participant: string,
+): ActivationNode {
+  return {
+    type: "activation",
+    action,
+    participant,
+    range: { start: { line: 0, column: 0 }, end: { line: 0, column: 8 } },
+  };
+}
+
+/** A one-participant diagram with a given statement list. */
+function withStatements(statements: SequenceDiagram["statements"]) {
+  return diagram({
+    participants: [
+      {
+        type: "participant",
+        id: "A",
+        label: "A",
+        range: { start: { line: 0, column: 0 }, end: { line: 0, column: 3 } },
+      },
+      {
+        type: "participant",
+        id: "B",
+        label: "B",
+        range: { start: { line: 1, column: 0 }, end: { line: 1, column: 3 } },
+      },
+    ],
+    statements,
+  });
+}
+
+/** A message from A to B. */
+function message(label: string) {
+  return {
+    type: "message" as const,
+    kind: "sync" as const,
+    from: "A",
+    to: "B",
+    label,
+    range: { start: { line: 0, column: 0 }, end: { line: 0, column: 9 } },
+  };
+}
+
+describe("layoutDiagram — activations", () => {
+  it("emits no bars when the diagram has no activations", () => {
+    expect(layoutDiagram(LOGIN).activations).toEqual([]);
+  });
+
+  it("does not give an activation its own message row", () => {
+    // The activation sits between the two messages, so rows stay one apart.
+    const layout = layoutDiagram(
+      withStatements([
+        message("one"),
+        activation("activate", "A"),
+        message("two"),
+      ]),
+    );
+    expect(layout.messages).toHaveLength(2);
+    expect(layout.messages[1].y - layout.messages[0].y).toBe(
+      MESSAGE_ROW_HEIGHT,
+    );
+  });
+
+  it("spans a bar from its activate to its deactivate", () => {
+    const layout = layoutDiagram(
+      withStatements([
+        message("one"),
+        activation("activate", "A"),
+        message("two"),
+        activation("deactivate", "A"),
+      ]),
+    );
+    expect(layout.activations).toHaveLength(1);
+    const bar = layout.activations[0];
+    expect(bar.participant).toBe("A");
+    // Opens at the row of the message that follows `activate`...
+    expect(bar.y).toBe(layout.messages[1].y);
+    // ...and closes at the row that would follow the `deactivate`.
+    expect(bar.height).toBe(MESSAGE_ROW_HEIGHT);
+  });
+
+  it("centers the bar on the participant lifeline", () => {
+    const layout = layoutDiagram(
+      withStatements([activation("activate", "A"), message("one")]),
+    );
+    const a = layout.participants.find((p) => p.id === "A")!;
+    expect(layout.activations[0].x).toBe(a.x);
+  });
+
+  it("offsets nested bars so both stay visible", () => {
+    const layout = layoutDiagram(
+      withStatements([
+        activation("activate", "A"),
+        activation("activate", "A"),
+        message("one"),
+        activation("deactivate", "A"),
+        activation("deactivate", "A"),
+      ]),
+    );
+    expect(layout.activations).toHaveLength(2);
+    const depths = layout.activations.map((b) => b.depth).sort();
+    expect(depths).toEqual([0, 1]);
+    // Bars close innermost-first, so select by depth rather than array order.
+    const outer = layout.activations.find((b) => b.depth === 0)!;
+    const inner = layout.activations.find((b) => b.depth === 1)!;
+    const lifeline = layout.participants.find((p) => p.id === "A")!.x;
+    expect(outer.x).toBe(lifeline);
+    expect(inner.x).toBeGreaterThan(outer.x);
+  });
+
+  it("runs an unclosed bar to the bottom of the message body", () => {
+    const layout = layoutDiagram(
+      withStatements([activation("activate", "A"), message("one")]),
+    );
+    const a = layout.participants.find((p) => p.id === "A")!;
+    const bar = layout.activations[0];
+    expect(bar.y + bar.height).toBe(a.bottomY);
+  });
+
+  it("keeps a zero-length bar visible", () => {
+    // activate and deactivate on the same row would otherwise be 0px tall.
+    const layout = layoutDiagram(
+      withStatements([
+        activation("activate", "A"),
+        activation("deactivate", "A"),
+      ]),
+    );
+    expect(layout.activations[0].height).toBeGreaterThan(0);
+  });
+
+  it("ignores an activation of an unknown participant without throwing", () => {
+    expect(() =>
+      layoutDiagram(withStatements([activation("activate", "Ghost")])),
+    ).not.toThrow();
+  });
+
+  it("ignores an unmatched deactivate without throwing", () => {
+    const layout = layoutDiagram(
+      withStatements([message("one"), activation("deactivate", "A")]),
+    );
+    expect(layout.activations).toEqual([]);
+  });
+
+  it("resolves an alias to the participant's lifeline", () => {
+    const layout = layoutDiagram(
+      diagram({
+        participants: [
+          {
+            type: "participant",
+            id: "User",
+            label: "User",
+            range: {
+              start: { line: 0, column: 0 },
+              end: { line: 0, column: 3 },
+            },
+          },
+        ],
+        aliases: [
+          {
+            type: "alias",
+            alias: "U",
+            target: "User",
+            range: {
+              start: { line: 1, column: 0 },
+              end: { line: 1, column: 5 },
+            },
+          },
+        ],
+        statements: [activation("activate", "U")],
+      }),
+    );
+    const user = layout.participants[0];
+    expect(layout.activations[0].participant).toBe("User");
+    expect(layout.activations[0].x).toBe(user.x);
   });
 });

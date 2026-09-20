@@ -33,6 +33,7 @@ function sampleLayout(): DiagramLayout {
       },
     ],
     notes: [],
+    activations: [],
   };
 }
 
@@ -103,6 +104,7 @@ describe("renderDiagramToSvg — participants", () => {
       participants: [participant("A", "A & B <x>", 100)],
       messages: [],
       notes: [],
+      activations: [],
     };
     const svg = renderDiagramToSvg(layout);
     expect(svg).toContain("A &amp; B &lt;x&gt;");
@@ -133,6 +135,7 @@ describe("renderDiagramToSvg — messages", () => {
         },
       ],
       notes: [],
+      activations: [],
     };
     const svg = renderDiagramToSvg(layout);
     expect(svg).toContain('stroke-dasharray="5 4"');
@@ -158,6 +161,7 @@ describe("renderDiagramToSvg — title", () => {
       participants: [participant("A", "A", 100)],
       messages: [],
       notes: [],
+      activations: [],
     };
     const svg = renderDiagramToSvg(layout);
     expect(svg).not.toContain(">Flow<");
@@ -237,6 +241,7 @@ describe("renderDiagramToSvg — well-formedness", () => {
         },
       ],
       notes: [],
+      activations: [],
     };
     const doc = parseSvg(renderDiagramToSvg(layout));
     const messageLine = Array.from(doc.querySelectorAll("line")).find(
@@ -255,6 +260,7 @@ describe("renderDiagramToSvg — notes", () => {
       participants: [participant("A", "A", 84), participant("B", "B", 204)],
       messages: [],
       notes: [note(96, 120, 120, 32, "secret")],
+      activations: [],
     };
     const svg = renderDiagramToSvg(layout);
     // A note is drawn as a folded-corner path, distinct from participant rects.
@@ -269,6 +275,7 @@ describe("renderDiagramToSvg — notes", () => {
       participants: [participant("A", "A", 84)],
       messages: [],
       notes: [note(96, 120, 120, 32, "confidential")],
+      activations: [],
     };
     const svg = renderDiagramToSvg(layout);
     expect(svg).toContain(">confidential<");
@@ -281,6 +288,7 @@ describe("renderDiagramToSvg — notes", () => {
       participants: [participant("A", "A", 100)],
       messages: [],
       notes: [note(64, 120, 80, 32, "a & b <c>")],
+      activations: [],
     };
     const svg = renderDiagramToSvg(layout);
     expect(svg).toContain("a &amp; b &lt;c&gt;");
@@ -289,5 +297,61 @@ describe("renderDiagramToSvg — notes", () => {
   it("omits note elements when the layout has none", () => {
     const svg = renderDiagramToSvg(sampleLayout());
     expect(svg).not.toContain('fill="#fff7d6"');
+  });
+});
+
+describe("renderDiagramToSvg — activations", () => {
+  /** A layout with one activation bar on participant A. */
+  function layoutWithBar(): DiagramLayout {
+    return {
+      width: 264,
+      height: 200,
+      participants: [participant("A", "A", 84), participant("B", "B", 204)],
+      messages: [],
+      activations: [{ participant: "A", x: 84, y: 52, height: 88, depth: 0 }],
+      notes: [],
+    };
+  }
+
+  it("draws a bar as a rectangle centered on the lifeline", () => {
+    const doc = new DOMParser().parseFromString(
+      renderDiagramToSvg(layoutWithBar()),
+      "image/svg+xml",
+    );
+    const rects = Array.from(doc.querySelectorAll("rect"));
+    // The canvas background is white-filled too, so identify the bar by its
+    // dark stroke; participant boxes use a slate stroke.
+    const bar = rects.find((r) => r.getAttribute("stroke") === "#0f172a");
+    expect(bar).toBeDefined();
+    expect(Number(bar!.getAttribute("y"))).toBe(52);
+    expect(Number(bar!.getAttribute("height"))).toBe(88);
+    // Centered on x = 84 with the standard bar width.
+    expect(Number(bar!.getAttribute("x"))).toBe(84 - 5);
+    expect(Number(bar!.getAttribute("width"))).toBe(10);
+  });
+
+  it("renders no bar rectangles when the layout has no activations", () => {
+    const svg = renderDiagramToSvg(sampleLayout());
+    expect(svg).not.toContain('fill="#ffffff" stroke="#0f172a"');
+  });
+
+  it("draws bars over lifelines but under message arrows", () => {
+    const layout = layoutWithBar();
+    layout.messages = [
+      {
+        from: "A",
+        to: "B",
+        kind: "sync",
+        label: "hi",
+        y: 96,
+        startX: 84,
+        endX: 204,
+      },
+    ];
+    const svg = renderDiagramToSvg(layout);
+    // Source order decides paint order, so the bar precedes the arrow.
+    expect(svg.indexOf('fill="#ffffff" stroke="#0f172a"')).toBeLessThan(
+      svg.indexOf("<polygon"),
+    );
   });
 });

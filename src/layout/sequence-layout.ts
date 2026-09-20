@@ -19,6 +19,8 @@ import type {
   SequenceDiagram,
 } from "../domain/diagram/ast";
 import {
+  ACTIVATION_MIN_HEIGHT,
+  ACTIVATION_NEST_OFFSET,
   MARGIN_X,
   MIN_PARTICIPANT_WIDTH,
   PARTICIPANT_BOX_HEIGHT,
@@ -31,6 +33,7 @@ import {
   NOTE_MIN_WIDTH,
   NOTE_OVER_SPAN_HALF,
   NOTE_ROW_HEIGHT,
+  type ActivationLayout,
   type DiagramLayout,
   type MessageLayout,
   type NoteLayout,
@@ -130,6 +133,7 @@ function emptyLayout(): DiagramLayout {
     height: PARTICIPANT_BOX_HEIGHT + TITLE_HEIGHT,
     participants: [],
     messages: [],
+    activations: [],
     notes: [],
   };
 }
@@ -179,41 +183,70 @@ export function layoutDiagram(diagram: SequenceDiagram): DiagramLayout {
   const titleHeight = diagram.title ? TITLE_HEIGHT : 0;
   const topY = titleHeight + PARTICIPANT_BOX_HEIGHT;
 
-  // Place each message on its own row, in source order.
-  const messages: MessageLayout[] = diagram.statements.map((s, index) => {
-    const fromIndex = byId.get(s.from);
-    const toIndex = byId.get(s.to);
-    if (fromIndex === undefined || toIndex === undefined) {
-      // Missing endpoints are a semantic error handled by the validator; layout
-      // defensively skips drawing a broken arrow but still records it.
-      const startX =
-        fromIndex !== undefined ? participants[fromIndex].x : MARGIN_X;
-      const endX = toIndex !== undefined ? participants[toIndex].x : MARGIN_X;
-      return {
-        from: s.from,
-        to: s.to,
-        kind: s.kind,
-        label: s.label,
-        y: topY + index * MESSAGE_ROW_HEIGHT,
-        startX,
-        endX,
-      };
-    }
-    return {
-      from: s.from,
-      to: s.to,
-      kind: s.kind,
-      label: s.label,
-      y: topY + index * MESSAGE_ROW_HEIGHT,
-      startX: participants[fromIndex].x,
-      endX: participants[toIndex].x,
-    };
-  });
+  /** Vertical center line of a message row. */
+  const rowY = (row: number): number => topY + row * MESSAGE_ROW_HEIGHT;
 
-  const bottomY = topY + messages.length * MESSAGE_ROW_HEIGHT;
+  // Walk the statements once. Messages take a row each; activation statements
+  // take no row of their own, they only open or close a bar at the current
+  // position, so an activation between two messages spans exactly that gap.
+  const messages: MessageLayout[] = [];
+  const activations: ActivationLayout[] = [];
+  // Open bars per participant, innermost last.
+  const openBars = new Map<ParticipantId, OpenBar[]>();
+
+  for (const statement of diagram.statements) {
+    if (statement.type === "message") {
+      const fromIndex = byId.get(statement.from);
+      const toIndex = byId.get(statement.to);
+      messages.push({
+        from: statement.from,
+        to: statement.to,
+        kind: statement.kind,
+        label: statement.label,
+        y: rowY(messages.length),
+        // Missing endpoints are a semantic error handled by the validator;
+        // layout defensively falls back to the margin and still records the
+        // message rather than dropping it.
+        startX: fromIndex !== undefined ? participants[fromIndex].x : MARGIN_X,
+        endX: toIndex !== undefined ? participants[toIndex].x : MARGIN_X,
+      });
+      continue;
+    }
+
+    // Unknown participant (validator error): skip so layout stays total.
+    const participantIndex = byId.get(statement.participant);
+    if (participantIndex === undefined) continue;
+    const participant = participants[participantIndex];
+
+    const stack = openBars.get(participant.id) ?? [];
+    openBars.set(participant.id, stack);
+
+    if (statement.action === "activate") {
+      stack.push({
+        y: rowY(messages.length),
+        depth: stack.length,
+        participant,
+      });
+    } else {
+      // An unmatched `deactivate` is reported by the validator; ignore it here.
+      const open = stack.pop();
+      if (open) {
+        activations.push(barLayout(open, rowY(messages.length)));
+      }
+    }
+  }
+
+  const bottomY = rowY(messages.length);
   participants.forEach((p) => {
     p.bottomY = bottomY;
   });
+
+  // A bar left open runs to the bottom of the message body.
+  for (const stack of openBars.values()) {
+    for (const open of stack) {
+      activations.push(barLayout(open, bottomY));
+    }
+  }
 
   const width = MARGIN_X + n * PARTICIPANT_SPACING;
 
@@ -240,6 +273,34 @@ export function layoutDiagram(diagram: SequenceDiagram): DiagramLayout {
     title: diagram.title ? diagram.title.value : undefined,
     participants,
     messages,
+    activations,
     notes,
+  };
+}
+
+/** An activation bar that has been opened but not yet closed. */
+interface OpenBar {
+  /** Absolute y the bar starts at (the row the `activate` precedes). */
+  y: number;
+  /** Nesting depth, 0 for the outermost bar on that lifeline. */
+  depth: number;
+  /** The participant whose lifeline the bar sits on. */
+  participant: ParticipantLayout;
+}
+
+/**
+ * Build one activation bar from its open state and the y it closes at.
+ *
+ * The bar's vertical origin is the message-row y, so bars line up exactly with
+ * the rows they span.
+ */
+function barLayout(open: OpenBar, bottomY: number): ActivationLayout {
+  return {
+    participant: open.participant.id,
+    x: open.participant.x + open.depth * ACTIVATION_NEST_OFFSET,
+    y: open.y,
+    // A bar closed on its own row would be zero-height; keep it visible.
+    height: Math.max(ACTIVATION_MIN_HEIGHT, bottomY - open.y),
+    depth: open.depth,
   };
 }

@@ -31,6 +31,10 @@ export enum DiagnosticCode {
   UnknownAliasTarget = "seq.unknown-alias-target",
   /** A `note` line is missing its placement, target, or text terminator. */
   MalformedNote = "seq.malformed-note",
+  /** An `activate` / `deactivate` line is missing its participant target. */
+  MalformedActivation = "seq.malformed-activation",
+  /** A `deactivate` has no matching open `activate` for that participant. */
+  UnmatchedDeactivate = "seq.unmatched-deactivate",
 }
 
 /** A single diagnostic message with optional source location. */

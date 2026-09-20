@@ -17,13 +17,14 @@ import { renderDiagramToSvg } from "../../renderer/svg/sequence-svg-renderer";
 import { analyze } from "../../language/analyze";
 import { isValid } from "../../language/validator/validator";
 
-/** An empty-canvas layout: no title, participants, or messages. */
+/** An empty-canvas layout: no title, participants, messages, or bars. */
 function emptyLayout(): DiagramLayout {
   return {
     width: MARGIN_X * 2,
     height: PARTICIPANT_BOX_HEIGHT + TITLE_HEIGHT,
     participants: [],
     messages: [],
+    activations: [],
     notes: [],
   };
 }

@@ -42,7 +42,9 @@ const REPLACEMENT_SOURCE = [
   "participant Gateway",
   "",
   "Browser -> Gateway: Submit order",
+  "activate Gateway",
   "Gateway --> Browser: Accepted",
+  "deactivate Gateway",
   "",
 ].join("\n");
 
@@ -220,6 +222,18 @@ async function runChecks(browser) {
   check(
     "editor reports no problems for valid DSL",
     (await page.locator('[data-testid="dsl-diagnostics"]').count()) === 0,
+  );
+
+  // Phase 7 activations: the bar is painted as a white-filled, dark-stroked
+  // rectangle over the lifeline, distinct from a participant box.
+  const bars = await page.$$eval(
+    '[data-testid="preview-svg"] rect[stroke="#0f172a"]',
+    (nodes) => nodes.map((n) => n.getBoundingClientRect()),
+  );
+  check("activation bar is painted", bars.length === 1, `found ${bars.length}`);
+  check(
+    "activation bar has a non-zero box",
+    bars.length === 1 && bars[0].height > 0 && bars[0].width > 0,
   );
 
   console.log("\nInvalid DSL degrades gracefully:");

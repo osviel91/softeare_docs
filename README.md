@@ -110,20 +110,45 @@ Work proceeds in disciplined, commit-per-phase milestones (see
 
 ## Status
 
-**Phase 0 — Repository Foundation**, **Phase 1 — Sequence Language Core**,
-**Phase 2 — Layout + SVG Rendering**, **Phase 3 — Interactive Live Editor**,
-**Phase 4 — In-Browser Projects (IndexedDB)**, **Phase 5 — Local Folder Projects
-(File System Access API)**, and
-**Phase 6 — Editing Productivity (tabs, command palette, search)** are complete
-and committed on `master`. The branch builds, serves, lints, type-checks, and
-passes its test suite (240 tests).
+**Phases 0–6 are complete** and committed on `master`: repository foundation,
+sequence language core, layout + SVG rendering, the interactive live editor,
+in-browser projects (IndexedDB), local folder projects (File System Access API),
+and editing productivity (tabs, command palette, search). The branch builds,
+serves, lints, type-checks, and passes its test suite — 274 unit tests plus a
+browser smoke test against the production bundle (`npm run test:e2e`), and the
+same bundle is served by the Docker image.
 
-Phase 7 extends the DSL incrementally. The first construct landed is the
-**callout note**: `note left/right of <participant> : text` anchors a note to a
-lifeline and `note over [: text]` spans the diagram. It flows fully through the
-pipeline — a `note` lexer token, a `NoteNode` in the AST, a `MalformedNote`
-diagnostic, parser rules, beside/over lifeline placement in the layout engine,
-and a folded note box in the SVG renderer.
+**Phase 7 (DSL v2) is in progress.** Three constructs have landed:
+
+- **Aliases** — `alias X = participant` binds a shorthand that messages may use
+  in place of the full participant name. An alias whose target is undeclared is
+  reported as a diagnostic, and aliases may not chain. Layout resolves a
+  shorthand to the target lifeline, so an aliased sender's arrow attaches
+  correctly instead of falling back to the margin.
+- **Callout notes** — `note left/right of <participant> : text` anchors a note to
+  a lifeline and `note over [: text]` spans the diagram. It flows fully through
+  the pipeline — a `note` lexer token, a `NoteNode` in the AST, a `MalformedNote`
+  diagnostic, parser rules, beside/over lifeline placement in the layout engine,
+  and a folded note box in the SVG renderer.
+- **Activations** — `activate X` / `deactivate X` draw a bar over a lifeline for
+  the span in which that participant is working. Bars nest (each level is offset
+  so stacked bars stay visible), take no message row of their own, and close at
+  the row following their `deactivate`; a bar left open runs to the bottom of the
+  message body. A `deactivate` with no open bar is reported, and activations go
+  through the same alias resolution as messages, so `activate U` and
+  `deactivate User` pair up.
+
+Still to come in Phase 7: groups, loops, and `alt`/`opt` fragments.
+Phase 8 (export to SVG, then PNG) has not started.
+
+> **Known layout defect (unfixed).** Vertical geometry is inconsistent between
+> titled and untitled diagrams: `ParticipantLayout.topY` is computed with a
+> hard-coded title allowance while the message band uses the title-dependent
+> value. For a titled diagram the first message row lands on the participant
+> boxes (y 52, boxes span 52–76); for an untitled diagram the first row lands
+> _above_ them (y 24) and the canvas is shorter than the boxes (height 68), so
+> they are clipped. Fixing it means choosing the intended band geometry, which
+> the layout comments attribute to a product spec.
 
 Phase 3 wires the pipeline into a live, IDE-style editor. The app shell now owns
 the DSL source and feeds one memoized analysis to both panes: the editor

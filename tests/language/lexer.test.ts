@@ -137,3 +137,31 @@ describe("lexer", () => {
     ]);
   });
 });
+
+describe("lexer — activations", () => {
+  it("tokenizes activate and deactivate as keywords, not identifiers", () => {
+    const types = (source: string) =>
+      lex(source)
+        .tokens.filter((t) => t.type !== TokenType.Eol)
+        .map((t) => t.type);
+
+    expect(types("activate User")).toEqual([
+      TokenType.Activate,
+      TokenType.Identifier,
+    ]);
+    expect(types("deactivate User")).toEqual([
+      TokenType.Deactivate,
+      TokenType.Identifier,
+    ]);
+  });
+
+  it("still lexes a participant merely named like the keywords", () => {
+    // Only the bare keyword is reserved; it remains valid as a message arrow
+    // operand position identifier elsewhere on a line.
+    const tokens = lex("A -> activate").tokens;
+    expect(tokens[2]).toMatchObject({
+      type: TokenType.Activate,
+      value: "activate",
+    });
+  });
+});

@@ -6,13 +6,15 @@
  * input: on a syntax error it records a diagnostic, skips to the end of the
  * offending line, and keeps going so the editor stays usable.
  *
- * Grammar (Phase 1; aliases added in Phase 7; notes added in Checkpoint 2):
+ * Grammar (Phase 1; aliases added in Phase 7; notes added in Checkpoint 2;
+ * activations added in Checkpoint 3):
  *
  *   document     := title? statement* note*
  *   note         := "note" ws* placement (ws* "of" ws* id)? (":" lineText)?
- *   statement    := participant | alias | message
+ *   statement    := participant | alias | activation | message
  *   participant  := "participant" ws+ id (ws* quotedLabel)?
  *   alias        := "alias" ws+ id ws* "=" ws* id
+ *   activation   := ("activate" | "deactivate") ws+ id
  *   message      := id arrow id (":" labelText)?
  *   title        := "title" ws* lineText
  *   placement    := "left" | "right" | "over"
@@ -22,6 +24,7 @@
  * a clear phase boundary.
  */
 import type {
+  ActivationNode,
   AliasNode,
   MessageKind,
   NoteNode,
@@ -103,6 +106,16 @@ class Parser {
         // declaration-before-message ordering.
         const note = this.parseNote();
         if (note) ast.notes.push(note);
+        else this.skipToEol();
+      } else if (
+        token.type === TokenType.Activate ||
+        token.type === TokenType.Deactivate
+      ) {
+        // An activation is a statement that references a participant, so like a
+        // message it may only follow the participant declarations.
+        sawMessage = true;
+        const activation = this.parseActivation();
+        if (activation) ast.statements.push(activation);
         else this.skipToEol();
       } else if (token.type === TokenType.Identifier) {
         // A message line.
@@ -311,6 +324,40 @@ class Parser {
   private peekKeyword(word: string): boolean {
     const token = this.peek();
     return token?.type === TokenType.Identifier && token.value === word;
+  }
+
+  /** Parse an activation line: `activate <id>` or `deactivate <id>`. */
+  private parseActivation(): ActivationNode | null {
+    const keyword = this.expect();
+    const action =
+      keyword.type === TokenType.Activate ? "activate" : "deactivate";
+    const start = keyword.start;
+
+    const target = this.peek();
+    if (!target || target.type !== TokenType.Identifier) {
+      this.errorHere(
+        `Expected a participant name after "${action}"`,
+        DiagnosticCode.MalformedActivation,
+      );
+      return null;
+    }
+    this.advance();
+
+    // Any trailing tokens on the line are malformed (activations take no label).
+    if (this.peek()?.type !== TokenType.Eol && !this.atEnd()) {
+      this.errorHere(
+        `Unexpected text after the "${action}" target`,
+        DiagnosticCode.MalformedActivation,
+      );
+    }
+
+    const end = this.previousEnd();
+    return {
+      type: "activation",
+      action,
+      participant: target.value,
+      range: span(start, end),
+    };
   }
 
   /** Parse a message line: `from arrow to (":" label)?`. */

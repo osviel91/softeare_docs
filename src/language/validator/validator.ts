@@ -21,6 +21,9 @@ export function validateSemantics(diagram: SequenceDiagram): Diagnostic[] {
   // message may legally name once aliases are resolved.
   const participantIds = new Map<ParticipantId, unknown>();
   const resolvableIds = new Map<ParticipantId, unknown>();
+  // Shorthand -> declared participant, so checks that track one participant
+  // across several statements can compare canonical ids.
+  const aliasTargets = new Map<ParticipantId, ParticipantId>();
 
   // Detect duplicate participant declarations, pointing at each duplicate.
   for (const participant of diagram.participants) {
@@ -53,10 +56,18 @@ export function validateSemantics(diagram: SequenceDiagram): Diagnostic[] {
       continue;
     }
     resolvableIds.set(alias.alias, null);
+    aliasTargets.set(alias.alias, alias.target);
   }
+
+  /** Canonical participant id for an identifier that may be an alias. */
+  const resolve = (id: ParticipantId): ParticipantId =>
+    aliasTargets.get(id) ?? id;
 
   // Every message endpoint must resolve to a declared participant or alias.
   for (const statement of diagram.statements) {
+    // Activations are statements too, but carry no endpoints; they are checked
+    // separately below.
+    if (statement.type !== "message") continue;
     for (const endpoint of [statement.from, statement.to]) {
       if (!resolvableIds.has(endpoint)) {
         diagnostics.push(
@@ -67,6 +78,41 @@ export function validateSemantics(diagram: SequenceDiagram): Diagnostic[] {
           ),
         );
       }
+    }
+  }
+
+  // Activations pair up like brackets, per participant: each `deactivate` must
+  // close an open `activate`. Nesting is legal, so the number of open bars is
+  // counted rather than tracked with a single flag.
+  const openActivations = new Map<ParticipantId, number>();
+  for (const statement of diagram.statements) {
+    if (statement.type !== "activation") continue;
+    if (!resolvableIds.has(statement.participant)) {
+      diagnostics.push(
+        errorDiagnostic(
+          `Unknown participant "${statement.participant}"`,
+          DiagnosticCode.UnknownParticipant,
+          statement.range,
+        ),
+      );
+      continue;
+    }
+
+    // Compare canonical ids so `activate U` / `deactivate User` pair up.
+    const id = resolve(statement.participant);
+    const open = openActivations.get(id) ?? 0;
+    if (statement.action === "activate") {
+      openActivations.set(id, open + 1);
+    } else if (open === 0) {
+      diagnostics.push(
+        errorDiagnostic(
+          `"deactivate ${statement.participant}" has no matching "activate"`,
+          DiagnosticCode.UnmatchedDeactivate,
+          statement.range,
+        ),
+      );
+    } else {
+      openActivations.set(id, open - 1);
     }
   }
 

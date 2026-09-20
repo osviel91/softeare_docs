@@ -80,7 +80,31 @@ export interface AliasNode {
 }
 
 /** Any top-level statement in a diagram body. */
-export type Statement = MessageNode;
+export type Statement = MessageNode | ActivationNode;
+
+/** Whether an activation statement opens or closes a bar. */
+export type ActivationAction = "activate" | "deactivate";
+
+/**
+ * An activation statement, e.g. `activate User` / `deactivate User`.
+ *
+ * An activation marks the span during which a participant is doing work: the
+ * renderer draws a narrow bar over that participant's lifeline, from the
+ * `activate` statement to the matching `deactivate`. Activations nest, so a
+ * participant may hold several open bars at once (depth 0 is the outermost).
+ *
+ * Activation is a statement, not a message: it carries no arrow and no
+ * endpoints, so it never takes part in message endpoint validation.
+ */
+export interface ActivationNode {
+  type: "activation";
+  /** Whether this statement opens or closes a bar. */
+  action: ActivationAction;
+  /** The participant whose lifeline is activated (may be an alias shorthand). */
+  participant: ParticipantId;
+  /** Source span covering the whole statement. */
+  range: SourceRange;
+}
 
 /**
  * Where a note is anchored relative to a participant's lifeline.

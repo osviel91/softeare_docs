@@ -7,12 +7,14 @@
  * layout engine stays free of any SVG concerns.
  */
 import {
+  ACTIVATION_WIDTH,
   ARROW_HEAD_HEIGHT,
   ARROW_HEAD_SIZE,
   MARGIN_X,
   PARTICIPANT_BOX_HEIGHT,
   STROKE_WIDTH,
   TITLE_HEIGHT,
+  type ActivationLayout,
   type DiagramLayout,
   type MessageLayout,
   type NoteLayout,
@@ -75,6 +77,17 @@ function renderMessage(msg: MessageLayout): string {
 /** Size of the dog-ear fold on a note's top-right corner, in pixels. */
 const NOTE_FOLD_SIZE = 14;
 
+/**
+ * Render an activation bar: a narrow box drawn over the lifeline.
+ *
+ * The fill is opaque so the dashed lifeline does not show through the bar,
+ * which is what makes an activation read as "this participant is busy".
+ */
+function renderActivation(a: ActivationLayout): string {
+  const left = a.x - ACTIVATION_WIDTH / 2;
+  return `<rect x="${left.toFixed(2)}" y="${a.y.toFixed(2)}" width="${ACTIVATION_WIDTH}" height="${a.height.toFixed(2)}" fill="#ffffff" stroke="#0f172a" stroke-width="${STROKE_WIDTH}"/>`;
+}
+
 /** Render a single note box (a rectangle with a folded top-right corner). */
 function renderNote(note: NoteLayout): string {
   const { x, y, width, height } = note;
@@ -134,6 +147,11 @@ export function renderDiagramToSvg(layout: DiagramLayout): string {
 
   for (const p of layout.participants) {
     parts.push(renderParticipant(p));
+  }
+  // Bars sit over the lifelines but below the arrows, so a message that starts
+  // or ends inside an activation stays visible on top of it.
+  for (const activation of layout.activations ?? []) {
+    parts.push(renderActivation(activation));
   }
   for (const msg of layout.messages) {
     parts.push(renderMessage(msg));

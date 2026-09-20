@@ -216,3 +216,104 @@ describe("parse — aliases", () => {
     expect(() => parse("alias =")).not.toThrow();
   });
 });
+
+describe("parse — notes", () => {
+  it("parses a left note anchored to a participant", () => {
+    const { ast, diagnostics } = parse("note left of User : secret");
+    expect(diagnostics).toEqual([]);
+    const diagram = ast as unknown as SequenceDiagram;
+    expect(diagram.notes).toHaveLength(1);
+    expect(diagram.notes[0]).toMatchObject({
+      type: "note",
+      placement: "left",
+      participant: "User",
+      text: "secret",
+    });
+  });
+
+  it("parses a right note anchored to a participant", () => {
+    const { ast } = parse("note right of API : hi");
+    const diagram = ast as unknown as SequenceDiagram;
+    expect(diagram.notes[0]).toMatchObject({
+      placement: "right",
+      participant: "API",
+      text: "hi",
+    });
+  });
+
+  it("parses an over note anchored to a participant", () => {
+    const { ast } = parse("note over User : span");
+    const diagram = ast as unknown as SequenceDiagram;
+    expect(diagram.notes[0]).toMatchObject({
+      placement: "over",
+      participant: "User",
+      text: "span",
+    });
+  });
+
+  it("parses a diagram-wide over note with no participant", () => {
+    const { ast } = parse("note over : shared");
+    const diagram = ast as unknown as SequenceDiagram;
+    expect(diagram.notes[0]).toMatchObject({
+      placement: "over",
+      text: "shared",
+    });
+    expect(diagram.notes[0].participant).toBeUndefined();
+  });
+
+  it("accepts a bare id for left/right without 'of'", () => {
+    const { ast } = parse("note left User : bare");
+    const diagram = ast as unknown as SequenceDiagram;
+    expect(diagram.notes[0]).toMatchObject({
+      placement: "left",
+      participant: "User",
+      text: "bare",
+    });
+  });
+
+  it("collects multiple notes in source order", () => {
+    const { ast } = parse(
+      "note left of A : one\nnote over B : two\nnote right of C : three",
+    );
+    const diagram = ast as unknown as SequenceDiagram;
+    expect(diagram.notes.map((n) => n.text)).toEqual(["one", "two", "three"]);
+    expect(diagram.notes.map((n) => n.placement)).toEqual([
+      "left",
+      "over",
+      "right",
+    ]);
+  });
+
+  it("flags an invalid note placement", () => {
+    const { diagnostics } = parse("note sideways of User : hi");
+    expect(
+      diagnostics.some((d) => d.code === DiagnosticCode.MalformedNote),
+    ).toBe(true);
+  });
+
+  it("flags a left/right note missing its participant", () => {
+    const { diagnostics } = parse("note left : hi");
+    expect(
+      diagnostics.some((d) => d.code === DiagnosticCode.MalformedNote),
+    ).toBe(true);
+  });
+
+  it("flags a note missing its ':' text terminator", () => {
+    const { diagnostics } = parse("note left of User");
+    expect(
+      diagnostics.some((d) => d.code === DiagnosticCode.MalformedNote),
+    ).toBe(true);
+  });
+
+  it("flags a note with no text after ':'", () => {
+    const { diagnostics } = parse("note left of User :");
+    expect(
+      diagnostics.some((d) => d.code === DiagnosticCode.MalformedNote),
+    ).toBe(true);
+  });
+
+  it("never throws on a malformed note line", () => {
+    expect(() => parse("note\n")).not.toThrow();
+    expect(() => parse("note left of")).not.toThrow();
+  });
+});

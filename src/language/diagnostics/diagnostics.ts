@@ -29,6 +29,8 @@ export enum DiagnosticCode {
   AliasBeforeMessage = "seq.alias-before-message",
   /** An alias references a participant that was never declared. */
   UnknownAliasTarget = "seq.unknown-alias-target",
+  /** A `note` line is missing its placement, target, or text terminator. */
+  MalformedNote = "seq.malformed-note",
 }
 
 /** A single diagnostic message with optional source location. */

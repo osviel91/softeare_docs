@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
-import type { SequenceDiagram } from "../../src/domain/diagram/ast";
+import type { NoteNode, SequenceDiagram } from "../../src/domain/diagram/ast";
 import {
   MARGIN_X,
   MESSAGE_ROW_HEIGHT,
+  NOTE_GAP,
+  NOTE_HEIGHT,
+  NOTE_MARGIN_Y,
+  NOTE_ROW_HEIGHT,
   PARTICIPANT_BOX_HEIGHT,
   PARTICIPANT_SPACING,
   TITLE_HEIGHT,
@@ -16,6 +20,7 @@ function diagram(overrides: Partial<SequenceDiagram>): SequenceDiagram {
     participants: [],
     aliases: [],
     statements: [],
+    notes: [],
     ...overrides,
   };
 }
@@ -192,5 +197,227 @@ describe("layoutDiagram — message rows and canvas size", () => {
     const a = layoutDiagram(LOGIN);
     const b = layoutDiagram(LOGIN);
     expect(a).toEqual(b);
+  });
+});
+
+/** Build a note node anchored to a participant (or diagram-wide when omitted). */
+function note(
+  placement: NoteNode["placement"],
+  participant?: NoteNode["participant"],
+  text = "note",
+): NoteNode {
+  return {
+    type: "note",
+    placement,
+    participant,
+    text,
+    range: { start: { line: 0, column: 0 }, end: { line: 0, column: 4 } },
+  };
+}
+
+describe("layoutDiagram — notes", () => {
+  it("places a left note to the left of its participant lifeline", () => {
+    // Two participants so the anchored one has room from the left margin.
+    const layout = layoutDiagram(
+      diagram({
+        participants: [
+          {
+            type: "participant",
+            id: "A",
+            label: "A",
+            range: {
+              start: { line: 0, column: 0 },
+              end: { line: 0, column: 1 },
+            },
+          },
+          {
+            type: "participant",
+            id: "B",
+            label: "B",
+            range: {
+              start: { line: 0, column: 0 },
+              end: { line: 0, column: 1 },
+            },
+          },
+        ],
+        notes: [note("left", "B", "secret")],
+      }),
+    );
+    const noteLayout = layout.notes[0];
+    const bX = layout.participants[1].x;
+    // Left note sits entirely to the left of the lifeline, with a gap.
+    expect(noteLayout.x + noteLayout.width).toBeLessThanOrEqual(bX - NOTE_GAP);
+  });
+
+  it("places a right note to the right of its participant lifeline", () => {
+    const layout = layoutDiagram(
+      diagram({
+        participants: [
+          {
+            type: "participant",
+            id: "A",
+            label: "A",
+            range: {
+              start: { line: 0, column: 0 },
+              end: { line: 0, column: 1 },
+            },
+          },
+          {
+            type: "participant",
+            id: "B",
+            label: "B",
+            range: {
+              start: { line: 0, column: 0 },
+              end: { line: 0, column: 1 },
+            },
+          },
+        ],
+        notes: [note("right", "B", "secret")],
+      }),
+    );
+    const noteLayout = layout.notes[0];
+    const bX = layout.participants[1].x;
+    // Right note starts just to the right of the lifeline, after the gap.
+    expect(noteLayout.x).toBeGreaterThanOrEqual(bX + NOTE_GAP);
+  });
+
+  it("centers an over note on its participant lifeline", () => {
+    const layout = layoutDiagram(
+      diagram({
+        participants: [
+          {
+            type: "participant",
+            id: "User",
+            label: "User",
+            range: {
+              start: { line: 0, column: 0 },
+              end: { line: 0, column: 4 },
+            },
+          },
+        ],
+        notes: [note("over", "User", "spanning")],
+      }),
+    );
+    const noteLayout = layout.notes[0];
+    const userX = layout.participants[0].x;
+    // Centered over the lifeline means the box center aligns with it.
+    expect(noteLayout.x + noteLayout.width / 2).toBeCloseTo(userX, 5);
+  });
+
+  it("positions a diagram-wide over note inside a centered span", () => {
+    const layout = layoutDiagram(
+      diagram({
+        participants: [
+          {
+            type: "participant",
+            id: "A",
+            label: "A",
+            range: {
+              start: { line: 0, column: 0 },
+              end: { line: 0, column: 1 },
+            },
+          },
+          {
+            type: "participant",
+            id: "B",
+            label: "B",
+            range: {
+              start: { line: 0, column: 0 },
+              end: { line: 0, column: 1 },
+            },
+          },
+        ],
+        notes: [note("over", undefined, "shared")],
+      }),
+    );
+    const noteLayout = layout.notes[0];
+    // The box's left edge sits at the left edge of a span that is itself
+    // centered on the canvas (span is capped at 192px here).
+    const span = Math.min(192, layout.width - MARGIN_X * 2);
+    expect(noteLayout.x).toBeCloseTo((layout.width - span) / 2, 5);
+  });
+
+  it("gives every note the fixed note height", () => {
+    const layout = layoutDiagram(LOGIN);
+    for (const n of layout.notes) {
+      expect(n.height).toBe(NOTE_HEIGHT);
+    }
+  });
+
+  it("stacks notes in their own band below the messages", () => {
+    const layout = layoutDiagram(LOGIN);
+    const messagesBottom =
+      TITLE_HEIGHT +
+      PARTICIPANT_BOX_HEIGHT +
+      layout.messages.length * MESSAGE_ROW_HEIGHT;
+    const firstNoteY = messagesBottom + NOTE_MARGIN_Y;
+    for (let i = 0; i < layout.notes.length; i++) {
+      expect(layout.notes[i].y).toBe(
+        firstNoteY + i * NOTE_ROW_HEIGHT + NOTE_MARGIN_Y,
+      );
+    }
+  });
+
+  it("widens the canvas to fit a right-anchored note", () => {
+    const layout = layoutDiagram(
+      diagram({
+        participants: [
+          {
+            type: "participant",
+            id: "A",
+            label: "A",
+            range: {
+              start: { line: 0, column: 0 },
+              end: { line: 0, column: 1 },
+            },
+          },
+          {
+            type: "participant",
+            id: "B",
+            label: "B",
+            range: {
+              start: { line: 0, column: 0 },
+              end: { line: 0, column: 1 },
+            },
+          },
+        ],
+        notes: [note("right", "B", "a fairly long right note body")],
+      }),
+    );
+    // A right note past the rightmost participant forces the canvas to widen.
+    const rightmostParticipantRight =
+      layout.participants[layout.participants.length - 1].x +
+      layout.participants[layout.participants.length - 1].width / 2;
+    expect(layout.width).toBeGreaterThan(rightmostParticipantRight);
+  });
+
+  it("lengthens the canvas to fit the notes band", () => {
+    const layout = layoutDiagram(
+      diagram({
+        participants: [
+          {
+            type: "participant",
+            id: "A",
+            label: "A",
+            range: {
+              start: { line: 0, column: 0 },
+              end: { line: 0, column: 1 },
+            },
+          },
+        ],
+        notes: [note("over", "A", "spans")],
+      }),
+    );
+    // No title, so the body top is just below the participant box.
+    const bodyBottom =
+      PARTICIPANT_BOX_HEIGHT + layout.messages.length * MESSAGE_ROW_HEIGHT;
+    const expectedBottom =
+      bodyBottom + layout.notes.length * NOTE_ROW_HEIGHT + NOTE_MARGIN_Y;
+    expect(layout.height).toBe(expectedBottom);
+  });
+
+  it("leaves an empty notes array when the diagram has none", () => {
+    const layout = layoutDiagram(LOGIN);
+    expect(layout.notes).toEqual([]);
   });
 });

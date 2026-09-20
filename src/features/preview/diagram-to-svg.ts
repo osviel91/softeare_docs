@@ -24,6 +24,7 @@ function emptyLayout(): DiagramLayout {
     height: PARTICIPANT_BOX_HEIGHT + TITLE_HEIGHT,
     participants: [],
     messages: [],
+    notes: [],
   };
 }
 

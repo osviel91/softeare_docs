@@ -109,4 +109,31 @@ describe("lexer", () => {
       ),
     ).toBe(false);
   });
+
+  it("recognizes the 'note' keyword", () => {
+    const tokens = lex("note left of User : hi").tokens;
+    expect(tokens[0]).toMatchObject({ type: TokenType.Note, value: "note" });
+  });
+
+  it("does not treat 'note' as a plain identifier", () => {
+    const tokens = lex("note over User : hi").tokens;
+    expect(
+      tokens.some((t) => t.type === TokenType.Identifier && t.value === "note"),
+    ).toBe(false);
+  });
+
+  it("tokenizes a note's placement, target, and colon", () => {
+    const tokens = lex("note right of API : secret").tokens;
+    const types = tokens
+      .filter((t) => t.type !== TokenType.Eol)
+      .map((t) => t.type);
+    expect(types).toEqual([
+      TokenType.Note,
+      TokenType.Identifier,
+      TokenType.Identifier,
+      TokenType.Identifier,
+      TokenType.Colon,
+      TokenType.Identifier,
+    ]);
+  });
 });

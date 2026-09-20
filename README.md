@@ -79,7 +79,14 @@ Work proceeds in disciplined, commit-per-phase milestones (see
 (File System Access API)**, and
 **Phase 6 — Editing Productivity (tabs, command palette, search)** are complete
 and committed on `master`. The branch builds, serves, lints, type-checks, and
-passes its test suite (189 tests).
+passes its test suite (240 tests).
+
+Phase 7 extends the DSL incrementally. The first construct landed is the
+**callout note**: `note left/right of <participant> : text` anchors a note to a
+lifeline and `note over [: text]` spans the diagram. It flows fully through the
+pipeline — a `note` lexer token, a `NoteNode` in the AST, a `MalformedNote`
+diagnostic, parser rules, beside/over lifeline placement in the layout engine,
+and a folded note box in the SVG renderer.
 
 Phase 3 wires the pipeline into a live, IDE-style editor. The app shell now owns
 the DSL source and feeds one memoized analysis to both panes: the editor

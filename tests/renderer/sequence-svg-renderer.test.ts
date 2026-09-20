@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type {
   DiagramLayout,
+  NoteLayout,
   ParticipantLayout,
 } from "../../src/layout/geometry";
 import {
@@ -31,6 +32,26 @@ function sampleLayout(): DiagramLayout {
         endX: 204,
       },
     ],
+    notes: [],
+  };
+}
+
+/** Build a note layout positioned at a fixed box. */
+function note(
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  text: string,
+): NoteLayout {
+  return {
+    placement: "left",
+    participant: "A",
+    text,
+    x,
+    y,
+    width,
+    height,
   };
 }
 
@@ -81,6 +102,7 @@ describe("renderDiagramToSvg — participants", () => {
       height: 100,
       participants: [participant("A", "A & B <x>", 100)],
       messages: [],
+      notes: [],
     };
     const svg = renderDiagramToSvg(layout);
     expect(svg).toContain("A &amp; B &lt;x&gt;");
@@ -110,6 +132,7 @@ describe("renderDiagramToSvg — messages", () => {
           endX: 204,
         },
       ],
+      notes: [],
     };
     const svg = renderDiagramToSvg(layout);
     expect(svg).toContain('stroke-dasharray="5 4"');
@@ -134,8 +157,54 @@ describe("renderDiagramToSvg — title", () => {
       height: 100,
       participants: [participant("A", "A", 100)],
       messages: [],
+      notes: [],
     };
     const svg = renderDiagramToSvg(layout);
     expect(svg).not.toContain(">Flow<");
+  });
+});
+
+describe("renderDiagramToSvg — notes", () => {
+  it("renders a folded note box for each note in the layout", () => {
+    const layout: DiagramLayout = {
+      width: 240,
+      height: 160,
+      participants: [participant("A", "A", 84), participant("B", "B", 204)],
+      messages: [],
+      notes: [note(96, 120, 120, 32, "secret")],
+    };
+    const svg = renderDiagramToSvg(layout);
+    // A note is drawn as a folded-corner path, distinct from participant rects.
+    expect(svg).toContain("<path");
+    expect(svg).toContain('fill="#fff7d6"');
+  });
+
+  it("renders the note text inside the box", () => {
+    const layout: DiagramLayout = {
+      width: 240,
+      height: 160,
+      participants: [participant("A", "A", 84)],
+      messages: [],
+      notes: [note(96, 120, 120, 32, "confidential")],
+    };
+    const svg = renderDiagramToSvg(layout);
+    expect(svg).toContain(">confidential<");
+  });
+
+  it("escapes special characters inside note text", () => {
+    const layout: DiagramLayout = {
+      width: 200,
+      height: 120,
+      participants: [participant("A", "A", 100)],
+      messages: [],
+      notes: [note(64, 120, 80, 32, "a & b <c>")],
+    };
+    const svg = renderDiagramToSvg(layout);
+    expect(svg).toContain("a &amp; b &lt;c&gt;");
+  });
+
+  it("omits note elements when the layout has none", () => {
+    const svg = renderDiagramToSvg(sampleLayout());
+    expect(svg).not.toContain('fill="#fff7d6"');
   });
 });

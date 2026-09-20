@@ -21,6 +21,8 @@ export enum TokenType {
   Participant = "participant",
   /** `alias` keyword (Phase 7). */
   Alias = "alias",
+  /** `note` keyword (Checkpoint 2). */
+  Note = "note",
   /** An unquoted identifier, e.g. `User` or `API`. */
   Identifier = "identifier",
   /** A double-quoted string literal, e.g. `"Authentication API"`. */
@@ -232,6 +234,7 @@ function classifyKeyword(word: string): TokenType {
   if (word === "title") return TokenType.Title;
   if (word === "participant") return TokenType.Participant;
   if (word === "alias") return TokenType.Alias;
+  if (word === "note") return TokenType.Note;
   return TokenType.Identifier;
 }
 

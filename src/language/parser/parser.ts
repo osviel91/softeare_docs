@@ -6,14 +6,16 @@
  * input: on a syntax error it records a diagnostic, skips to the end of the
  * offending line, and keeps going so the editor stays usable.
  *
- * Grammar (Phase 1; aliases added in Phase 7):
+ * Grammar (Phase 1; aliases added in Phase 7; notes added in Checkpoint 2):
  *
- *   document     := title? statement*
+ *   document     := title? statement* note*
+ *   note         := "note" ws* placement (ws* "of" ws* id)? (":" lineText)?
  *   statement    := participant | alias | message
  *   participant  := "participant" ws+ id (ws* quotedLabel)?
  *   alias        := "alias" ws+ id ws* "=" ws* id
  *   message      := id arrow id (":" labelText)?
  *   title        := "title" ws* lineText
+ *   placement    := "left" | "right" | "over"
  *
  * Structural rule: participants and aliases must be declared before any message.
  * This mirrors how sequence diagrams are read top-to-bottom and gives the parser
@@ -22,6 +24,8 @@
 import type {
   AliasNode,
   MessageKind,
+  NoteNode,
+  NotePlacement,
   ParticipantId,
   SourcePosition,
   SourceRange,
@@ -47,6 +51,7 @@ class Parser {
       participants: [],
       aliases: [],
       statements: [],
+      notes: [],
     };
     this.diagnostics = [];
 
@@ -92,6 +97,13 @@ class Parser {
           if (alias) ast.aliases.push(alias);
           else this.skipToEol();
         }
+      } else if (token.type === TokenType.Note) {
+        // A note callout. Notes may appear anywhere in the document and are
+        // not messages, so they neither set `sawMessage` nor require the
+        // declaration-before-message ordering.
+        const note = this.parseNote();
+        if (note) ast.notes.push(note);
+        else this.skipToEol();
       } else if (token.type === TokenType.Identifier) {
         // A message line.
         sawMessage = true;
@@ -197,6 +209,108 @@ class Parser {
       target: targetToken.value,
       range: span(start, end),
     };
+  }
+
+  /** Parse a note callout: `note left/right/over [of id] : text`. */
+  private parseNote(): NoteNode | null {
+    const start = this.expect().start;
+
+    // Required placement keyword: left, right, or over.
+    const placementToken = this.peek();
+    if (!placementToken || placementToken.type !== TokenType.Identifier) {
+      this.errorHere(
+        'Expected a note placement (left, right, or over) after "note"',
+        DiagnosticCode.MalformedNote,
+      );
+      return null;
+    }
+    const placement = this.resolvePlacement(placementToken);
+    if (placement === null) {
+      this.errorHere(
+        `Invalid note placement "${placementToken.value}"; expected left, right, or over`,
+        DiagnosticCode.MalformedNote,
+      );
+      return null;
+    }
+    this.advance();
+
+    // Optional participant target. `over` may be diagram-wide (no target).
+    let participant: ParticipantId | undefined;
+    if (placement === "over") {
+      if (this.peekKeyword("of")) {
+        this.advance(); // tolerate a stray "of" before the id
+      } else if (this.peek()?.type === TokenType.Identifier) {
+        participant = this.advance().value;
+      }
+    } else if (this.peekKeyword("of")) {
+      this.advance(); // consume "of"
+      if (this.peek()?.type !== TokenType.Identifier) {
+        this.errorHere(
+          `Expected a participant after "of" in a ${placement} note`,
+          DiagnosticCode.MalformedNote,
+        );
+        return null;
+      }
+      participant = this.advance().value;
+    } else if (this.peek()?.type === TokenType.Identifier) {
+      // `note left/right <id>` — a bare id anchors the note.
+      participant = this.advance().value;
+    } else {
+      // left / right with no target is malformed; use `note over` for a
+      // diagram-wide note.
+      this.errorHere(
+        `A ${placement} note must reference a participant, e.g. "note ${placement} of User : text"`,
+        DiagnosticCode.MalformedNote,
+      );
+      return null;
+    }
+
+    // Required `: text` terminator with a non-empty body.
+    if (this.peek()?.type !== TokenType.Colon) {
+      this.errorHere(
+        "Expected ':' after a note to introduce its text",
+        DiagnosticCode.MalformedNote,
+      );
+      return null;
+    }
+    this.advance();
+    const text = this.readLineText();
+    if (text === "") {
+      this.errorHere(
+        "A note must have text after ':'",
+        DiagnosticCode.MalformedNote,
+      );
+      return null;
+    }
+
+    const end = this.previousEnd();
+    return {
+      type: "note",
+      placement,
+      participant,
+      text,
+      range: span(start, end),
+    };
+  }
+
+  /** Map a placement identifier to its NotePlacement, or null when invalid. */
+  private resolvePlacement(token: Token): NotePlacement | null {
+    switch (token.value) {
+      case "left":
+        return "left";
+      case "right":
+        return "right";
+      case "over":
+        return "over";
+      default:
+        return null;
+    }
+  }
+
+  /** Whether the next token is the bare word `of` (without consuming it). */
+  private peekKeyword(word: string): boolean {
+    const token = this.peek();
+    return token?.type === TokenType.Identifier && token.value === word;
   }
 
   /** Parse a message line: `from arrow to (":" label)?`. */

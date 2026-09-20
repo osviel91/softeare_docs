@@ -51,4 +51,37 @@ describe("analyze (end-to-end)", () => {
       "seq.unknown-alias-target",
     );
   });
+
+  it("parses a valid note end-to-end with no diagnostics", () => {
+    const result = analyze(
+      "participant User\nparticipant API\nnote left of User : secret",
+    );
+    expect(result.diagnostics).toEqual([]);
+    const diagram = result.ast as unknown as SequenceDiagram;
+    expect(diagram.notes).toHaveLength(1);
+    expect(diagram.notes[0]).toMatchObject({
+      placement: "left",
+      participant: "User",
+      text: "secret",
+    });
+  });
+
+  it("collects multiple notes in source order through analyze", () => {
+    const result = analyze(
+      "note left of User : a\nnote over : shared\nnote right of API : b",
+    );
+    const diagram = result.ast as unknown as SequenceDiagram;
+    expect(diagram.notes.map((n) => n.text)).toEqual(["a", "shared", "b"]);
+  });
+
+  it("surfaces a malformed note (missing terminator) through analyze", () => {
+    const result = analyze("note left of User");
+    expect(result.diagnostics.map((d) => d.code)).toContain(
+      "seq.malformed-note",
+    );
+  });
+
+  it("keeps the editor usable on a malformed note line", () => {
+    expect(() => analyze("note")).not.toThrow();
+  });
 });

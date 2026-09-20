@@ -15,6 +15,7 @@ import {
   TITLE_HEIGHT,
   type DiagramLayout,
   type MessageLayout,
+  type NoteLayout,
   type ParticipantLayout,
 } from "../../layout/geometry";
 
@@ -68,6 +69,40 @@ function renderMessage(msg: MessageLayout): string {
   return `${line}${head}${label}`;
 }
 
+/** Size of the dog-ear fold on a note's top-right corner, in pixels. */
+const NOTE_FOLD_SIZE = 14;
+
+/** Render a single note box (a rectangle with a folded top-right corner). */
+function renderNote(note: NoteLayout): string {
+  const { x, y, width, height } = note;
+  const fold = NOTE_FOLD_SIZE;
+
+  // The note body is a rectangle whose top-right corner is folded back. The
+  // path traces the outer edge, leaving a triangular notch at the fold.
+  const body =
+    `M${x.toFixed(2)},${(y + fold).toFixed(2)} ` +
+    `L${x.toFixed(2)},${y.toFixed(2)} ` +
+    `L${(x + width - fold).toFixed(2)},${y.toFixed(2)} ` +
+    `L${(x + width).toFixed(2)},${(y + fold).toFixed(2)} ` +
+    `L${(x + width).toFixed(2)},${(y + height).toFixed(2)} ` +
+    `L${x.toFixed(2)},${(y + height).toFixed(2)} Z`;
+  const box = `<path d="${body}" fill="#fff7d6" stroke="#d4a72c" stroke-width="${STROKE_WIDTH}" stroke-linejoin="round"/>`;
+
+  // The fold is a small triangle filling the notch, drawn a shade darker so it
+  // reads as the paper turned over.
+  const foldPath =
+    `M${(x + width - fold).toFixed(2)},${y.toFixed(2)} ` +
+    `L${(x + width - fold).toFixed(2)},${(y + fold).toFixed(2)} ` +
+    `L${(x + width).toFixed(2)},${(y + fold).toFixed(2)} Z`;
+  const foldFill = `<path d="${foldPath}" fill="#efe0a8" stroke="#d4a72c" stroke-width="${STROKE_WIDTH}" stroke-linejoin="round"/>`;
+
+  const labelX = (x + width / 2).toFixed(2);
+  const labelY = (y + height / 2 + 4).toFixed(2);
+  const label = `<text x="${labelX}" y="${labelY}" text-anchor="middle" font-size="12" fill="#5b4600">${escapeXml(note.text)}</text>`;
+
+  return `${box}${foldFill}${label}`;
+}
+
 /** Render the diagram title, centered horizontally near the top. */
 function renderTitle(layout: DiagramLayout): string {
   const title = layout.title ?? "";
@@ -99,6 +134,9 @@ export function renderDiagramToSvg(layout: DiagramLayout): string {
   }
   for (const msg of layout.messages) {
     parts.push(renderMessage(msg));
+  }
+  for (const note of layout.notes ?? []) {
+    parts.push(renderNote(note));
   }
 
   parts.push("</svg>");

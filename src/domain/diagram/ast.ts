@@ -82,6 +82,36 @@ export interface AliasNode {
 /** Any top-level statement in a diagram body. */
 export type Statement = MessageNode;
 
+/**
+ * Where a note is anchored relative to a participant's lifeline.
+ *
+ * - `left` / `right`: the note sits to the left / right of the referenced
+ *   participant's lifeline (requires a `participant`).
+ * - `over`: the note is centered over the referenced participant, or, when no
+ *   participant is given, over the whole diagram.
+ */
+export type NotePlacement = "left" | "right" | "over";
+
+/**
+ * A note, e.g. `note left of User : Confidential`.
+ *
+ * A note is a callout attached to a participant (or, for `over`, spanning the
+ * diagram). It is not a message: it carries no arrow and never participates in
+ * semantic endpoint validation. `participant` is `undefined` for a diagram-wide
+ * `note over` (no target) note.
+ */
+export interface NoteNode {
+  type: "note";
+  /** How the note is anchored to its target lifeline. */
+  placement: NotePlacement;
+  /** The referenced participant, or `undefined` for a diagram-wide note. */
+  participant?: ParticipantId;
+  /** The note's text body (may be empty). */
+  text: string;
+  /** Source span covering the whole note declaration. */
+  range: SourceRange;
+}
+
 /** A diagram title, e.g. `title Authentication Flow`. */
 export interface TitleNode {
   value: string;
@@ -95,4 +125,6 @@ export interface SequenceDiagram {
   /** Alias shorthands, resolved against declared participants at validation. */
   aliases: AliasNode[];
   statements: Statement[];
+  /** Callout notes attached to participants or spanning the diagram. */
+  notes: NoteNode[];
 }

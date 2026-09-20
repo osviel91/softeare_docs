@@ -31,6 +31,24 @@ export const ARROW_HEAD_HEIGHT = 12;
 /** Stroke width used for lifelines and message arrows. */
 export const STROKE_WIDTH = 1.5;
 
+/** Height of a note box, in pixels. */
+export const NOTE_HEIGHT = 32;
+
+/** Vertical space reserved per note within the dedicated notes band. */
+export const NOTE_ROW_HEIGHT = 48;
+
+/** Vertical margin above and below the notes band. */
+export const NOTE_MARGIN_Y = 12;
+
+/** Horizontal gap between a note box and the lifeline it is anchored to. */
+export const NOTE_GAP = 8;
+
+/** Minimum width of a note box. */
+export const NOTE_MIN_WIDTH = 64;
+
+/** Half-width of the span a diagram-wide `over` note covers. */
+export const NOTE_OVER_SPAN_HALF = 96;
+
 /**
  * Geometry of a single participant's lifeline after layout.
  *
@@ -65,6 +83,29 @@ export interface MessageLayout {
   endX: number;
 }
 
+/** Geometry of a single note box after layout.
+ *
+ * `x`/`y` is the top-left corner of the box; `width`/`height` bound it. The
+ * box is positioned relative to the lifeline it is anchored to (see the layout
+ * engine). For a diagram-wide `over` note, `participant` is `undefined`.
+ */
+export interface NoteLayout {
+  /** How the note is anchored to a lifeline (or the whole diagram). */
+  placement: "left" | "right" | "over";
+  /** Referenced participant id, or `undefined` for a diagram-wide note. */
+  participant?: string;
+  /** The note text, retained for reference and debugging. */
+  text: string;
+  /** Top edge of the note box. */
+  y: number;
+  /** Left edge of the note box. */
+  x: number;
+  /** Width of the note box. */
+  width: number;
+  /** Height of the note box (always {@link NOTE_HEIGHT}). */
+  height: number;
+}
+
 /** The full geometric description of a diagram, ready to be rendered. */
 export interface DiagramLayout {
   width: number;
@@ -73,4 +114,5 @@ export interface DiagramLayout {
   title?: string;
   participants: ParticipantLayout[];
   messages: MessageLayout[];
+  notes: NoteLayout[];
 }

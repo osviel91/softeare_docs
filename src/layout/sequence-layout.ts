@@ -13,7 +13,11 @@
  * - Arrow tails/heads sit exactly on the sender/receiver lifelines.
  * - The diagram widens to fit the widest label and lengthens for long labels.
  */
-import type { ParticipantId, SequenceDiagram } from "../domain/diagram/ast";
+import type {
+  NoteNode,
+  ParticipantId,
+  SequenceDiagram,
+} from "../domain/diagram/ast";
 import {
   MARGIN_X,
   MIN_PARTICIPANT_WIDTH,
@@ -21,8 +25,15 @@ import {
   PARTICIPANT_SPACING,
   TITLE_HEIGHT,
   MESSAGE_ROW_HEIGHT,
+  NOTE_GAP,
+  NOTE_HEIGHT,
+  NOTE_MARGIN_Y,
+  NOTE_MIN_WIDTH,
+  NOTE_OVER_SPAN_HALF,
+  NOTE_ROW_HEIGHT,
   type DiagramLayout,
   type MessageLayout,
+  type NoteLayout,
   type ParticipantLayout,
 } from "./geometry";
 
@@ -38,6 +49,80 @@ function participantBoxWidth(label: string): number {
   return Math.max(MIN_PARTICIPANT_WIDTH, estimateLabelWidth(label) + 16);
 }
 
+/** Estimate the pixel width of a note body, bounded by a minimum. */
+function noteWidth(text: string): number {
+  if (text.length === 0) return NOTE_MIN_WIDTH;
+  return Math.max(NOTE_MIN_WIDTH, text.length * 7 + 16);
+}
+
+/**
+ * Layout each note into its own box within a dedicated band placed below the
+ * messages. Notes never disturb message geometry: they get their own rows, so
+ * messages keep their source-order stacking and the diagram stays readable.
+ *
+ * Horizontal placement depends on the note's anchor:
+ * - `left` / `right` of a participant sit just left / right of its lifeline.
+ * - `over` a participant is centered on its lifeline.
+ * - `over` with no participant spans the whole diagram, centered.
+ */
+function layoutNotes(
+  notes: NoteNode[],
+  participantsByX: Map<string, number>,
+  messagesBottomY: number,
+  diagramWidth: number,
+): NoteLayout[] {
+  const bandTopY = messagesBottomY + NOTE_MARGIN_Y;
+  return notes.map((note, index) => {
+    const width = noteWidth(note.text);
+    const boxX = placeNoteX(note, participantsByX, diagramWidth, width);
+    const y = bandTopY + index * NOTE_ROW_HEIGHT + NOTE_MARGIN_Y;
+    return {
+      placement: note.placement,
+      participant: note.participant,
+      text: note.text,
+      y,
+      x: boxX,
+      width,
+      height: NOTE_HEIGHT,
+    };
+  });
+}
+
+/** Compute the left edge of a note box from its placement and target. */
+function placeNoteX(
+  note: NoteNode,
+  participantsByX: Map<string, number>,
+  diagramWidth: number,
+  width: number,
+): number {
+  if (note.placement === "over" && !note.participant) {
+    // Diagram-wide note: center a box no wider than twice the target span.
+    const span = Math.min(NOTE_OVER_SPAN_HALF * 2, diagramWidth - MARGIN_X * 2);
+    return (diagramWidth - span) / 2;
+  }
+
+  const targetX = note.participant
+    ? participantsByX.get(note.participant)
+    : undefined;
+  if (targetX === undefined) {
+    // Anchored to a participant that was never laid out (semantic error):
+    // fall back to the left margin.
+    return MARGIN_X;
+  }
+
+  switch (note.placement) {
+    case "left":
+      return Math.max(MARGIN_X, targetX - width - NOTE_GAP);
+    case "right":
+      return targetX + NOTE_GAP;
+    case "over":
+      // Center on the lifeline, but keep the box inside the left margin.
+      return Math.max(MARGIN_X, targetX - width / 2);
+    default:
+      return MARGIN_X;
+  }
+}
+
 /** Build the layout for an empty diagram (no participants). */
 function emptyLayout(): DiagramLayout {
   return {
@@ -45,6 +130,7 @@ function emptyLayout(): DiagramLayout {
     height: PARTICIPANT_BOX_HEIGHT + TITLE_HEIGHT,
     participants: [],
     messages: [],
+    notes: [],
   };
 }
 
@@ -121,11 +207,29 @@ export function layoutDiagram(diagram: SequenceDiagram): DiagramLayout {
 
   const width = MARGIN_X + n * PARTICIPANT_SPACING;
 
-  return {
+  // Layout notes below the messages, anchoring each to its target lifeline.
+  const participantsByX = new Map<string, number>(
+    participants.map((p) => [p.id, p.x]),
+  );
+  const notes = layoutNotes(diagram.notes, participantsByX, bottomY, width);
+
+  // A right/over note may extend past the rightmost participant, so widen the
+  // canvas to fit it; the notes band also lengthens the diagram.
+  const rightEdge = notes.reduce(
+    (max, note) => Math.max(max, note.x + note.width),
     width,
-    height: bottomY,
+  );
+  const notesBottomY =
+    notes.length > 0
+      ? bottomY + notes.length * NOTE_ROW_HEIGHT + NOTE_MARGIN_Y
+      : bottomY;
+
+  return {
+    width: Math.max(width, rightEdge),
+    height: notesBottomY,
     title: diagram.title ? diagram.title.value : undefined,
     participants,
     messages,
+    notes,
   };
 }

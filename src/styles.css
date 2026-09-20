@@ -470,6 +470,14 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+.editor__input {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+}
+
+/* The shared textarea, used by the DSL editor and the markdown editor alike. */
 .editor__textarea {
   flex: 1 1 auto;
   min-height: 0;
@@ -488,6 +496,55 @@ body {
 
 .editor__textarea::placeholder {
   color: var(--text-faint);
+}
+
+/*
+ * Inside the DSL editor the textarea is transparent and a highlight layer behind
+ * it shows the same text, so participant names can be bold. Both use one box,
+ * font and line grid, so a bold name lands exactly on the glyph underneath it,
+ * and `scrollbar-gutter: stable` keeps their content widths equal once the
+ * textarea grows a scrollbar.
+ */
+.editor__input .editor__highlight,
+.editor__input .editor__textarea {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 12px 14px;
+  border: none;
+  font-family: var(--font-mono);
+  font-size: var(--editor-font-size);
+  line-height: var(--editor-line-height);
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  scrollbar-gutter: stable;
+  tab-size: 2;
+}
+
+.editor__input .editor__highlight {
+  overflow: hidden;
+  pointer-events: none;
+  color: var(--text);
+  background: var(--bg-inset);
+}
+
+/* Participant and actor names read as the same identifiers the canvas draws. */
+.editor__input .editor__highlight strong {
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.editor__input .editor__textarea {
+  overflow: auto;
+  color: transparent;
+  caret-color: var(--text);
+  background: transparent;
+}
+
+.editor__input .editor__textarea::selection {
+  background: var(--accent-soft);
 }
 
 .editor__footer {

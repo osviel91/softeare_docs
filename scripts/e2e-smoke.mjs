@@ -307,6 +307,67 @@ async function runChecks(browser) {
     await editor.inputValue(),
   );
 
+  // Participant names are bolded by a highlight layer behind a transparent
+  // textarea. If the two layers' fonts or boxes disagree, the bold names drift
+  // off the glyphs, which only a real browser can show.
+  console.log("\nParticipant highlighting:");
+  await editor.fill("participant API\nAPI -> DB: hi\n");
+  const boldNames = await page
+    .locator('[data-testid="editor-highlight"] strong')
+    .count();
+  check(
+    "participant names are bolded in the editor",
+    boldNames === 3,
+    `${boldNames} bold names`,
+  );
+  check(
+    "highlight layer mirrors the source",
+    (await page.locator('[data-testid="editor-highlight"]').textContent()) ===
+      (await editor.inputValue()),
+  );
+  const layerMetrics = await page.evaluate(() => {
+    const highlight = document.querySelector(".editor__highlight");
+    const textarea = document.querySelector(".editor__textarea");
+    const a = getComputedStyle(highlight);
+    const b = getComputedStyle(textarea);
+    const ra = highlight.getBoundingClientRect();
+    const rb = textarea.getBoundingClientRect();
+    return {
+      sameFont: a.fontFamily === b.fontFamily && a.fontSize === b.fontSize,
+      sameLineHeight: a.lineHeight === b.lineHeight,
+      samePadding: a.padding === b.padding,
+      sameWrap: a.whiteSpace === b.whiteSpace,
+      sameBox:
+        Math.abs(ra.left - rb.left) < 0.5 &&
+        Math.abs(ra.top - rb.top) < 0.5 &&
+        Math.abs(ra.width - rb.width) < 0.5 &&
+        Math.abs(ra.height - rb.height) < 0.5,
+    };
+  });
+  check("highlight layer shares the textarea's font", layerMetrics.sameFont);
+  check(
+    "highlight layer shares the textarea's line height",
+    layerMetrics.sameLineHeight,
+  );
+  check(
+    "highlight layer shares the textarea's wrapping",
+    layerMetrics.sameWrap,
+  );
+  check("highlight layer covers the textarea exactly", layerMetrics.sameBox);
+
+  // Retyping a declaration's name carries its usages with it, so the diagram
+  // never collapses into "unknown participant" mid-edit.
+  await editor.evaluate((el) => {
+    el.focus();
+    el.setSelectionRange(15, 15);
+  });
+  await page.keyboard.type("X");
+  check(
+    "renaming a declaration rewrites its usages",
+    (await editor.inputValue()) === "participant APIX\nAPIX -> DB: hi\n",
+    await editor.inputValue(),
+  );
+
   console.log("\nLive editing updates the preview:");
   await page.locator('[data-testid="dsl-textarea"]').fill(REPLACEMENT_SOURCE);
   const editedText = await waitForText(

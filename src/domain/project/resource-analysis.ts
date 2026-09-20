@@ -12,8 +12,12 @@
  * *candidate* references, the symbols the file declares, its headings, and the
  * problems that can be judged without looking anywhere else.
  */
-import type { SequenceDiagram, SourceRange, Statement } from "../diagram/ast";
+import type { SequenceDiagram, Statement } from "../diagram/ast";
 import { walkStatements } from "../diagram/ast";
+import {
+  collectParticipantMentions,
+  participantUsagesOf,
+} from "../diagram/participant-mentions";
 import type {
   ResourceDescriptor,
   ResourceAnalysis,
@@ -86,68 +90,34 @@ export function inferSymbolRole(
   return undefined;
 }
 
-/** Escape a string for use inside a regular expression. */
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-/**
- * The span of `name` as a whole word inside `line`, or `null` when absent.
- *
- * The AST records a declaration's and a statement's range, but a range covers
- * the whole construct rather than the participant token inside it. Renaming and
- * hover both need the token, so it is located here — as a whole word, so
- * `Payment` never matches inside `PaymentService`.
- */
-function wholeWordSpanInLine(
-  line: string,
-  name: string,
-): { column: number; length: number } | null {
-  if (name === "") return null;
-  const pattern = new RegExp(`(?<![\\w$])${escapeRegExp(name)}(?![\\w$])`);
-  const match = pattern.exec(line);
-  if (!match) return null;
-  return { column: match.index, length: name.length };
-}
-
-/** The span of a name on a 0-based source line, for a node at that line. */
-function nameRangeOnLine(
-  source: string,
-  line: number,
-  name: string,
-): SourceRange | null {
-  const text = source.replace(/\r\n?/g, "\n").split("\n")[line];
-  if (text === undefined) return null;
-  const span = wholeWordSpanInLine(text, name);
-  if (!span) return null;
-  return {
-    start: { line, column: span.column },
-    end: { line, column: span.column + span.length },
-  };
-}
-
 /**
  * The symbols a diagram declares: one per lifeline.
  *
  * The symbol's range is narrowed to the participant's own name rather than the
  * whole declaration line, because that span is what a rename rewrites and what a
  * hover should underline. `sourceRange` is therefore the identifier, while
- * navigation to "the declaration" still lands on the right line.
+ * navigation to "the declaration" still lands on the right line. The span comes
+ * from the one module that defines where a participant name is written, so the
+ * index, the editor's highlight and live rename cannot disagree about it.
  */
 function diagramSymbols(
   ast: SequenceDiagram,
   source: string,
   resourceId: string,
 ): ProjectSymbol[] {
+  const declarations = collectParticipantMentions(ast, source).filter(
+    (mention) => mention.context === "declaration",
+  );
   return ast.participants.map((participant) => {
+    const declaration = declarations.find(
+      (mention) => mention.range.start.line === participant.range.start.line,
+    );
     const symbol: ProjectSymbol = {
       id: `participant:${participant.id}`,
       name: participant.id,
       kind: participant.participantType === "actor" ? "actor" : "participant",
       resourceId,
-      sourceRange:
-        nameRangeOnLine(source, participant.range.start.line, participant.id) ??
-        participant.range,
+      sourceRange: declaration?.range ?? participant.range,
     };
     const role = inferSymbolRole(participant.label || participant.id);
     if (role) symbol.role = role;
@@ -186,106 +156,25 @@ function referencedParticipantIds(ast: SequenceDiagram): Set<string> {
   return referenced;
 }
 
-/** A statement that can mention a participant by name, with its source line. */
-interface ParticipantMention {
-  name: string;
-  line: number;
-  context: ProjectSymbolUsage["context"];
-}
-
 /**
- * Every participant mention a diagram makes, with the line it is on.
+ * Every participant usage in a diagram, with the exact span it occupies.
  *
- * The AST records which participants a statement *uses* but not the span of each
- * name — the statement's range covers the whole construct. Resolving a rename
- * needs the exact span, so the mention's line is re-read here and the name is
- * located as a whole word in the part of the line that can hold an endpoint.
- *
- * That part is everything before the first `:`, which is where the DSL puts a
- * message label, a note's body and, in an alias, nothing at all. Restricting the
- * search this way is what keeps a rename from rewriting prose: in
- * `A -> B: ask PaymentService`, the label is outside the span considered. Whole-word
- * matching keeps `Payment` from matching inside `PaymentService`.
- */
-function participantMentions(ast: SequenceDiagram): ParticipantMention[] {
-  const mentions: ParticipantMention[] = [];
-  const add = (
-    name: string,
-    range: { start: { line: number } },
-    context: ProjectSymbolUsage["context"],
-  ): void => {
-    mentions.push({ name, line: range.start.line, context });
-  };
-
-  for (const statement of walkStatements(ast.statements)) {
-    switch (statement.type) {
-      case "message":
-        add(statement.from, statement.range, "message");
-        add(statement.to, statement.range, "message");
-        break;
-      case "activation":
-        add(statement.participant, statement.range, "activation");
-        break;
-      default:
-        break;
-    }
-  }
-  for (const note of ast.notes) {
-    for (const participant of note.participants) {
-      add(participant, note.range, "note");
-    }
-  }
-  for (const alias of ast.aliases) {
-    add(alias.target, alias.range, "alias");
-  }
-  return mentions;
-}
-
-/**
- * Resolve mentions to exact spans.
- *
- * A mention is looked for as a whole word in the endpoint segment of its line —
- * everything before the first `:` — and one span is produced per occurrence, so
- * a self-message (`A -> A: …`) yields both of its endpoints.
+ * A usage is any mention other than the declaration itself — a message's two
+ * endpoints, an activation, a note anchor or an alias target — located by the
+ * shared participant-mention module, so find-references, semantic rename and
+ * the editor's live rename all rewrite precisely the same spans.
  */
 function participantUsages(
   ast: SequenceDiagram,
   source: string,
   resourceId: string,
 ): ProjectSymbolUsage[] {
-  const lines = source.replace(/\r\n?/g, "\n").split("\n");
-  const usages: ProjectSymbolUsage[] = [];
-  const seen = new Set<string>();
-
-  for (const mention of participantMentions(ast)) {
-    const line = lines[mention.line];
-    if (line === undefined || mention.name === "") continue;
-    const colon = line.indexOf(":");
-    const segment = colon === -1 ? line : line.slice(0, colon);
-    const pattern = new RegExp(
-      `(?<![\\w$])${escapeRegExp(mention.name)}(?![\\w$])`,
-      "g",
-    );
-    let match: RegExpExecArray | null;
-    while ((match = pattern.exec(segment)) !== null) {
-      const start = { line: mention.line, column: match.index };
-      const end = {
-        line: mention.line,
-        column: match.index + mention.name.length,
-      };
-      const key = `${start.line}:${start.column}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      usages.push({
-        resourceId,
-        name: mention.name,
-        range: { start, end },
-        context: mention.context,
-      });
-    }
-  }
-
-  return usages;
+  return participantUsagesOf(ast, source).map((mention) => ({
+    resourceId,
+    name: mention.name,
+    range: mention.range,
+    context: mention.context,
+  }));
 }
 
 /** Map one event-flow diagnostic onto the project diagnostic shape. */

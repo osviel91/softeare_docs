@@ -21,7 +21,13 @@ import { useEditorReveal } from "./use-reveal";
 import { positionToOffset } from "../../language/source-position";
 import type { CompletionItem } from "../../domain/project/completion";
 import type { HoverInfo } from "../../domain/project/hover";
+import type { ParticipantMention } from "../../domain/diagram/participant-mentions";
 import { SEQUENCE_SNIPPETS, type EditorSnippet } from "./snippets";
+import { participantSegments } from "./participant-highlight";
+import { applyLiveRename } from "./live-rename";
+
+/** A shared empty list, so a missing prop does not churn memo dependencies. */
+const NO_MENTIONS: readonly ParticipantMention[] = [];
 
 /**
  * What the editor needs to *show* about a problem.
@@ -74,6 +80,13 @@ export interface EditorProps {
    * at a glance. Absent for a language that numbers nothing.
    */
   lineBadges?: ReadonlyMap<number, number>;
+  /**
+   * Every participant mention in `value`, with its exact span. The editor bolds
+   * them in the highlight layer, and uses a declaration's span to rename that
+   * lifeline's usages live while its identifier is retyped. The shell computes
+   * these from the parse; the editor never reads the AST itself.
+   */
+  participantMentions?: readonly ParticipantMention[];
 }
 
 export default function Editor({
@@ -86,9 +99,11 @@ export default function Editor({
   onCaretChange,
   snippets = SEQUENCE_SNIPPETS,
   lineBadges,
+  participantMentions,
 }: EditorProps) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const gutterRef = useRef<HTMLDivElement | null>(null);
+  const highlightRef = useRef<HTMLPreElement | null>(null);
   const [snippetsOpen, setSnippetsOpen] = useState(false);
   // True while a drag is hovering the textarea, so it can show a drop hint.
   const [isDropTarget, setIsDropTarget] = useState(false);
@@ -99,6 +114,11 @@ export default function Editor({
   useEditorReveal(textareaRef, reveal, value);
 
   const lineCount = useMemo(() => value.split("\n").length, [value]);
+  // The highlight layer's markup: the same text, with participant names marked.
+  const segments = useMemo(
+    () => participantSegments(value, participantMentions ?? NO_MENTIONS),
+    [value, participantMentions],
+  );
   // A diagram that numbers its messages reserves a badge column; a document
   // that numbers nothing keeps the plain, narrower gutter.
   const showSteps = (lineBadges?.size ?? 0) > 0;
@@ -269,10 +289,14 @@ export default function Editor({
     textarea.setSelectionRange(caret, caret);
   });
 
-  /** Keep the gutter aligned with the textarea's own scrolling. */
+  /** Keep the gutter and highlight layer aligned with the textarea's scrolling. */
   const syncScroll = (element: HTMLTextAreaElement) => {
     if (gutterRef.current) {
       gutterRef.current.scrollTop = element.scrollTop;
+    }
+    if (highlightRef.current) {
+      highlightRef.current.scrollTop = element.scrollTop;
+      highlightRef.current.scrollLeft = element.scrollLeft;
     }
   };
 
@@ -345,58 +369,84 @@ export default function Editor({
             );
           })}
         </div>
-        <textarea
-          ref={textareaRef}
-          id="dsl-input"
-          className={`editor__textarea${
-            isDropTarget ? " editor__textarea--drop" : ""
-          }`}
-          data-testid="dsl-textarea"
-          aria-label="Sequence DSL"
-          spellCheck={false}
-          value={value}
-          onChange={(event) => {
-            onChange(event.target.value);
-            refreshCompletions(event.currentTarget);
-          }}
-          onKeyDown={onEditorKeyDown}
-          onKeyUp={(event) => {
-            // A key the popup consumed must not rebuild the list underneath it,
-            // or the choice an arrow key just made would be reset.
-            if (handledKey.current === event.key) {
-              handledKey.current = null;
-              return;
-            }
-            refreshCompletions(event.currentTarget);
-          }}
-          onClick={(event) => refreshCompletions(event.currentTarget)}
-          onBlur={() => {
-            setCompletions([]);
-            setCompletionIndex(null);
-          }}
-          onMouseMove={(event) => {
-            if (!describe) return;
-            const info = describe(
-              offsetFromPoint(
-                event.currentTarget,
-                event.clientX,
-                event.clientY,
+        <div className="editor__input">
+          <pre
+            ref={highlightRef}
+            className="editor__highlight"
+            data-testid="editor-highlight"
+            aria-hidden="true"
+          >
+            {segments.map((segment, index) =>
+              segment.participant ? (
+                <strong key={index}>{segment.text}</strong>
+              ) : (
+                <span key={index}>{segment.text}</span>
               ),
-            );
-            setHover(
-              info ? { info, x: event.clientX, y: event.clientY } : null,
-            );
-          }}
-          onMouseLeave={() => setHover(null)}
-          onScroll={(event) => syncScroll(event.currentTarget)}
-          onDragOver={onDragOver}
-          onDragLeave={() => setIsDropTarget(false)}
-          onDrop={onDrop}
-          placeholder="participant User
+            )}
+          </pre>
+          <textarea
+            ref={textareaRef}
+            id="dsl-input"
+            className={`editor__textarea${
+              isDropTarget ? " editor__textarea--drop" : ""
+            }`}
+            data-testid="dsl-textarea"
+            aria-label="Sequence DSL"
+            spellCheck={false}
+            value={value}
+            onChange={(event) => {
+              const next = event.target.value;
+              // Retyping a lifeline's name rewrites its usages, so the diagram
+              // never collapses into "unknown participant" mid-edit.
+              const rename = applyLiveRename({
+                previous: value,
+                next,
+                caret: event.target.selectionStart ?? next.length,
+                mentions: participantMentions ?? NO_MENTIONS,
+              });
+              if (rename.renamed) pendingCaret.current = rename.caret;
+              onChange(rename.source);
+              refreshCompletions(event.currentTarget);
+            }}
+            onKeyDown={onEditorKeyDown}
+            onKeyUp={(event) => {
+              // A key the popup consumed must not rebuild the list underneath it,
+              // or the choice an arrow key just made would be reset.
+              if (handledKey.current === event.key) {
+                handledKey.current = null;
+                return;
+              }
+              refreshCompletions(event.currentTarget);
+            }}
+            onClick={(event) => refreshCompletions(event.currentTarget)}
+            onBlur={() => {
+              setCompletions([]);
+              setCompletionIndex(null);
+            }}
+            onMouseMove={(event) => {
+              if (!describe) return;
+              const info = describe(
+                offsetFromPoint(
+                  event.currentTarget,
+                  event.clientX,
+                  event.clientY,
+                ),
+              );
+              setHover(
+                info ? { info, x: event.clientX, y: event.clientY } : null,
+              );
+            }}
+            onMouseLeave={() => setHover(null)}
+            onScroll={(event) => syncScroll(event.currentTarget)}
+            onDragOver={onDragOver}
+            onDragLeave={() => setIsDropTarget(false)}
+            onDrop={onDrop}
+            placeholder="participant User
 participant API
 
 User -> API: Login"
-        />
+          />
+        </div>
       </div>
 
       {completions.length > 0 && (

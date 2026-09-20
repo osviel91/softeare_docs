@@ -46,6 +46,30 @@ describe("App shell", () => {
     expect(printed).toEqual(["1", "2", "3", "4"]);
   });
 
+  it("bolds participants and follows a declaration rename through the source", () => {
+    render(<App />);
+    const textarea = screen.getByTestId("dsl-textarea") as HTMLTextAreaElement;
+    const highlight = screen.getByTestId("editor-highlight");
+
+    // The seeded sample declares User/API/DB and names them in its messages.
+    expect(
+      [...highlight.querySelectorAll("strong")].map((el) => el.textContent),
+    ).toContain("API");
+
+    const renamed = textarea.value.replace(
+      "participant API",
+      "participant Gateway",
+    );
+    fireEvent.change(textarea, { target: { value: renamed } });
+
+    // Every usage followed the declaration, so the diagram cannot collapse into
+    // "unknown participant" while the name is being retyped.
+    expect(textarea.value).toContain("participant Gateway");
+    expect(textarea.value).toContain("User ->> Gateway: Login");
+    expect(textarea.value).not.toMatch(/\bAPI\b/);
+    expect(screen.getByTestId("preview-svg")).toBeInTheDocument();
+  });
+
   it("updates the preview when the editor text changes", () => {
     render(<App />);
     fireEvent.change(screen.getByTestId("dsl-textarea"), {

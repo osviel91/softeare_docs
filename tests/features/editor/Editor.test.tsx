@@ -11,6 +11,7 @@ import {
   completeAt,
   type CompletionItem,
 } from "../../../src/domain/project/completion";
+import { collectParticipantMentions } from "../../../src/domain/diagram/participant-mentions";
 import { analyze } from "../../../src/language/analyze";
 import { analyzeEventFlow } from "../../../src/language/eventflow/parser";
 import {
@@ -539,5 +540,63 @@ describe("Editor — completion keyboard", () => {
     fireEvent.keyDown(textarea, { key: "Escape" });
     fireEvent.keyUp(textarea, { key: "Escape" });
     expect(screen.queryByTestId("completions")).toBeNull();
+  });
+});
+
+describe("Editor — participant highlighting and live rename", () => {
+  /** A controlled editor wired to participant spans, as the shell wires it. */
+  function MentionsHarness({ initial }: { initial: string }) {
+    const [value, setValue] = useState(initial);
+    const { ast } = analyze(value);
+    const mentions = ast ? collectParticipantMentions(ast, value) : [];
+    return (
+      <Editor
+        value={value}
+        onChange={setValue}
+        participantMentions={mentions}
+      />
+    );
+  }
+
+  const boldNames = (): string[] =>
+    [...screen.getByTestId("editor-highlight").querySelectorAll("strong")].map(
+      (element) => element.textContent ?? "",
+    );
+
+  it("bolds participant and actor names in the highlight layer", () => {
+    render(
+      <MentionsHarness
+        initial={"actor User\nparticipant API\nUser -> API: Login\n"}
+      />,
+    );
+    expect(boldNames()).toEqual(["User", "API", "User", "API"]);
+    // The layer reproduces the source exactly, so the bold glyphs sit on top of
+    // the transparent textarea's own.
+    expect(screen.getByTestId("editor-highlight").textContent).toBe(
+      "actor User\nparticipant API\nUser -> API: Login\n",
+    );
+  });
+
+  it("renames usages as the declaration's name is retyped", () => {
+    render(<MentionsHarness initial={"participant API\nAPI -> DB: hi\n"} />);
+    const textarea = screen.getByTestId("dsl-textarea") as HTMLTextAreaElement;
+
+    fireEvent.change(textarea, {
+      target: { value: "participant APIX\nAPI -> DB: hi\n" },
+    });
+
+    expect(textarea.value).toBe("participant APIX\nAPIX -> DB: hi\n");
+    expect(boldNames()).toEqual(["APIX", "APIX", "DB"]);
+  });
+
+  it("does not rewrite the document when a message endpoint is edited", () => {
+    render(<MentionsHarness initial={"participant API\nAPI -> DB: hi\n"} />);
+    const textarea = screen.getByTestId("dsl-textarea") as HTMLTextAreaElement;
+
+    fireEvent.change(textarea, {
+      target: { value: "participant API\nSVC -> DB: hi\n" },
+    });
+
+    expect(textarea.value).toBe("participant API\nSVC -> DB: hi\n");
   });
 });

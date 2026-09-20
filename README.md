@@ -84,6 +84,18 @@ one place rather than per component.
   diagram's circled step number beside each message line, so a number on the
   canvas — the one `note on 3` refers to — can be located in the source at a
   glance (`src/domain/diagram/step-numbers.ts`).
+- **Participant highlighting and live rename.** Participant and actor names are
+  drawn bold and in the accent colour, both where they are declared and at every
+  message, activation, note and alias that names them. A `<textarea>` cannot style
+  part of its own text, so a highlight layer sits behind a transparent textarea
+  and both share one box, font and line grid
+  (`src/features/editor/participant-highlight.ts`). Because the editor knows each
+  mention's exact span, retyping a declaration's name rewrites its usages as you
+  type (`src/features/editor/live-rename.ts`) — a rename never collapses the
+  diagram into "unknown participant", never touches prose in a label, and is
+  refused when the new name is already another lifeline's. The spans come from
+  the same module the project index uses, so find-references, semantic rename and
+  the live rename cannot disagree.
 - **Auto-update.** With the switch on, the canvas re-renders as you type. Switched
   off, the canvas keeps the last rendered diagram and a **Render** button appears,
   so a large diagram does not re-lay out on every keystroke.

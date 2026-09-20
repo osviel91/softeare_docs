@@ -120,6 +120,7 @@ import {
 } from "./domain/project/project-index";
 import { nodeIdAtOffset, nodeRangeById } from "./domain/diagram/node-id";
 import { messageStepNumbers } from "./domain/diagram/step-numbers";
+import { collectParticipantMentions } from "./domain/diagram/participant-mentions";
 import { isValid } from "./language/validator/validator";
 import { offsetToPosition, rangeToOffsets } from "./language/source-position";
 import { analyze } from "./language/analyze";
@@ -728,6 +729,16 @@ export default function App() {
         ? new Map<number, number>()
         : messageStepNumbers(ast),
     [isEventFlow, ast],
+  );
+
+  // Every participant mention, for the editor's bold names and its live rename.
+  // The editor never sees the AST; it receives these spans.
+  const participantMentions = useMemo(
+    () =>
+      noteMode || isEventFlow || ast === null
+        ? []
+        : collectParticipantMentions(ast, source),
+    [noteMode, isEventFlow, ast, source],
   );
 
   const editorDiagnostics = useMemo(() => {
@@ -1774,6 +1785,7 @@ export default function App() {
                 onCaretChange={onCaretChange}
                 snippets={isEventFlow ? EVENT_FLOW_SNIPPETS : SEQUENCE_SNIPPETS}
                 lineBadges={lineBadges}
+                participantMentions={participantMentions}
               />
             </>
           )}

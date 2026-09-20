@@ -134,6 +134,19 @@ function buildFakeFolder(): FakeDirectory {
 let fakeRoot: FakeDirectory;
 
 beforeEach(() => {
+  // The hidden-path store is keyed by folder name (`sequencediagrams.hidden.<name>`)
+  // and mirrored to `localStorage`, which jsdom shares across every test in a
+  // file. Every test here opens the same "Test Folder" while rebuilding the fake
+  // tree from scratch, so a path an earlier test hid — the delete-project test
+  // hides a whole project — would hide the recreated one and leave this test
+  // looking at an empty explorer. Wipe the slate first.
+  try {
+    localStorage.clear();
+  } catch {
+    // Node also exposes a global `localStorage` that throws unless it is started
+    // with the experimental webstorage flags; there is nothing to clear there.
+  }
+
   fakeRoot = buildFakeFolder();
   // jsdom has no File System Access API, so define a stub first (this makes the
   // app's feature-detection report the picker as available) and then point the

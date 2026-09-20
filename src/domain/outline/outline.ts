@@ -23,6 +23,15 @@ import {
   type SourceRange,
   type Statement,
 } from "../diagram/ast";
+import {
+  brokersOf,
+  channelsOf,
+  eventsOf,
+  publicationsOf,
+  servicesOf,
+  subscriptionsOf,
+  type EventFlow,
+} from "../eventflow/ast";
 import { rangeContainsPosition } from "../../language/source-position";
 
 /** What an outline row represents, so a panel can pick a glyph and a tone. */
@@ -509,6 +518,218 @@ export function markdownOutline(markdown: string): OutlineNode[] {
     };
     siblings.push(node);
     parents.push({ level, node });
+  }
+
+  return roots;
+}
+
+/**
+ * The outline of an event flow: what it declares, then what happens.
+ *
+ * An event-driven document has no sequence to walk, so the tree is grouped by
+ * what a reader looks for: the events (the vocabulary), the participants (who
+ * produces and consumes), the channels they travel through, and finally the
+ * causal edges grouped per producer. Grouping the edges by producer is what
+ * makes a chain visible in the tree — the same service appears as a consumer in
+ * one group and a producer in another.
+ */
+export function eventFlowOutline(flow: EventFlow | null): OutlineNode[] {
+  if (!flow) return [];
+
+  const section = (id: string, label: string, line: number): OutlineNode => ({
+    id,
+    label,
+    kind: "message",
+    line,
+    children: [],
+  });
+  const child = (
+    parent: OutlineNode,
+    label: string,
+    kind: OutlineKind,
+    line: number,
+    range?: OutlineNode["range"],
+  ): OutlineNode => {
+    const node: OutlineNode = {
+      id: `${parent.id}.${parent.children.length}`,
+      label,
+      kind,
+      line,
+      range,
+      children: [],
+    };
+    parent.children.push(node);
+    return node;
+  };
+
+  const roots: OutlineNode[] = [];
+  if (flow.title) {
+    roots.push({
+      id: "0",
+      label: flow.title.value,
+      kind: "title",
+      line: flow.title.range.start.line + 1,
+      range: flow.title.range,
+      children: [],
+    });
+  }
+
+  const events = eventsOf(flow);
+  if (events.length > 0) {
+    const eventsSection = section(
+      String(roots.length),
+      `Events (${events.length})`,
+      events[0].range.start.line + 1,
+    );
+    for (const event of events) {
+      const node = child(
+        eventsSection,
+        event.name,
+        "message",
+        event.range.start.line + 1,
+        event.range,
+      );
+      // Metadata is part of what an event *is*, so it hangs off the event rather
+      // than being flattened into the section.
+      for (const entry of event.metadata) {
+        child(
+          node,
+          `${entry.key}: ${entry.value}`,
+          "note",
+          entry.range.start.line + 1,
+          entry.range,
+        );
+      }
+    }
+    roots.push(eventsSection);
+  }
+
+  const services = servicesOf(flow);
+  if (services.length > 0) {
+    const servicesSection = section(
+      String(roots.length),
+      "Services",
+      services[0].range.start.line + 1,
+    );
+    for (const service of services) {
+      child(
+        servicesSection,
+        service.role === "service"
+          ? service.name
+          : `${service.name} (${service.role})`,
+        "participant",
+        service.range.start.line + 1,
+        service.range,
+      );
+    }
+    roots.push(servicesSection);
+  }
+
+  const channels = channelsOf(flow);
+  if (channels.length > 0) {
+    const channelsSection = section(
+      String(roots.length),
+      "Channels",
+      channels[0].range.start.line + 1,
+    );
+    for (const channel of channels) {
+      child(
+        channelsSection,
+        channel.broker
+          ? `${channel.name} (${channel.channelKind} on ${channel.broker})`
+          : `${channel.name} (${channel.channelKind})`,
+        "note",
+        channel.range.start.line + 1,
+        channel.range,
+      );
+    }
+    roots.push(channelsSection);
+  }
+
+  const brokers = brokersOf(flow);
+  if (brokers.length > 0) {
+    const brokersSection = section(
+      String(roots.length),
+      "Brokers",
+      brokers[0].range.start.line + 1,
+    );
+    for (const broker of brokers) {
+      child(
+        brokersSection,
+        broker.name,
+        "note",
+        broker.range.start.line + 1,
+        broker.range,
+      );
+    }
+    roots.push(brokersSection);
+  }
+
+  const publications = publicationsOf(flow);
+  const subscriptions = subscriptionsOf(flow);
+  if (publications.length > 0 || subscriptions.length > 0) {
+    const flowSection = section(
+      String(roots.length),
+      "Flow",
+      (publications[0] ?? subscriptions[0]).range.start.line + 1,
+    );
+    // Producers first: the causal reading of the document starts at what
+    // publishes, and each producer's publishes and consumes sit together.
+    const byProducer = new Map<string, OutlineNode>();
+    for (const publication of publications) {
+      let node = byProducer.get(publication.producer);
+      if (!node) {
+        node = child(
+          flowSection,
+          publication.producer,
+          "participant",
+          publication.range.start.line + 1,
+        );
+        byProducer.set(publication.producer, node);
+      }
+      child(
+        node,
+        `publishes ${publication.event}${
+          publication.channel ? ` to ${publication.channel}` : ""
+        }`,
+        "message",
+        publication.range.start.line + 1,
+        publication.range,
+      );
+    }
+    for (const subscription of subscriptions) {
+      const node = byProducer.get(subscription.consumer);
+      if (!node) {
+        // A consumer that never publishes is still a participant in the flow.
+        const created = child(
+          flowSection,
+          subscription.consumer,
+          "participant",
+          subscription.range.start.line + 1,
+        );
+        byProducer.set(subscription.consumer, created);
+        child(
+          created,
+          `consumes ${subscription.event}${
+            subscription.channel ? ` from ${subscription.channel}` : ""
+          }`,
+          "message",
+          subscription.range.start.line + 1,
+          subscription.range,
+        );
+        continue;
+      }
+      child(
+        node,
+        `consumes ${subscription.event}${
+          subscription.channel ? ` from ${subscription.channel}` : ""
+        }`,
+        "message",
+        subscription.range.start.line + 1,
+        subscription.range,
+      );
+    }
+    roots.push(flowSection);
   }
 
   return roots;

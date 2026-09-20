@@ -95,6 +95,16 @@ export interface WorkspaceRepository {
   createEmptyDiagram(projectId: ProjectId): Promise<Result<DiagramFile, Error>>;
 
   /**
+   * Create an empty event flow (fresh id, empty source, `.eventseq` name) inside
+   * a project and return the stored copy. It lives in the same store as a
+   * sequence diagram — the extension is what distinguishes the two languages —
+   * so it is appended to the project's datasetIds like any other diagram.
+   */
+  createEmptyEventFlow(
+    projectId: ProjectId,
+  ): Promise<Result<DiagramFile, Error>>;
+
+  /**
    * Duplicate a diagram within its project: a new file with the same source and
    * a free name derived from the original (`flow copy`, then `flow copy 2`, ...).
    * Where the id is derived from the file name (the local-folder repository) the

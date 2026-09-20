@@ -1013,6 +1013,92 @@ async function runChecks(browser) {
       .count()) === 1,
   );
 
+  console.log("\nEvent flows:");
+  // A second documentation language, created and rendered in the same shell.
+  await page.locator('[data-testid="project-name-input"]').fill("Orders");
+  await page.locator('[data-testid="create-project-button"]').click();
+  await page
+    .locator('[data-testid="explorer-project"]')
+    .filter({ hasText: "Orders" })
+    .locator('[data-testid="project-add-button"]')
+    .click();
+  await page.locator('[data-testid="context-menu-new-event-flow"]').click();
+  await page.locator('[data-testid="dsl-textarea"]').waitFor({
+    state: "visible",
+    timeout: UI_TIMEOUT_MS,
+  });
+  check(
+    "New Event Flow creates a .eventseq document",
+    (
+      await page
+        .locator('[data-testid="explorer-diagram"]')
+        .last()
+        .textContent()
+    )?.includes(".eventseq") === true,
+  );
+
+  await page
+    .locator('[data-testid="dsl-textarea"]')
+    .fill(
+      [
+        "title Order Processing",
+        "event OrderCreated",
+        "topic orders",
+        "producer OrderService",
+        "consumer BillingService",
+        "OrderService publishes OrderCreated to orders",
+        "BillingService consumes OrderCreated from orders",
+      ].join("\n"),
+    );
+  await page.locator('[data-testid="preview-svg"]').waitFor({
+    state: "visible",
+    timeout: UI_TIMEOUT_MS,
+  });
+  const eventSvg = await page
+    .locator('[data-testid="preview-svg"]')
+    .textContent();
+  check(
+    "an event flow renders its event, producer and consumer",
+    (eventSvg ?? "").includes("OrderCreated") &&
+      (eventSvg ?? "").includes("OrderService") &&
+      (eventSvg ?? "").includes("BillingService"),
+  );
+  check(
+    "the rendered event is addressable for source navigation",
+    (await page
+      .locator('[data-testid="preview-svg"] [data-node-id^="event@"]')
+      .count()) === 1,
+  );
+  check(
+    "the status bar counts the events the flow declares",
+    (
+      (await page
+        .locator('[data-testid="status-participants"]')
+        .textContent()) ?? ""
+    ).includes("1 event"),
+  );
+
+  console.log("\nEvent-driven diagnostics:");
+  // A design mistake an event-driven review exists to catch.
+  await page
+    .locator('[data-testid="dsl-textarea"]')
+    .fill("event Lonely\nGhost publishes Nowhere");
+  await page.locator('[data-testid="view-problems"]').click();
+  await page.locator('[data-testid="problem-item"]').first().waitFor({
+    state: "visible",
+    timeout: UI_TIMEOUT_MS,
+  });
+  const problemText =
+    (await page.locator('[data-testid="problems"]').textContent()) ?? "";
+  check(
+    "an undeclared producer is reported",
+    problemText.includes("Unknown service"),
+  );
+  check(
+    "an event nothing publishes is reported",
+    problemText.includes("has no producer"),
+  );
+
   check(
     "still no uncaught page errors",
     consoleErrors.length === 0,

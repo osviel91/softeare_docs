@@ -26,6 +26,8 @@ export interface CommandContext {
   selectedProjectId: string | null;
   /** Open (or activate) a tab for a diagram and show its source. */
   openDiagram: (diagram: DiagramFile) => void;
+  /** Create an empty event flow in the selected project and open it. */
+  createEventFlow: (projectId: string) => Promise<DiagramFile | null>;
   /** Close the active tab (no-op when there is no active tab). */
   closeActiveTab: () => void;
   /** Show the project-wide search overlay. */
@@ -62,6 +64,7 @@ export function useCommands({
   createEmptyNote,
   selectedProjectId,
   openDiagram,
+  createEventFlow,
   closeActiveTab,
   openSearch,
   openQuickOpen,
@@ -85,6 +88,11 @@ export function useCommands({
     });
   }, [createEmptyDiagram, selectedProjectId, openDiagram]);
 
+  const newEventFlow = useCallback(() => {
+    if (!selectedProjectId) return;
+    void createEventFlow(selectedProjectId);
+  }, [createEventFlow, selectedProjectId]);
+
   const newNote = useCallback(() => {
     // Creating a note selects it in the workspace, which swaps the editor to the
     // note buffer; there is no tab to open.
@@ -96,6 +104,11 @@ export function useCommands({
     const list: Command[] = [
       { id: "new-diagram", label: "New Diagram", execute: newDiagram },
       { id: "new-note", label: "New Note", execute: newNote },
+      {
+        id: "new-event-flow",
+        label: "New Event Flow",
+        execute: newEventFlow,
+      },
       { id: "close-tab", label: "Close Tab", execute: closeActiveTab },
       { id: "search-project", label: "Search Project…", execute: openSearch },
       { id: "quick-open", label: "Quick Open…", execute: openQuickOpen },
@@ -165,6 +178,7 @@ export function useCommands({
   }, [
     newDiagram,
     newNote,
+    newEventFlow,
     closeActiveTab,
     openSearch,
     openQuickOpen,

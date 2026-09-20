@@ -71,8 +71,33 @@ export default function ProjectOverview({
         <section className="overview__card" data-testid="overview-resources">
           <h3>Resources</h3>
           <p>{count(index.diagrams.length, "diagram")}</p>
+          <p>{count(index.eventFlows.length, "event flow")}</p>
           <p>{count(index.documents.length, "document")}</p>
         </section>
+
+        {index.eventFlows.length > 0 && (
+          <section className="overview__card" data-testid="overview-events">
+            <h3>Event architecture</h3>
+            <p>
+              {count(
+                index.eventFlows.reduce(
+                  (total, flow) => total + flow.events,
+                  0,
+                ),
+                "event",
+              )}
+            </p>
+            <p>
+              {count(
+                index.eventFlows.reduce(
+                  (total, flow) => total + flow.channels,
+                  0,
+                ),
+                "channel",
+              )}
+            </p>
+          </section>
+        )}
 
         <section className="overview__card" data-testid="overview-symbols">
           <h3>Symbols</h3>
@@ -109,7 +134,11 @@ export default function ProjectOverview({
                 onClick={() => onOpenResource?.(resource.id)}
               >
                 <span className="overview__resource-icon" aria-hidden="true">
-                  {resource.type === "sequence-diagram" ? "▦" : "¶"}
+                  {resource.type === "sequence-diagram"
+                    ? "▦"
+                    : resource.type === "event-flow"
+                      ? "⇄"
+                      : "¶"}
                 </span>
                 <span className="overview__resource-title">
                   {resource.title}

@@ -74,6 +74,7 @@ function indexOf(
     projectId: "p1",
     resources,
     diagrams,
+    eventFlows: [],
     documents,
     participants: [],
     usages: [],

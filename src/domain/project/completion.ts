@@ -16,10 +16,20 @@ import type { SequenceDiagram } from "../diagram/ast";
 import { rangeContainsPosition } from "../../language/source-position";
 import type { ProjectSymbol, ResourceDescriptor } from "./project-index";
 import { SYMBOL_KIND_LABELS } from "./project-index";
+import type { EventFlow } from "../eventflow/ast";
+import { brokersOf, channelsOf, eventsOf, servicesOf } from "../eventflow/ast";
 
 /** The kind of thing a suggestion inserts. */
 export type CompletionKind =
-  "keyword" | "participant" | "diagram" | "document" | "fragment";
+  | "keyword"
+  | "participant"
+  | "diagram"
+  | "document"
+  | "fragment"
+  // Event-driven concepts. A separate flavour rather than a reuse of "diagram",
+  // so the list can label an event differently from a broker without the caller
+  // having to guess from the label.
+  | "broker";
 
 /** One suggestion, with the span of text it replaces. */
 export interface CompletionItem {
@@ -366,4 +376,171 @@ export function completeAt(request: CompletionRequest): CompletionItem[] {
 /** The labels a completion list shows, for a quick summary in tests. */
 export function completionLabels(items: CompletionItem[]): string[] {
   return items.map((entry) => entry.label);
+}
+
+/** Everything completion needs to answer one keystroke in an event flow. */
+export interface EventFlowCompletionRequest {
+  source: string;
+  /** The caret's 0-based character offset. */
+  offset: number;
+  /** The document's parsed flow, when it parsed. */
+  flow: EventFlow | null;
+  /** Names declared elsewhere in the project, so a flow can name them too. */
+  projectNames?: {
+    events?: string[];
+    services?: string[];
+    channels?: string[];
+    brokers?: string[];
+  };
+  limit?: number;
+}
+
+/** Keywords that may start a statement in an event flow. */
+const EVENT_FLOW_KEYWORDS = [
+  "title",
+  "event",
+  "broker",
+  "topic",
+  "queue",
+  "stream",
+  "producer",
+  "consumer",
+  "service",
+  "publish",
+  "consume",
+];
+
+/** Merge name lists, keeping the first occurrence and dropping empties. */
+function mergeNames(...lists: Array<string[] | undefined>): string[] {
+  const seen = new Set<string>();
+  const merged: string[] = [];
+  for (const list of lists) {
+    for (const name of list ?? []) {
+      if (name === "" || seen.has(name)) continue;
+      seen.add(name);
+      merged.push(name);
+    }
+  }
+  return merged;
+}
+
+/**
+ * Suggest completions for the caret in an event-flow document.
+ *
+ * The context is read from the sentence being typed, because the language is
+ * line-oriented: `publishes` wants an event, `to` wants a channel, `consumes`
+ * wants an event, `from` wants a channel. Names come from this document *and*
+ * from the rest of the project, so a flow can name an event another flow
+ * declares — which is the normal case in a real system and exactly where a
+ * static word list would be useless.
+ */
+export function completeEventFlowAt(
+  request: EventFlowCompletionRequest,
+): CompletionItem[] {
+  const { source, offset, flow } = request;
+  const prefix = linePrefix(source, offset);
+  const word = wordBefore(source, offset);
+  const span = { start: word.start, end: offset };
+  const limit = request.limit ?? DEFAULT_LIMIT;
+
+  const local = flow
+    ? {
+        events: eventsOf(flow).map((event) => event.name),
+        services: servicesOf(flow).map((service) => service.name),
+        channels: channelsOf(flow).map((channel) => channel.name),
+        brokers: brokersOf(flow).map((broker) => broker.name),
+      }
+    : { events: [], services: [], channels: [], brokers: [] };
+  const project = request.projectNames ?? {};
+
+  const named = (kind: CompletionKind, names: string[]): CompletionItem[] =>
+    names.map((name) => item(name, kind, undefined, span));
+
+  // The word immediately before the caret sets the context, whether the caret
+  // follows a space or is still inside the word. Trimming the prefix first would
+  // make `publishes ` look like `publishes` being typed, which shifts the whole
+  // reading by one word.
+  const afterSpace = /\s$/.test(prefix);
+  const words = prefix.trim() === "" ? [] : prefix.trim().split(/\s+/);
+  // The word that decides what this position expects. Mid-word it is the word
+  // *before* the one being typed (`publishes Pay` still expects an event), and
+  // after a space it is the last complete word (`publishes ` does too).
+  const contextWord = (
+    afterSpace ? words[words.length - 1] : words[words.length - 2]
+  )?.toLowerCase();
+
+  // A declaration introduces a *new* name, so the keyword list would be noise
+  // there — except for the ones that name an existing service, where picking a
+  // known name is exactly what the user wants.
+  if (
+    contextWord !== undefined &&
+    ["title", "event", "broker", "topic", "queue", "stream"].includes(
+      contextWord,
+    )
+  ) {
+    return [];
+  }
+
+  // `… to <channel>` / `… from <channel>`.
+  if (contextWord === "to") {
+    return filterByPrefix(
+      named("document", mergeNames(local.channels, project.channels)),
+      word.text,
+    ).slice(0, limit);
+  }
+  // `from` is ambiguous — `consumes X from <channel>` names a channel, while
+  // `publish X from <service>` names a service — so both are offered, and the
+  // detail line says which is which.
+  if (contextWord === "from") {
+    return filterByPrefix(
+      [
+        ...named("document", mergeNames(local.channels, project.channels)),
+        ...named("participant", mergeNames(local.services, project.services)),
+      ],
+      word.text,
+    ).slice(0, limit);
+  }
+  // `consume X by <service>`.
+  if (contextWord === "by") {
+    return filterByPrefix(
+      named("participant", mergeNames(local.services, project.services)),
+      word.text,
+    ).slice(0, limit);
+  }
+  // `topic <name> on <broker>`.
+  if (contextWord === "on") {
+    return filterByPrefix(
+      named("broker", mergeNames(local.brokers, project.brokers)),
+      word.text,
+    ).slice(0, limit);
+  }
+  // The verbs take an event, and the declarations take a service.
+  if (
+    contextWord === "publishes" ||
+    contextWord === "consumes" ||
+    contextWord === "publish" ||
+    contextWord === "consume"
+  ) {
+    return filterByPrefix(
+      named("diagram", mergeNames(local.events, project.events)),
+      word.text,
+    ).slice(0, limit);
+  }
+  if (
+    contextWord === "producer" ||
+    contextWord === "consumer" ||
+    contextWord === "service"
+  ) {
+    return filterByPrefix(
+      named("participant", mergeNames(local.services, project.services)),
+      word.text,
+    ).slice(0, limit);
+  }
+
+  // The first word of a statement: the statement keywords.
+  if (words.length > 1) return [];
+  return filterByPrefix(
+    keywordItems(EVENT_FLOW_KEYWORDS, "keyword", "keyword", span),
+    word.text,
+  ).slice(0, limit);
 }

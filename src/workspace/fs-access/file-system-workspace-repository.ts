@@ -45,6 +45,10 @@ import {
   EMPTY_DIAGRAM_NAME,
   uniqueDiagramName,
 } from "../../domain/workspace/diagram";
+import {
+  EMPTY_EVENT_FLOW_NAME,
+  uniqueEventFlowName,
+} from "../../domain/workspace/event-flow";
 import type { Result } from "../../shared/result/result";
 import { err, ok } from "../../shared/result/result";
 import type { WorkspaceRepository } from "../WorkspaceRepository";
@@ -430,6 +434,34 @@ export function createFileSystemWorkspaceRepository(
   }
 
   /**
+   * Create an empty event flow on disk inside a project directory.
+   *
+   * The file is named `Untitled.eventseq`, so the extension is what marks it as
+   * an event flow — the same rule that distinguishes a note (`.md`) from a
+   * diagram. It reuses {@link saveDiagramFile}, so the file is materialized in
+   * one step.
+   */
+  async function createEmptyEventFlow(
+    projectId: string,
+  ): Promise<Result<DiagramFile, Error>> {
+    try {
+      const dirPath = normalize(projectId);
+      if (dirPath === "")
+        return err(new Error("An event flow must belong to a project"));
+      const existing = await listDiagramFiles(dirPath);
+      if (!existing.ok) return existing;
+      return await saveDiagramFile(dirPath, {
+        id: joinRel(dirPath, EMPTY_EVENT_FLOW_NAME),
+        name: uniqueEventFlowName(existing.value.map((entry) => entry.name)),
+        source: "",
+        projectId: dirPath,
+      });
+    } catch (error) {
+      return err(toRepoError(error));
+    }
+  }
+
+  /**
    * Duplicate a diagram file on disk: the same source under the next free
    * " copy" name, so duplicating never overwrites a sibling.
    */
@@ -771,6 +803,7 @@ export function createFileSystemWorkspaceRepository(
     getDiagramFile,
     saveDiagramFile,
     createEmptyDiagram,
+    createEmptyEventFlow,
     deleteDiagramFile,
     duplicateDiagramFile,
     renameDiagramFile,

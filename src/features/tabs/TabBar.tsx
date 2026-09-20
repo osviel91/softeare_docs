@@ -12,6 +12,7 @@
  * still activates on click.
  */
 import { isDirty, type Tab } from "./tabs";
+import { isEventFlowName } from "../../domain/workspace/event-flow";
 
 export interface TabBarProps {
   /** Every open tab, in the order they were opened. */
@@ -28,7 +29,10 @@ export interface TabBarProps {
 
 /** The glyph shown before a tab's title, naming its document kind. */
 function kindGlyph(tab: Tab): string {
-  return tab.kind === "note" ? "¶" : "▦";
+  if (tab.kind === "note") return "¶";
+  // Both diagram languages share a store, so the extension is what tells them
+  // apart — and a tab should say which one it is at a glance.
+  return isEventFlowName(tab.name) ? "⇄" : "▦";
 }
 
 /** A single tab button with a dirty indicator and an optional close control. */

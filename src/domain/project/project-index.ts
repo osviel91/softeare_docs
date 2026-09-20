@@ -59,6 +59,24 @@ export interface DiagramDescriptor extends ResourceDescriptor {
   titled: boolean;
 }
 
+/**
+ * An event flow, with the shape facts the overview and the catalogue need.
+ *
+ * Counted from the model rather than from the diagram, so the numbers cannot
+ * disagree with what the document actually declares.
+ */
+export interface EventFlowDescriptor extends ResourceDescriptor {
+  type: "event-flow";
+  /** How many events the flow declares. */
+  events: number;
+  /** Distinct services that publish at least one event. */
+  producers: number;
+  /** Distinct services that consume at least one event. */
+  consumers: number;
+  /** Declared channels (topics, queues, streams). */
+  channels: number;
+}
+
 /** A markdown document, with the headings its outline is built from. */
 export interface DocumentDescriptor extends ResourceDescriptor {
   type: "markdown-document";
@@ -91,7 +109,23 @@ export type SymbolKind =
   | "database"
   | "queue"
   | "diagram"
-  | "document";
+  | "document"
+  // Event-driven concepts. They arrive with the event-flow language and are
+  // first-class here rather than special cases, so find-references, quick open
+  // and the overview treat an event exactly as they treat a lifeline.
+  | "event"
+  | "channel"
+  | "broker";
+
+/** The architectural roles a symbol can play, beyond its declared kind. */
+export type SymbolRole =
+  | "service"
+  | "database"
+  | "queue"
+  | "topic"
+  | "stream"
+  | "producer"
+  | "consumer";
 
 /** A symbol declared by, or naming, a resource. */
 export interface ProjectSymbol {
@@ -108,7 +142,7 @@ export interface ProjectSymbol {
    * `inferSymbolRole`. Kept apart from {@link kind}, which is read out of the
    * AST, so an inference is never mistaken for a declaration.
    */
-  role?: "service" | "database" | "queue";
+  role?: SymbolRole;
 }
 
 /**
@@ -168,6 +202,7 @@ export interface ProjectIndex {
   projectId: string;
   resources: ResourceDescriptor[];
   diagrams: DiagramDescriptor[];
+  eventFlows: EventFlowDescriptor[];
   documents: DocumentDescriptor[];
   participants: ProjectSymbol[];
   /** Every place a participant name is written, declarations excluded. */
@@ -209,7 +244,16 @@ export interface ResourceAnalysis {
   /** Problems found inside this resource without looking at any other file. */
   diagnostics: ProjectDiagnostic[];
   headings: MarkdownHeading[];
-  metrics: { participants: number; messages: number; words: number };
+  metrics: {
+    participants: number;
+    messages: number;
+    words: number;
+    /** Events declared, for an event flow; 0 for the other languages. */
+    events: number;
+    producers: number;
+    consumers: number;
+    channels: number;
+  };
 }
 
 /** How a reference resolved. */
@@ -228,6 +272,7 @@ const SCHEMES: ReadonlyArray<{
 }> = [
   { prefix: "resource://", expects: null },
   { prefix: "diagram://", expects: "sequence-diagram" },
+  { prefix: "eventflow://", expects: "event-flow" },
   { prefix: "doc://", expects: "markdown-document" },
 ];
 
@@ -237,6 +282,10 @@ export function embedResourceType(label: string): ResourceType | null {
     case "diagram":
     case "sequence":
       return "sequence-diagram";
+    case "eventflow":
+    case "event-flow":
+    case "events":
+      return "event-flow";
     case "doc":
     case "document":
     case "markdown":
@@ -408,6 +457,16 @@ export function buildProjectIndex(
       messages: analysis.metrics.messages,
       titled: analysis.descriptor.title !== analysis.descriptor.path,
     }));
+  const eventFlows: EventFlowDescriptor[] = ordered
+    .filter((analysis) => analysis.descriptor.type === "event-flow")
+    .map((analysis) => ({
+      ...analysis.descriptor,
+      type: "event-flow",
+      events: analysis.metrics.events,
+      producers: analysis.metrics.producers,
+      consumers: analysis.metrics.consumers,
+      channels: analysis.metrics.channels,
+    }));
   const documents: DocumentDescriptor[] = ordered
     .filter((analysis) => analysis.descriptor.type === "markdown-document")
     .map((analysis) => ({
@@ -422,9 +481,9 @@ export function buildProjectIndex(
   // A resource is itself a symbol, so quick-open and find-references can treat
   // "the payment diagram" and "the PaymentService participant" alike.
   const resourceSymbols: ProjectSymbol[] = resources.map((resource) => ({
-    id: `${resource.type === "sequence-diagram" ? "diagram" : "document"}:${resource.id}`,
+    id: `${resourceSymbolKind(resource.type)}:${resource.id}`,
     name: resource.title,
-    kind: resource.type === "sequence-diagram" ? "diagram" : "document",
+    kind: resourceSymbolKind(resource.type),
     resourceId: resource.id,
   }));
 
@@ -457,6 +516,7 @@ export function buildProjectIndex(
     projectId,
     resources,
     diagrams,
+    eventFlows,
     documents,
     participants: [...resourceSymbols, ...declared],
     usages,
@@ -464,6 +524,21 @@ export function buildProjectIndex(
   };
 
   return { ...core, diagnostics: validate(core) };
+}
+
+/**
+ * The symbol a resource contributes to the index, so "the payment flow" can be
+ * found the same way "the PaymentService participant" can.
+ */
+export function resourceSymbolKind(type: ResourceType): SymbolKind {
+  switch (type) {
+    case "sequence-diagram":
+      return "diagram";
+    case "event-flow":
+      return "event";
+    default:
+      return "document";
+  }
 }
 
 /** Icons and labels for a symbol kind, kept beside the kind for one source of truth. */
@@ -475,6 +550,9 @@ export const SYMBOL_KIND_LABELS: Record<SymbolKind, string> = {
   queue: "queue",
   diagram: "diagram",
   document: "document",
+  event: "event",
+  channel: "channel",
+  broker: "broker",
 };
 
 /**

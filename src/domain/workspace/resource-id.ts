@@ -24,11 +24,34 @@ export type ResourceId = string;
  * lives in. A future event flow is a new type over an existing (or new) store,
  * and existing links keep resolving either way.
  */
-export type ResourceType = "sequence-diagram" | "markdown-document";
+export type ResourceType =
+  "sequence-diagram" | "event-flow" | "markdown-document";
 
-/** The resource type a stored file kind maps onto. */
+/**
+ * The resource type a stored file kind maps onto.
+ *
+ * A store kind alone cannot tell a sequence diagram from an event flow — both
+ * live in the diagram store — so this is the coarse answer, and
+ * {@link resourceTypeOfName} is the accurate one wherever the file name is
+ * known. Both exist because the repositories list files by store, while the
+ * index, the outline and the editor need the language.
+ */
 export function resourceTypeOf(kind: ResourceKind): ResourceType {
   return kind === "note" ? "markdown-document" : "sequence-diagram";
+}
+
+/**
+ * The resource type a file name implies.
+ *
+ * The extension is the discriminator, exactly as it is for a folder project:
+ * `.md` is a document, `.eventseq` an event flow, anything else a sequence
+ * diagram. That keeps the rule in one place instead of scattering extension
+ * checks through the UI.
+ */
+export function resourceTypeOfName(name: string): ResourceType {
+  if (/\.md$/i.test(name)) return "markdown-document";
+  if (/\.eventseq$/i.test(name)) return "event-flow";
+  return "sequence-diagram";
 }
 
 /** The stored file kind a resource type maps back onto. */
@@ -38,7 +61,14 @@ export function resourceKindOf(type: ResourceType): ResourceKind {
 
 /** The id prefix a resource type uses, so an id names its kind at a glance. */
 export function resourceIdPrefix(type: ResourceType): string {
-  return type === "markdown-document" ? "doc" : "diagram";
+  switch (type) {
+    case "markdown-document":
+      return "doc";
+    case "event-flow":
+      return "flow";
+    default:
+      return "diagram";
+  }
 }
 
 /**

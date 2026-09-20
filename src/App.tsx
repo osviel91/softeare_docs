@@ -81,17 +81,29 @@ import type { EditorReveal } from "./features/editor/reveal";
 import type { SearchMatch } from "./domain/search/project-search";
 import type { Command } from "./features/commands/command";
 import OutlinePanel from "./features/outline/OutlinePanel";
+import EventFlowPreview from "./features/preview/EventFlowPreview";
+import { renderEventFlowDocument } from "./features/preview/eventflow-to-svg";
+import { analyzeEventFlow } from "./language/eventflow/parser";
+import {
+  eventFlowNodeAtPosition,
+  eventFlowNodeById,
+} from "./domain/eventflow/node-lookup";
+import {
+  resourceTypeOfName,
+  type ResourceType,
+} from "./domain/workspace/resource-id";
 import ProblemsPanel from "./features/problems/ProblemsPanel";
 import QuickOpen from "./features/quickopen/QuickOpen";
 import type { QuickOpenItem } from "./features/quickopen/quick-open-model";
 import { useProjectIndex } from "./features/project/use-project-index";
 import ProjectOverview from "./features/project/ProjectOverview";
 import {
+  eventFlowOutline,
   markdownOutline,
   sequenceOutline,
   type OutlineNode,
 } from "./domain/outline/outline";
-import { completeAt } from "./domain/project/completion";
+import { completeAt, completeEventFlowAt } from "./domain/project/completion";
 import { hoverAt, type HoverInfo } from "./domain/project/hover";
 import {
   findSymbolReferences,
@@ -525,6 +537,16 @@ export default function App() {
     [workspace.createEmptyDiagram, tabsHook.openDiagram],
   );
 
+  const createEventFlow = useCallback(
+    async (projectId: string): Promise<DiagramFile | null> => {
+      setView("code");
+      const flow = await workspace.createEmptyEventFlow(projectId);
+      if (flow) tabsHook.openDiagram(flow);
+      return flow;
+    },
+    [workspace.createEmptyEventFlow, tabsHook.openDiagram],
+  );
+
   /** Copy a diagram in place and open the copy, leaving the original untouched. */
   const duplicateDiagram = useCallback(
     async (diagram: DiagramFile): Promise<void> => {
@@ -672,31 +694,126 @@ export default function App() {
       ? resourceIdForFile(selectedNote)
       : null;
 
-  // The outline of the active document: the statement tree for a diagram, the
-  // heading tree for a markdown document.
-  const outlineNodes = useMemo<OutlineNode[]>(
-    () => (noteMode ? markdownOutline(source) : sequenceOutline(ast)),
-    [noteMode, source, ast],
+  // Which language the active document is written in. A project holds three, and
+  // the extension is what says so — the same rule a folder project uses.
+  const activeDocumentType: ResourceType = selectedDiagram
+    ? resourceTypeOfName(selectedDiagram.name)
+    : selectedNote
+      ? "markdown-document"
+      : "sequence-diagram";
+  const isEventFlow = activeDocumentType === "event-flow";
+
+  // An event flow is parsed once per edit and its diagnostics and AST are derived
+  // from that single analysis, so the two can never disagree.
+  const eventFlowAnalysis = useMemo(
+    () => (isEventFlow ? analyzeEventFlow(source) : null),
+    [isEventFlow, source],
   );
+  const eventFlow = eventFlowAnalysis?.flow ?? null;
+
+  const editorDiagnostics = useMemo(() => {
+    if (!isEventFlow) {
+      return diagnostics.map((diagnostic) => ({
+        severity: diagnostic.severity,
+        message: diagnostic.message,
+        code: String(diagnostic.code),
+        range: diagnostic.range,
+      }));
+    }
+    return (eventFlowAnalysis?.diagnostics ?? []).map((diagnostic) => ({
+      severity: diagnostic.severity,
+      message: diagnostic.message,
+      code: String(diagnostic.code),
+      range: diagnostic.range,
+    }));
+  }, [isEventFlow, diagnostics, eventFlowAnalysis]);
+
+  // The outline of the active document: a statement tree for a sequence diagram,
+  // a declaration-and-flow tree for an event flow, headings for a document.
+  const outlineNodes = useMemo<OutlineNode[]>(() => {
+    if (noteMode) return markdownOutline(source);
+    if (isEventFlow) return eventFlowOutline(eventFlow);
+    return sequenceOutline(ast);
+  }, [noteMode, isEventFlow, eventFlow, source, ast]);
 
   // Semantic completion and hover, both answered from the index. Handing these
   // to the editor as functions keeps the editor free of project knowledge.
   const complete = useCallback(
-    (request: { source: string; offset: number }) =>
-      completeAt({
+    (request: { source: string; offset: number }) => {
+      if (!isEventFlow) {
+        return completeAt({
+          source: request.source,
+          offset: request.offset,
+          ast,
+          symbols: index?.participants ?? [],
+          resources: index?.resources ?? [],
+        });
+      }
+      // Event-flow completion draws on this document's declarations *and* the
+      // rest of the project, because naming an event another flow declares is
+      // the normal case.
+      const projectNames = {
+        events: (index?.participants ?? [])
+          .filter((symbol) => symbol.kind === "event")
+          .map((symbol) => symbol.name),
+        services: (index?.participants ?? [])
+          .filter((symbol) => symbol.kind === "service")
+          .map((symbol) => symbol.name),
+        channels: (index?.participants ?? [])
+          .filter((symbol) => symbol.kind === "channel")
+          .map((symbol) => symbol.name),
+        brokers: (index?.participants ?? [])
+          .filter((symbol) => symbol.kind === "broker")
+          .map((symbol) => symbol.name),
+      };
+      return completeEventFlowAt({
         source: request.source,
         offset: request.offset,
-        ast,
-        symbols: index?.participants ?? [],
-        resources: index?.resources ?? [],
-      }),
-    [ast, index],
+        flow: eventFlow,
+        projectNames,
+      });
+    },
+    [isEventFlow, eventFlow, ast, index],
   );
 
   const describe = useCallback(
-    (offset: number): HoverInfo | null =>
-      hoverAt({ source, offset, ast, index, resourceId: activeResourceId }),
-    [source, ast, index, activeResourceId],
+    (offset: number): HoverInfo | null => {
+      if (isEventFlow) {
+        if (!eventFlow) return null;
+        const node = eventFlowNodeAtPosition(
+          eventFlow,
+          offsetToPosition(source, offset),
+        );
+        if (!node) return null;
+        const declared = node.range.start.line + 1;
+        return {
+          title: node.label,
+          rows: [
+            { label: "Kind", value: node.kind },
+            {
+              label: "Declared",
+              value: `${activeDocumentType === "event-flow" ? "this flow" : ""}:${declared}`,
+            },
+          ],
+        };
+      }
+      return hoverAt({
+        source,
+        offset,
+        ast,
+        index,
+        resourceId: activeResourceId,
+      });
+    },
+    [
+      isEventFlow,
+      eventFlow,
+      source,
+      ast,
+      index,
+      activeResourceId,
+      activeDocumentType,
+    ],
   );
 
   // Editor → preview: the caret's statement is highlighted on the canvas.
@@ -707,17 +824,33 @@ export default function App() {
         setActiveNodeId(null);
         return;
       }
+      if (isEventFlow) {
+        setActiveNodeId(
+          eventFlow
+            ? (eventFlowNodeAtPosition(
+                eventFlow,
+                offsetToPosition(source, offset),
+              )?.id ?? null)
+            : null,
+        );
+        return;
+      }
       setActiveNodeId(ast ? nodeIdAtOffset(source, ast, offset) : null);
     },
-    [noteMode, source, ast],
+    [noteMode, isEventFlow, eventFlow, source, ast],
   );
 
   // Preview → editor: clicking a rendered element selects its source range. The
   // mapping is by node id, never by matching text.
   const onNodeSelect = useCallback(
     (nodeId: string) => {
-      if (!ast) return;
-      const range = nodeRangeById(ast, nodeId);
+      const range = isEventFlow
+        ? eventFlow
+          ? eventFlowNodeById(eventFlow, nodeId)?.range
+          : undefined
+        : ast
+          ? nodeRangeById(ast, nodeId)
+          : null;
       if (!range) return;
       const offsets = rangeToOffsets(source, range);
       revealToken.current += 1;
@@ -733,7 +866,7 @@ export default function App() {
       // node now, and the canvas should say so.
       setActiveNodeId(nodeId);
     },
-    [ast, source],
+    [isEventFlow, eventFlow, ast, source],
   );
 
   /** The participant name the caret is on, for find-references and rename. */
@@ -1000,7 +1133,16 @@ export default function App() {
   const runDiagramExport = useCallback(
     async (options: DiagramExportOptions): Promise<void> => {
       setExportDiagramOpen(false);
-      const rendered = exportDiagramSvg(ast, options);
+      // One export path for both languages: an event flow renders through its own
+      // pipeline, and PNG/PDF derive from whatever SVG that produced.
+      const rendered = isEventFlow
+        ? renderEventFlowDocument(eventFlow, {
+            theme: options.theme,
+            background: options.background,
+            includeTitle: options.includeTitle,
+            padding: options.padding,
+          })
+        : exportDiagramSvg(ast, options);
       const filename = exportFileName({
         ...options,
         title: options.title ?? activeDocumentName,
@@ -1030,7 +1172,7 @@ export default function App() {
         );
       }
     },
-    [ast, activeDocumentName],
+    [isEventFlow, eventFlow, ast, activeDocumentName],
   );
 
   /** Write the project's documentation as a self-contained site, zipped. */
@@ -1086,6 +1228,7 @@ export default function App() {
     createEmptyNote: createNote,
     selectedProjectId,
     openDiagram: tabsHook.openDiagram,
+    createEventFlow,
     closeActiveTab: closeActiveDocument,
     openSearch,
     openQuickOpen: () => setQuickOpenOpen(true),
@@ -1256,6 +1399,13 @@ export default function App() {
             void createNote(project.id);
           },
         },
+        {
+          id: "new-event-flow",
+          label: "New event flow",
+          onSelect: () => {
+            void createEventFlow(project.id);
+          },
+        },
       ];
     }
     if (menu.kind === "diagram") {
@@ -1318,6 +1468,7 @@ export default function App() {
     requestDeleteNote,
     createDiagram,
     createNote,
+    createEventFlow,
     duplicateDiagram,
     duplicateNote,
   ]);
@@ -1487,7 +1638,13 @@ export default function App() {
 
         <section
           className="app__pane app__pane--editor"
-          aria-label={noteMode ? "Markdown note editor" : "DSL editor"}
+          aria-label={
+            noteMode
+              ? "Markdown note editor"
+              : isEventFlow
+                ? "Event flow editor"
+                : "DSL editor"
+          }
         >
           {view === "outline" ? (
             <OutlinePanel
@@ -1584,7 +1741,7 @@ export default function App() {
               <Editor
                 value={source}
                 onChange={updateActiveSource}
-                diagnostics={diagnostics}
+                diagnostics={editorDiagnostics}
                 reveal={reveal}
                 complete={complete}
                 describe={describe}
@@ -1596,7 +1753,13 @@ export default function App() {
 
         <section
           className="app__pane app__pane--preview"
-          aria-label={noteMode ? "Note preview" : "Diagram preview"}
+          aria-label={
+            noteMode
+              ? "Note preview"
+              : isEventFlow
+                ? "Event flow preview"
+                : "Diagram preview"
+          }
         >
           {noteMode ? (
             <MarkdownView
@@ -1606,6 +1769,12 @@ export default function App() {
               renderEmbed={renderEmbed}
               onOpenDiagramLink={openDiagramLink}
               onOpenResourceLink={openResourceLink}
+            />
+          ) : isEventFlow ? (
+            <EventFlowPreview
+              source={source}
+              onNodeSelect={onNodeSelect}
+              activeNodeId={activeNodeId}
             />
           ) : (
             <Preview
@@ -1632,6 +1801,24 @@ export default function App() {
             </span>
             <span className="app__status-item" data-testid="status-messages">
               Markdown note
+            </span>
+          </>
+        ) : isEventFlow ? (
+          <>
+            <span
+              className="app__status-item"
+              data-testid="status-participants"
+            >
+              {index?.eventFlows.find((entry) => entry.id === activeResourceId)
+                ?.events ?? 0}{" "}
+              event
+              {(index?.eventFlows.find((entry) => entry.id === activeResourceId)
+                ?.events ?? 0) === 1
+                ? ""
+                : "s"}
+            </span>
+            <span className="app__status-item" data-testid="status-messages">
+              Event flow
             </span>
           </>
         ) : (

@@ -25,6 +25,18 @@ import type {
 } from "./project-index";
 import { referenceKindOf } from "./project-index";
 import { analyze } from "../../language/analyze";
+import {
+  analyzeEventFlow,
+  type EventFlowDiagnostic,
+} from "../../language/eventflow/parser";
+import {
+  brokersOf,
+  channelsOf,
+  eventsOf,
+  publicationsOf,
+  servicesOf,
+  subscriptionsOf,
+} from "../eventflow/ast";
 import { diagramTitle } from "../../language/diagram-title";
 import {
   markdownReferences,
@@ -276,6 +288,20 @@ function participantUsages(
   return usages;
 }
 
+/** Map one event-flow diagnostic onto the project diagnostic shape. */
+function eventFlowDiagnostic(
+  diagnostic: EventFlowDiagnostic,
+  resourceId: string,
+): ProjectDiagnostic {
+  return {
+    severity: diagnostic.severity,
+    message: diagnostic.message,
+    resourceId,
+    code: String(diagnostic.code),
+    sourceRange: diagnostic.range,
+  };
+}
+
 /** Count the messages in a diagram, including those inside fragments. */
 function countMessages(statements: Statement[]): number {
   let count = 0;
@@ -419,6 +445,87 @@ export function analyzeResource(
         participants: ast?.participants.length ?? 0,
         messages: ast ? countMessages(ast.statements) : 0,
         words: 0,
+        events: 0,
+        producers: 0,
+        consumers: 0,
+        channels: 0,
+      },
+    };
+  }
+
+  if (descriptor.type === "event-flow") {
+    const { flow, diagnostics } = analyzeEventFlow(content);
+    const publications = publicationsOf(flow);
+    const subscriptions = subscriptionsOf(flow);
+    // A service counts as a producer/consumer when it actually publishes or
+    // consumes, not merely because the document declares it with that role —
+    // the diagram is a picture of behaviour, and the counts should match it.
+    const producers = new Set(publications.map((entry) => entry.producer));
+    const consumers = new Set(subscriptions.map((entry) => entry.consumer));
+    const declaredTitle = flow.title?.value;
+
+    const symbols: ProjectSymbol[] = [
+      ...eventsOf(flow).map((event) => ({
+        id: `event:${event.name}`,
+        name: event.name,
+        kind: "event" as const,
+        resourceId: descriptor.id,
+        sourceRange: event.range,
+      })),
+      ...servicesOf(flow).map((service) => {
+        const symbol: ProjectSymbol = {
+          id: `service:${service.name}`,
+          name: service.name,
+          kind: "service",
+          resourceId: descriptor.id,
+          sourceRange: service.range,
+        };
+        if (producers.has(service.name)) symbol.role = "producer";
+        else if (consumers.has(service.name)) symbol.role = "consumer";
+        return symbol;
+      }),
+      ...channelsOf(flow).map((channel) => {
+        const symbol: ProjectSymbol = {
+          id: `channel:${channel.name}`,
+          name: channel.name,
+          kind: "channel",
+          resourceId: descriptor.id,
+          sourceRange: channel.range,
+          // The channel's flavour is a role, so `kind` stays the stable
+          // "channel" and a topic is still findable as a channel.
+          role: channel.channelKind,
+        };
+        return symbol;
+      }),
+      ...brokersOf(flow).map((broker) => ({
+        id: `broker:${broker.name}`,
+        name: broker.name,
+        kind: "broker" as const,
+        resourceId: descriptor.id,
+        sourceRange: broker.range,
+      })),
+    ];
+
+    return {
+      ...base,
+      descriptor: {
+        ...descriptor,
+        title: declaredTitle ?? descriptor.path,
+      },
+      declaredTitle,
+      symbols,
+      usages: [],
+      diagnostics: diagnostics.map((diagnostic) =>
+        eventFlowDiagnostic(diagnostic, descriptor.id),
+      ),
+      metrics: {
+        participants: 0,
+        messages: publications.length + subscriptions.length,
+        words: 0,
+        events: eventsOf(flow).length,
+        producers: producers.size,
+        consumers: consumers.size,
+        channels: channelsOf(flow).length,
       },
     };
   }
@@ -439,6 +546,14 @@ export function analyzeResource(
     headings,
     references,
     diagnostics: [],
-    metrics: { participants: 0, messages: 0, words: wordCount(content) },
+    metrics: {
+      participants: 0,
+      messages: 0,
+      words: wordCount(content),
+      events: 0,
+      producers: 0,
+      consumers: 0,
+      channels: 0,
+    },
   };
 }

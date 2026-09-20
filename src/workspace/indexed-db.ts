@@ -29,6 +29,7 @@ import {
 import { EMPTY_NOTE_MARKDOWN, uniqueNoteName } from "../domain/workspace/note";
 import { uniqueCopyName } from "../domain/workspace/copy-name";
 import { uniqueDiagramName } from "../domain/workspace/diagram";
+import { uniqueEventFlowName } from "../domain/workspace/event-flow";
 import { err, ok, type Result } from "../shared/result/result";
 import type { IdbDatabase, IdbFactory, IdbObjectStore } from "./idb-adapter";
 import { openToResult, requestToResult, txDone } from "./idb-promises";
@@ -433,6 +434,37 @@ export function createIndexedDbRepository(
           },
         );
         return ok(diagram);
+      } catch (error) {
+        return err(toRepoError(error));
+      }
+    },
+
+    async createEmptyEventFlow(projectId): Promise<Result<DiagramFile, Error>> {
+      try {
+        const flow = await withTx<DiagramFile>(
+          [STORE_PROJECTS, STORE_DIAGRAMS],
+          "readwrite",
+          async (stores) => {
+            const project = await readProject(stores, projectId);
+            if (!project) throw new Error(`Unknown project: ${projectId}`);
+            const siblings = await listForProject<DiagramFile>(
+              stores,
+              STORE_DIAGRAMS,
+              project,
+              "datasetIds",
+            );
+            const created: DiagramFile = {
+              id: newDiagramFileId(),
+              name: uniqueEventFlowName(siblings.map((entry) => entry.name)),
+              source: "",
+              projectId,
+            };
+            await stores[STORE_DIAGRAMS].put(created);
+            await link(stores, projectId, "datasetIds", created.id);
+            return created;
+          },
+        );
+        return ok(flow);
       } catch (error) {
         return err(toRepoError(error));
       }

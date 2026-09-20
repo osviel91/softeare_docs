@@ -22,6 +22,7 @@ import {
 import {
   resourceKindOf,
   resourceTypeOf,
+  resourceTypeOfName,
 } from "../domain/workspace/resource-id";
 import type { DiagramFile, NoteFile, Project } from "../domain/workspace/types";
 import { diagramDisplayName } from "../language/diagram-title";
@@ -157,7 +158,9 @@ export function descriptorFor(
     id: record.id,
     projectId,
     path: file.name,
-    type: record.type,
+    // The record knows the type; a file the record has not seen yet still gets
+    // one from its name, so a newly created event flow is never mistyped.
+    type: record.type ?? resourceTypeOfName(file.name),
     title: isNote
       ? noteDisplayName(file.name, file.markdown)
       : diagramDisplayName(file.name, file.source),

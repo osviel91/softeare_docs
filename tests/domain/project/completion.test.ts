@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   completeAt,
+  completeEventFlowAt,
   completionLabels,
   type CompletionRequest,
 } from "../../../src/domain/project/completion";
+import { analyzeEventFlow } from "../../../src/language/eventflow/parser";
 import { analyze } from "../../../src/language/analyze";
 import type { ProjectSymbol } from "../../../src/domain/project/project-index";
 
@@ -191,5 +193,77 @@ describe("completeAt — positions with nothing to suggest", () => {
     expect(complete("title T\nA ->", { symbols: many, limit: 5 })).toHaveLength(
       5,
     );
+  });
+});
+
+describe("completeEventFlowAt", () => {
+  const FLOW = [
+    "event OrderCreated",
+    "event PaymentRequested",
+    "topic orders",
+    "broker Kafka",
+    "producer OrderService",
+    "consumer BillingService",
+    "OrderService publishes OrderCreated to orders",
+  ].join("\n");
+
+  /** Complete at the caret, marked in `marked` with a `|`. */
+  function completeFlow(marked: string, projectNames = {}): string[] {
+    const caret = marked.indexOf("|");
+    const source = marked.replace("|", "");
+    const offset = caret === -1 ? source.length : caret;
+    const { flow } = analyzeEventFlow(source);
+    return completionLabels(
+      completeEventFlowAt({ source, offset, flow, projectNames }),
+    );
+  }
+
+  it("offers the statement keywords at the start of a line", () => {
+    const labels = completeFlow("event A\n|");
+    expect(labels).toContain("topic");
+    expect(labels).toContain("publish");
+  });
+
+  it("offers events after `publishes` and after `consumes`", () => {
+    expect(completeFlow(`${FLOW}\nOrderService publishes |`)).toEqual([
+      "OrderCreated",
+      "PaymentRequested",
+    ]);
+    expect(completeFlow(`${FLOW}\nBillingService consumes |`)).toContain(
+      "OrderCreated",
+    );
+  });
+
+  it("offers channels after `to` and brokers after `on`", () => {
+    expect(
+      completeFlow(`${FLOW}\nOrderService publishes OrderCreated to |`),
+    ).toEqual(["orders"]);
+    expect(completeFlow(`${FLOW}\ntopic payments on |`)).toEqual(["Kafka"]);
+  });
+
+  it("suggests nothing after a keyword that only introduces a new name", () => {
+    expect(completeFlow(`${FLOW}\nevent |`)).toEqual([]);
+    expect(completeFlow(`${FLOW}\ntopic |`)).toEqual([]);
+  });
+
+  it("offers known services when declaring a producer or consumer", () => {
+    // The declaration names a service, and referencing one the project already
+    // knows is the common case — a new name can still just be typed.
+    expect(completeFlow(`${FLOW}\nconsumer |`)).toContain("OrderService");
+    expect(
+      completeFlow(`${FLOW}\nproducer |`, { services: ["ShippingApi"] }),
+    ).toContain("ShippingApi");
+  });
+
+  it("draws on names declared elsewhere in the project", () => {
+    expect(
+      completeFlow("OrderService publishes |", { events: ["ShipmentBooked"] }),
+    ).toEqual(["ShipmentBooked"]);
+  });
+
+  it("filters by the word being typed", () => {
+    expect(completeFlow(`${FLOW}\nOrderService publishes Pay`)).toEqual([
+      "PaymentRequested",
+    ]);
   });
 });

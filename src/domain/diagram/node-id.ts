@@ -28,7 +28,18 @@ import {
 export type AstNodeId = string;
 
 /** The kind of addressable node, used as the id's prefix. */
+/**
+ * The kinds of addressable node, across both documentation languages.
+ *
+ * The id *format* is shared — `<kind>@<line>:<column>` — so the source↔diagram
+ * machinery, the outline and hover can treat a node id as an opaque handle no
+ * matter which language produced it. Each language only ever walks its own nodes,
+ * so a sequence lookup never produces or matches an event-flow kind; the union
+ * exists so one id vocabulary covers the project rather than one vocabulary per
+ * language that would have to be reconciled later.
+ */
 export type AstNodeKind =
+  // sequence diagrams
   | "title"
   | "participant"
   | "alias"
@@ -41,7 +52,14 @@ export type AstNodeKind =
   | "par"
   | "critical"
   | "break"
-  | "branch";
+  | "branch"
+  // event flows
+  | "event"
+  | "broker"
+  | "channel"
+  | "service"
+  | "publication"
+  | "subscription";
 
 /**
  * A deterministic id for a node: `<kind>@<line>:<column>` (both 0-based).

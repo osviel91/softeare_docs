@@ -110,6 +110,10 @@ describe("analyzeResource", () => {
       participants: 3,
       messages: 2,
       words: 0,
+      events: 0,
+      producers: 0,
+      consumers: 0,
+      channels: 0,
     });
     expect(analysis.symbols.map((symbol) => symbol.name)).toEqual([
       "CartService",

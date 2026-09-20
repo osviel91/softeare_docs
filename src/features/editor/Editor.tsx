@@ -14,13 +14,28 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent as ReactDragEvent, KeyboardEvent } from "react";
-import type { Diagnostic } from "../../language/diagnostics/diagnostics";
-import { formatDiagnostic } from "../../language/diagnostics/diagnostics";
+import { formatLocation } from "../../language/diagnostics/diagnostics";
+import type { SourceRange } from "../../domain/diagram/ast";
 import type { EditorReveal } from "./reveal";
 import { useEditorReveal } from "./use-reveal";
 import { positionToOffset } from "../../language/source-position";
 import type { CompletionItem } from "../../domain/project/completion";
 import type { HoverInfo } from "../../domain/project/hover";
+
+/**
+ * What the editor needs to *show* about a problem.
+ *
+ * Deliberately structural rather than either language's diagnostic type: the
+ * editor renders a severity, a message and a location, and both the sequence and
+ * the event-flow analysers produce that. Widening here is what lets one editor
+ * serve two languages without a second component.
+ */
+export interface EditorDiagnostic {
+  severity: "error" | "warning" | "info";
+  message: string;
+  code: string;
+  range?: SourceRange;
+}
 
 export interface EditorProps {
   /** The current DSL source. */
@@ -28,7 +43,7 @@ export interface EditorProps {
   /** Called with the new source whenever the user edits the textarea. */
   onChange: (value: string) => void;
   /** Diagnostics to surface below the editor (from the language layer). */
-  diagnostics?: Diagnostic[];
+  diagnostics?: EditorDiagnostic[];
   /**
    * A source range to select and scroll to (used by project search, and by the
    * outline and problems panels). `null` leaves the caret alone.
@@ -508,8 +523,15 @@ User -> API: Login"
   );
 }
 
+/** Format a diagnostic for display, prefixing its location when it has one. */
+function formatEditorDiagnostic(diagnostic: EditorDiagnostic): string {
+  return diagnostic.range
+    ? `${formatLocation(diagnostic.range)}\n${diagnostic.message}`
+    : diagnostic.message;
+}
+
 /** A labeled diagnostics list; renders a clean-state hint when there is none. */
-function DiagnosticsList({ diagnostics }: { diagnostics: Diagnostic[] }) {
+function DiagnosticsList({ diagnostics }: { diagnostics: EditorDiagnostic[] }) {
   if (diagnostics.length === 0) {
     return (
       <p className="editor__ok" data-testid="dsl-ok">
@@ -524,13 +546,13 @@ function DiagnosticsList({ diagnostics }: { diagnostics: Diagnostic[] }) {
         <li
           key={`${diagnostic.code}-${index}`}
           className={`editor__diagnostic editor__diagnostic--${diagnostic.severity}`}
-          title={formatDiagnostic(diagnostic)}
+          title={formatEditorDiagnostic(diagnostic)}
         >
           <span className="editor__diagnostic-severity">
             {diagnostic.severity}
           </span>
           <span className="editor__diagnostic-message">
-            {formatDiagnostic(diagnostic)}
+            {formatEditorDiagnostic(diagnostic)}
           </span>
         </li>
       ))}

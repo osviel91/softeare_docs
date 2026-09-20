@@ -224,9 +224,10 @@ reproducible — `node_modules`, `dist`, and the npm cache are excluded via
 src/
   app/            React application shell and (later) routing & commands
   shared/         Framework-agnostic helpers: Result, id factories
-  domain/         Domain model: diagram, note, project, resource, links;
-                  project-wide search (search/)
-  language/       DSL lexer, parser, diagnostics, formatter; markdown renderer
+  domain/         Domain model: diagram, note, eventflow, project, resource,
+                  links; project-wide search (search/); project index (project/)
+  language/       Two DSLs (lexer, parser, diagnostics) — `sequence/` and
+                  `eventflow/` — plus the markdown renderer
   layout/         AST -> geometry (independent of SVG)
   renderer/       SVG rendering of the layout model
   workspace/      Persistence abstraction + implementations; portable
@@ -257,8 +258,64 @@ Work proceeds in disciplined, commit-per-phase milestones (see
 8. Export (SVG, then PNG)
 9. Documentation workspace (mixed document tabs, project-wide search, portable project archives)
 10. Project intelligence (stable resource ids, project index, diagnostics, outline, completion, quick open, find/references, rename)
+11. Event-driven modeling (`*.eventseq`: events, producers, consumers, brokers, channels, fan-out, causal chains)
 
 ## Status
+
+**Phases 0–11 are implemented** on this branch. `npm test` runs 1200+ tests,
+`npm run test:e2e` drives 85 checks against the production bundle in Chromium,
+and `npm run typecheck`, `npm run lint`, `npm run build` and
+`npm run format:check` are clean.
+
+**Phase 11 (event-driven modeling).** A project can now document an
+event-driven architecture in its own language, `*.eventseq`:
+
+```text
+title Order Processing
+
+event OrderCreated {
+  version: 2
+  domain: Orders
+}
+
+broker Kafka
+topic orders on Kafka
+
+producer OrderService
+consumer BillingService
+
+OrderService publishes OrderCreated to orders
+BillingService consumes OrderCreated from orders
+```
+
+- **A second language, not a different arrow.** Events, producers, consumers,
+  brokers and channels are first-class in the model (`src/domain/eventflow/ast.ts`)
+  rather than being styled sequence messages, because the documentation is _about_
+  those concepts. Publications and subscriptions are the mission's
+  `EventPublication { producer, event, channel }` and
+  `EventSubscription { consumer, event, channel }`.
+- **Both spellings of an edge.** `OrderService publishes OrderCreated to orders`
+  and `publish OrderCreated from OrderService to orders` parse to the same node,
+  so a document can be written the way it reads best.
+- **Extensible event metadata.** `event X { … }` holds arbitrary `key: value`
+  pairs — version, domain, schema, correlation key, partition key — with no field
+  hard-coded in the parser.
+- **Fan-out is explicit.** The layout draws one row per event with its producer
+  on the left, the channel and event in the middle, and one box per consumer on
+  the right, so competing consumers are visible rather than implied by a count.
+- **Causal chains.** Events are ordered by a stable topological sort over
+  "a service consumes A and publishes B", so a cascade reads top to bottom; a
+  cycle is reported and its rows are tagged rather than silently reordered.
+- **The same project intelligence.** An event flow contributes events, services,
+  channels and brokers to the project index, so quick open, find-references,
+  the overview and the Problems panel cover it exactly as they cover a sequence
+  diagram — and the event-driven checks (`Event X has no producer`, `Unknown
+service "Ghost"`) are what an EDD review actually wants.
+- **Everything else works too.** Event flows open in the same tab strip (with a
+  `⇄` glyph), the same editor with context-aware completion
+  (`OrderService publishes ␣` offers the events the project declares, including
+  ones another flow declares), the same outline, the same viewport, the same
+  source↔diagram selection, and the same export pipeline (SVG/PNG/PDF).
 
 **Phases 0–9 are implemented** on this branch: the sequence language and its
 renderer, the interactive editor, in-browser and folder-backed projects, tabs and

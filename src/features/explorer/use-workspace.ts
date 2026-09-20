@@ -37,6 +37,7 @@ import { isOk } from "../../shared/result/result";
 import { withDiagramTitle } from "../../language/diagram-title";
 import { withNoteTitle } from "../../language/markdown/note-title";
 import { uniqueCopyName } from "../../domain/workspace/copy-name";
+import { resourceTypeOfName } from "../../domain/workspace/resource-id";
 import {
   newDiagramFileId,
   newNoteId,
@@ -162,6 +163,12 @@ export interface WorkspaceHook {
    * it, and return it (or `null` on failure).
    */
   createEmptyDiagram(projectId: string): Promise<DiagramFile | null>;
+  /**
+   * Create an empty event flow (a `.eventseq` file) in a project, select it, and
+   * return it. It is stored like a diagram — the extension is the language — so
+   * the tab strip and the explorer treat it as one.
+   */
+  createEmptyEventFlow(projectId: string): Promise<DiagramFile | null>;
   /** Create a note seeded with a heading, select it, and return it. */
   createEmptyNote(projectId: string): Promise<NoteFile | null>;
   /**
@@ -221,17 +228,17 @@ interface ProjectSetters {
 
 /** The identity record's view of one stored file. */
 function metadataFileOf(file: DiagramFile | NoteFile): MetadataFile {
-  return "markdown" in file
-    ? {
-        path: file.name,
-        type: "markdown-document",
-        title: noteDisplayName(file.name, file.markdown),
-      }
-    : {
-        path: file.name,
-        type: "sequence-diagram",
-        title: diagramDisplayName(file.name, file.source),
-      };
+  // The stored kind cannot separate the two diagram languages — both live in the
+  // diagram store — so the file name decides, exactly as it does on disk.
+  const type = resourceTypeOfName(file.name);
+  return {
+    path: file.name,
+    type,
+    title:
+      type === "markdown-document"
+        ? noteDisplayName(file.name, (file as NoteFile).markdown)
+        : diagramDisplayName(file.name, (file as DiagramFile).source),
+  };
 }
 
 /**
@@ -896,6 +903,31 @@ export function useWorkspace(
     [repo, setters, mergeNotes],
   );
 
+  const createEmptyEventFlow = useCallback(
+    async (projectId: string): Promise<DiagramFile | null> => {
+      const result: Result<DiagramFile, Error> =
+        await repo.createEmptyEventFlow(projectId);
+      if (!isOk(result)) {
+        setError(result.error);
+        return null;
+      }
+      const flow = result.value;
+      setDiagrams((current: DiagramFile[]) =>
+        current.some((item) => item.id === flow.id)
+          ? current
+          : [...current, flow],
+      );
+      mergeDiagrams([flow]);
+      setters.setSelectedProjectId(projectId);
+      setters.setSelectedDiagramId(flow.id);
+      setters.setSelectedNoteId(null);
+      setters.setSource(flow.source);
+      setters.setNoteMarkdown("");
+      return flow;
+    },
+    [repo, setters, mergeDiagrams],
+  );
+
   const duplicateDiagram = useCallback(
     async (diagram: DiagramFile): Promise<DiagramFile | null> => {
       const result: Result<DiagramFile, Error> =
@@ -1186,6 +1218,7 @@ export function useWorkspace(
     hiddenPaths,
     unhidePath,
     createEmptyDiagram,
+    createEmptyEventFlow,
     createEmptyNote,
     duplicateDiagram,
     duplicateNote,

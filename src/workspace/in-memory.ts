@@ -23,6 +23,7 @@ import type { ProjectId } from "../domain/workspace/workspace-ids";
 import { EMPTY_NOTE_MARKDOWN, uniqueNoteName } from "../domain/workspace/note";
 import { uniqueCopyName } from "../domain/workspace/copy-name";
 import { uniqueDiagramName } from "../domain/workspace/diagram";
+import { uniqueEventFlowName } from "../domain/workspace/event-flow";
 import { err, ok, type Result } from "../shared/result/result";
 import type { WorkspaceRepository } from "./WorkspaceRepository";
 
@@ -218,6 +219,27 @@ export function createInMemoryWorkspaceRepository(): WorkspaceRepository {
         diagrams.set(id, diagram);
         link(projectId, "datasetIds", id);
         return ok(diagram);
+      } catch (error) {
+        return err(toError(error));
+      }
+    },
+
+    async createEmptyEventFlow(
+      projectId: ProjectId,
+    ): Promise<Result<DiagramFile, Error>> {
+      try {
+        const project = projects.get(projectId);
+        if (!project) return err(new Error(`Unknown project: ${projectId}`));
+        const name = uniqueEventFlowName(
+          project.datasetIds
+            .map((did) => diagrams.get(did)?.name)
+            .filter((value): value is string => typeof value === "string"),
+        );
+        const id = newDiagramFileId();
+        const flow: DiagramFile = { id, name, source: "", projectId };
+        diagrams.set(id, flow);
+        link(projectId, "datasetIds", id);
+        return ok(flow);
       } catch (error) {
         return err(toError(error));
       }

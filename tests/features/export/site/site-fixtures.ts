@@ -80,6 +80,7 @@ export function fixtureIndex(): ProjectIndex {
   return {
     projectId: "p1",
     resources,
+    eventFlows: [],
     diagrams: [fixtureDiagram],
     documents: [fixtureDocument],
     participants: [],

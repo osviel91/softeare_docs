@@ -11,6 +11,7 @@ function mockContext(
     overrides.createEmptyDiagram ?? vi.fn(async () => null);
   const createEmptyNote = overrides.createEmptyNote ?? vi.fn(async () => null);
   const openDiagram = overrides.openDiagram ?? vi.fn();
+  const createEventFlow = overrides.createEventFlow ?? vi.fn(async () => null);
   const closeActiveTab = overrides.closeActiveTab ?? vi.fn();
   const openSearch = overrides.openSearch ?? vi.fn();
   const openQuickOpen = overrides.openQuickOpen ?? vi.fn();
@@ -28,6 +29,7 @@ function mockContext(
     createEmptyNote,
     selectedProjectId: null,
     openDiagram,
+    createEventFlow,
     closeActiveTab,
     openSearch,
     openQuickOpen,
@@ -49,6 +51,7 @@ function mockContext(
     createEmptyDiagram,
     createEmptyNote,
     openDiagram,
+    createEventFlow,
     closeActiveTab,
     openSearch,
     openQuickOpen,

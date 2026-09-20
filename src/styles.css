@@ -602,6 +602,19 @@ body {
   line-height: 1.65;
 }
 
+.docs__section + .docs__section {
+  margin-top: 34px;
+}
+
+.docs__section-title {
+  margin: 0 0 18px;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
 .docs__list {
   margin: 0;
   display: flex;

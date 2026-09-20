@@ -21,6 +21,7 @@ import { useEditorReveal } from "./use-reveal";
 import { positionToOffset } from "../../language/source-position";
 import type { CompletionItem } from "../../domain/project/completion";
 import type { HoverInfo } from "../../domain/project/hover";
+import { SEQUENCE_SNIPPETS, type EditorSnippet } from "./snippets";
 
 /**
  * What the editor needs to *show* about a problem.
@@ -60,111 +61,13 @@ export interface EditorProps {
   describe?: (offset: number) => HoverInfo | null;
   /** Called with the caret's offset whenever it moves, for editor→preview sync. */
   onCaretChange?: (offset: number) => void;
+  /**
+   * The snippet menu's fragments. The two documentation languages share no
+   * statements below `title`, so the shell passes the set that matches the open
+   * document; the sequence list is the default.
+   */
+  snippets?: EditorSnippet[];
 }
-
-/** Reusable DSL fragments offered by the snippet menu. */
-export const SNIPPETS: { label: string; hint: string; text: string }[] = [
-  {
-    label: "Title",
-    hint: "name the diagram",
-    text: "title My Diagram",
-  },
-  {
-    label: "Participants",
-    hint: "declare lifelines",
-    text: "participant User\nparticipant API",
-  },
-  {
-    label: "Actor",
-    hint: "human lifeline",
-    text: "actor User",
-  },
-  {
-    label: "Labelled participant",
-    hint: "stable id with a readable label",
-    text: 'participant api as "Authentication Service"',
-  },
-  {
-    label: "Alias",
-    hint: "shorthand for a participant",
-    text: "alias U = User",
-  },
-  {
-    label: "Message",
-    hint: "solid arrow with a head",
-    text: "User ->> API: Request",
-  },
-  {
-    label: "Response",
-    hint: "dashed arrow with a head",
-    text: "API -->> User: Response",
-  },
-  {
-    label: "Self message",
-    hint: "loop back onto one lifeline",
-    text: "API ->> API: Validate token",
-  },
-  {
-    label: "Note",
-    hint: "callout on a lifeline",
-    text: "note right of API : Detail",
-  },
-  {
-    label: "Spanning note",
-    hint: "covers several lifelines",
-    text: "note over API,DB : Transaction boundary",
-  },
-  {
-    label: "Multiline note",
-    hint: "body closed by end note",
-    text: "note right of API:\n  First line\n  Second line\nend note",
-  },
-  {
-    label: "Note on message",
-    hint: "attach to step number N",
-    text: "note on 1 : Detail",
-  },
-  {
-    label: "Activation",
-    hint: "busy span on a lifeline",
-    text: "activate API\nAPI ->> API: Work\ndeactivate API",
-  },
-  {
-    label: "Inline activation",
-    hint: "+ activates receiver, - deactivates sender",
-    text: "User ->>+ API: Login\nAPI -->>- User: Token",
-  },
-  {
-    label: "Loop",
-    hint: "repeat a block",
-    text: "loop retry up to 3 times\n  API ->> DB: Query\nend",
-  },
-  {
-    label: "Alt / else",
-    hint: "alternative branches",
-    text: "alt user exists\n  API ->> DB: Load user\nelse user missing\n  API -->> User: 404\nend",
-  },
-  {
-    label: "Opt",
-    hint: "optional block",
-    text: "opt cache hit\n  API -->> User: Cached\nend",
-  },
-  {
-    label: "Par / and",
-    hint: "parallel blocks",
-    text: "par send email\n  API ->> Mail: Notify\nand write audit\n  API ->> DB: Log\nend",
-  },
-  {
-    label: "Critical / option",
-    hint: "critical region with fallback",
-    text: "critical commit\n  API ->> DB: Commit\noption rollback\n  API ->> DB: Rollback\nend",
-  },
-  {
-    label: "Break",
-    hint: "interruption flow",
-    text: "break request rejected\n  API -->> User: 400 Bad Request\nend",
-  },
-];
 
 export default function Editor({
   value,
@@ -174,6 +77,7 @@ export default function Editor({
   complete,
   describe,
   onCaretChange,
+  snippets = SEQUENCE_SNIPPETS,
 }: EditorProps) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const gutterRef = useRef<HTMLDivElement | null>(null);
@@ -496,7 +400,7 @@ User -> API: Login"
               data-testid="snippets-menu"
               role="menu"
             >
-              {SNIPPETS.map((snippet) => (
+              {snippets.map((snippet) => (
                 <li key={snippet.label}>
                   <button
                     type="button"

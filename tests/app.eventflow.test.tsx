@@ -110,6 +110,41 @@ describe("App — event flows", () => {
     expect(items[0]).toHaveTextContent("Event flows");
   });
 
+  it("offers the event-flow snippets in an event flow, not the sequence ones", async () => {
+    render(<App />);
+    await createProject();
+    await newEventFlow();
+
+    fireEvent.click(screen.getByTestId("snippets-button"));
+    const offered = screen
+      .getAllByTestId("snippet-item")
+      .map((item) => item.textContent ?? "")
+      .join(" ");
+    expect(offered).toContain("Broker");
+    expect(offered).toContain("Publish");
+    // The sequence language's constructs would be syntax errors here.
+    expect(offered).not.toContain("Participants");
+    expect(offered).not.toContain("Activation");
+  });
+
+  it("keeps the sequence snippets for a sequence diagram", async () => {
+    render(<App />);
+    await createProject();
+    await newEventFlow();
+    await runCommand("New Diagram");
+    await waitFor(() => {
+      expect(screen.getByTestId("dsl-textarea")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId("snippets-button"));
+    const offered = screen
+      .getAllByTestId("snippet-item")
+      .map((item) => item.textContent ?? "")
+      .join(" ");
+    expect(offered).toContain("Participants");
+    expect(offered).not.toContain("Broker");
+  });
+
   it("renders a complete flow as a diagram with addressable nodes", async () => {
     render(<App />);
     await createProject();

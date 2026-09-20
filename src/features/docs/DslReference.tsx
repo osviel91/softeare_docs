@@ -164,16 +164,93 @@ export const DSL_CONSTRUCTS: DslConstruct[] = [
   },
 ];
 
-export default function DslReference() {
+/** Every construct the event-flow language (`*.eventseq`) currently supports. */
+export const EVENT_FLOW_CONSTRUCTS: DslConstruct[] = [
+  {
+    name: "Title",
+    syntax: "title <text>",
+    summary:
+      "The flow's name and heading; the explorer and the tab bar show it instead of the file name.",
+    example: "title Order Processing",
+  },
+  {
+    name: "Event",
+    syntax: "event <name> [{\n  <key>: <value>\n}]",
+    summary:
+      "A fact other services react to. The optional block holds arbitrary `key: value` metadata — version, domain, schema, correlation key, partition key — so the model is not limited to a fixed set of fields.",
+    example: "event OrderCreated {\n  version: 2\n  domain: Orders\n}",
+  },
+  {
+    name: "Broker",
+    syntax: "broker <name>",
+    summary:
+      "The infrastructure events travel through. A channel may name the broker that hosts it with `on`.",
+    example: "broker Kafka",
+  },
+  {
+    name: "Channel",
+    syntax:
+      "topic <name> [on <broker>]\nqueue <name> [on <broker>]\nstream <name> [on <broker>]",
+    summary:
+      "The three channel kinds. A topic fans out to every subscriber, a queue delivers to one consumer, and a stream is ordered and replayable. The kind is documentation rather than decoration, and an unused channel is reported.",
+    example:
+      "topic orders on Kafka\nqueue payments on Kafka\nstream audit on Kafka",
+  },
+  {
+    name: "Producer / consumer / service",
+    syntax: "producer <name>\nconsumer <name>\nservice <name>",
+    summary:
+      "Declares a service. `producer` and `consumer` are role hints for the reader; `service` is role-neutral. Naming a service in a publish/consume line without declaring it is reported as an unknown service.",
+    example:
+      "producer OrderService\nconsumer BillingService\nservice PaymentService",
+  },
+  {
+    name: "Publication",
+    syntax: "<service> publishes <event> [to <channel>]",
+    summary:
+      "Wires a service to an event it produces. Several services may publish the same event.",
+    example: "OrderService publishes OrderCreated to orders",
+  },
+  {
+    name: "Subscription",
+    syntax: "<service> consumes <event> [from <channel>]",
+    summary:
+      "Wires a service to an event it reacts to. Every subscription for one event is one consumer box in the layout, so fan-out is visible rather than implied by a count.",
+    example: "BillingService consumes OrderCreated from orders",
+  },
+  {
+    name: "Verb-first edges",
+    syntax:
+      "publish <event> from <service> [to <channel>]\nconsume <event> by <service> [from <channel>]",
+    summary:
+      "The same two edges written event-first. Both spellings parse to the same node, so a document can be written the way it reads best.",
+    example:
+      "publish OrderCreated from OrderService to orders\nconsume OrderCreated by BillingService from orders",
+  },
+  {
+    name: "Comment",
+    syntax: "# <text>",
+    summary:
+      "Everything from `#` to the end of the line is ignored. Comments are recognised only at the start of a line, so a `#` inside a metadata value is kept.",
+    example: "# events first, then the channels that carry them",
+  },
+];
+
+/** One language's section: a heading and the constructs it documents. */
+function ConstructSection({
+  title,
+  constructs,
+  testId,
+}: {
+  title: string;
+  constructs: DslConstruct[];
+  testId: string;
+}) {
   return (
-    <div className="docs" data-testid="dsl-reference">
-      <p className="docs__intro">
-        The editor owns a small sequence-diagram language. Every construct below
-        is parsed, validated, and drawn by this project rather than delegated to
-        a library.
-      </p>
+    <section className="docs__section" data-testid={testId}>
+      <h3 className="docs__section-title">{title}</h3>
       <dl className="docs__list">
-        {DSL_CONSTRUCTS.map((construct) => (
+        {constructs.map((construct) => (
           <div className="docs__entry" key={construct.name}>
             <dt className="docs__name">{construct.name}</dt>
             <dd className="docs__body">
@@ -188,6 +265,29 @@ export default function DslReference() {
           </div>
         ))}
       </dl>
+    </section>
+  );
+}
+
+export default function DslReference() {
+  return (
+    <div className="docs" data-testid="dsl-reference">
+      <p className="docs__intro">
+        The editor owns two small documentation languages, both parsed,
+        validated and drawn by this project rather than delegated to a library.
+        A sequence diagram shows the order of interactions; an event flow shows
+        which services produce and consume which events.
+      </p>
+      <ConstructSection
+        title="Sequence diagrams"
+        constructs={DSL_CONSTRUCTS}
+        testId="docs-section-sequence"
+      />
+      <ConstructSection
+        title="Event flows"
+        constructs={EVENT_FLOW_CONSTRUCTS}
+        testId="docs-section-event-flow"
+      />
     </div>
   );
 }

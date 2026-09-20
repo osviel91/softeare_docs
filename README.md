@@ -69,13 +69,18 @@ over a status bar. Everything is themed from one set of CSS custom properties in
 one place rather than per component.
 
 - **Editor views.** A `Code` / `Docs` / `History` segmented control switches the
-  middle pane between the DSL source, a reference for every construct the parser
-  supports (`src/features/docs`), and the open diagram's version timeline
-  (`src/features/history`). A test asserts each documented keyword really lexes as
-  a keyword, so the reference cannot drift behind the grammar.
+  middle pane between the DSL source, a reference for every construct both
+  documentation languages support (`src/features/docs`), and the open diagram's
+  version timeline (`src/features/history`). The reference is split into a
+  sequence-diagram section and an event-flow section, and tests assert each
+  documented keyword really lexes as a keyword — or, for an event flow, is
+  accepted by its parser — so it cannot drift behind the grammar.
 - **Editing.** The editor has a line-number gutter synced to the textarea's scroll
-  position, and a **Snippets** menu (`src/features/editor`) that inserts a
-  construct at the caret, starting it on its own line unless it is already at one.
+  position, and a **Snippets** menu (`src/features/editor/snippets.ts`) that
+  inserts a construct at the caret, starting it on its own line unless it is
+  already at one. The menu follows the open document's language, so an event flow
+  offers `event`, `broker` and `publish … to …` rather than `participant` and
+  sequence arrows, which would be syntax errors there.
 - **Auto-update.** With the switch on, the canvas re-renders as you type. Switched
   off, the canvas keeps the last rendered diagram and a **Render** button appears,
   so a large diagram does not re-lay out on every keystroke.

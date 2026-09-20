@@ -1,8 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 
-import Editor, { SNIPPETS } from "../../../src/features/editor/Editor";
+import Editor from "../../../src/features/editor/Editor";
+import {
+  EVENT_FLOW_SNIPPETS,
+  SEQUENCE_SNIPPETS,
+} from "../../../src/features/editor/snippets";
 import { analyze } from "../../../src/language/analyze";
+import { analyzeEventFlow } from "../../../src/language/eventflow/parser";
 import {
   DiagnosticCode,
   type Diagnostic,
@@ -207,12 +212,105 @@ describe("Editor — snippets", () => {
       return `${STATEMENT_PRELUDE}\n${text}`;
     };
 
-    for (const snippet of SNIPPETS) {
+    for (const snippet of SEQUENCE_SNIPPETS) {
       expect(
         analyze(sourceFor(snippet.label, snippet.text)).diagnostics,
         `snippet "${snippet.label}" is not valid DSL`,
       ).toEqual([]);
     }
+  });
+});
+
+describe("Editor — event-flow snippets", () => {
+  /** Open the menu and choose the snippet whose label contains `label`. */
+  function insertSnippet(label: string): void {
+    fireEvent.click(screen.getByTestId("snippets-button"));
+    const item = screen
+      .getAllByTestId("snippet-item")
+      .find((element) => element.textContent?.includes(label));
+    if (!item) throw new Error(`no snippet labelled ${label}`);
+    fireEvent.click(item);
+  }
+
+  it("offers the event-flow fragments, not the sequence ones", () => {
+    render(
+      <Editor value="" onChange={vi.fn()} snippets={EVENT_FLOW_SNIPPETS} />,
+    );
+    fireEvent.click(screen.getByTestId("snippets-button"));
+    const all = screen
+      .getAllByTestId("snippet-item")
+      .map((item) => item.textContent ?? "")
+      .join(" ");
+    expect(all).toContain("Event");
+    expect(all).toContain("Broker");
+    expect(all).toContain("Publish");
+    // A sequence-only construct must not be offered in an event flow.
+    expect(all).not.toContain("Participants");
+    expect(all).not.toContain("Activation");
+  });
+
+  it("inserts an event-flow declaration", () => {
+    const onChange = vi.fn();
+    render(
+      <Editor value="" onChange={onChange} snippets={EVENT_FLOW_SNIPPETS} />,
+    );
+    insertSnippet("Broker");
+    expect(onChange).toHaveBeenCalledWith("broker Kafka");
+  });
+
+  /**
+   * The snippets are hand-written, so guard them against drifting behind the
+   * grammar. A lifecycle warning ("has no producer") is fine for a lone
+   * fragment; a syntax error is not.
+   */
+  it("keeps every event-flow snippet free of syntax errors", () => {
+    const DECLS = [
+      "broker Kafka",
+      "topic orders on Kafka",
+      "producer OrderService",
+      "consumer BillingService",
+      "event OrderCreated {",
+      "  version: 1",
+      "}",
+    ].join("\n");
+
+    const contextFor = (label: string, text: string): string => {
+      if (label === "Title" || label === "Event" || label === "Broker") {
+        return text;
+      }
+      if (["Topic", "Queue", "Stream"].includes(label)) {
+        return `broker Kafka\n${text}`;
+      }
+      if (["Producer", "Consumer", "Service"].includes(label)) return text;
+      // Every publish/consume spelling needs the names it references.
+      return `${DECLS}\n${text}`;
+    };
+
+    for (const snippet of EVENT_FLOW_SNIPPETS) {
+      const errors = analyzeEventFlow(
+        contextFor(snippet.label, snippet.text),
+      ).diagnostics.filter((diagnostic) => diagnostic.severity === "error");
+      expect(
+        errors,
+        `snippet "${snippet.label}" is not valid event-flow syntax`,
+      ).toEqual([]);
+    }
+  });
+
+  it("composes a warning-free flow from the snippets alone", () => {
+    const pick = (label: string): string =>
+      EVENT_FLOW_SNIPPETS.find((snippet) => snippet.label === label)!.text;
+    const source = [
+      pick("Title"),
+      pick("Broker"),
+      pick("Topic"),
+      pick("Producer"),
+      pick("Consumer"),
+      pick("Event"),
+      pick("Publish"),
+      pick("Consume"),
+    ].join("\n");
+    expect(analyzeEventFlow(source).diagnostics).toEqual([]);
   });
 });
 

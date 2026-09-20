@@ -22,6 +22,10 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Editor from "./features/editor/Editor";
+import {
+  EVENT_FLOW_SNIPPETS,
+  SEQUENCE_SNIPPETS,
+} from "./features/editor/snippets";
 import Preview from "./features/preview/Preview";
 import Explorer, { type MenuPosition } from "./features/explorer/Explorer";
 import TabBar from "./features/tabs/TabBar";
@@ -1754,6 +1758,7 @@ export default function App() {
                 complete={complete}
                 describe={describe}
                 onCaretChange={onCaretChange}
+                snippets={isEventFlow ? EVENT_FLOW_SNIPPETS : SEQUENCE_SNIPPETS}
               />
             </>
           )}

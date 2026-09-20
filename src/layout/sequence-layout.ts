@@ -27,6 +27,7 @@ import {
   PARTICIPANT_SPACING,
   TITLE_HEIGHT,
   MESSAGE_ROW_HEIGHT,
+  MESSAGE_TOP_CLEARANCE,
   NOTE_GAP,
   NOTE_HEIGHT,
   NOTE_MARGIN_Y,
@@ -168,23 +169,34 @@ export function layoutDiagram(diagram: SequenceDiagram): DiagramLayout {
     if (targetIndex !== undefined) byId.set(alias.alias, targetIndex);
   }
 
+  // Vertical bands, top to bottom: the optional title, the participant boxes,
+  // then the message rows. Each band is derived from the one above it, and all
+  // three share `boxTop`, so a diagram with no title cannot drift out of step
+  // with one that has a title.
+  const titleHeight = diagram.title ? TITLE_HEIGHT : 0;
+  /** Top edge of every participant box (and so of the drawn lifelines). */
+  const boxTop = titleHeight + PARTICIPANT_BOX_HEIGHT;
+  /**
+   * Vertical center of the first message row. It clears the boxes by a full box
+   * height plus {@link MESSAGE_TOP_CLEARANCE} so the first row's label has room
+   * above its arrow instead of landing on the name boxes.
+   */
+  const messagesTopY = boxTop + PARTICIPANT_BOX_HEIGHT + MESSAGE_TOP_CLEARANCE;
+
   const n = diagram.participants.length;
   const participants: ParticipantLayout[] = diagram.participants.map(
     (p, index) => ({
       id: p.id,
       label: p.label,
       x: MARGIN_X + index * PARTICIPANT_SPACING + PARTICIPANT_SPACING / 2,
-      topY: TITLE_HEIGHT + PARTICIPANT_BOX_HEIGHT,
+      topY: boxTop,
       width: participantBoxWidth(p.label),
       bottomY: 0, // filled in after messages are placed
     }),
   );
 
-  const titleHeight = diagram.title ? TITLE_HEIGHT : 0;
-  const topY = titleHeight + PARTICIPANT_BOX_HEIGHT;
-
   /** Vertical center line of a message row. */
-  const rowY = (row: number): number => topY + row * MESSAGE_ROW_HEIGHT;
+  const rowY = (row: number): number => messagesTopY + row * MESSAGE_ROW_HEIGHT;
 
   // Walk the statements once. Messages take a row each; activation statements
   // take no row of their own, they only open or close a bar at the current

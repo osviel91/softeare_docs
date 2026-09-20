@@ -7,6 +7,7 @@ import type {
 import {
   MARGIN_X,
   MESSAGE_ROW_HEIGHT,
+  MESSAGE_TOP_CLEARANCE,
   NOTE_GAP,
   NOTE_HEIGHT,
   NOTE_MARGIN_Y,
@@ -145,8 +146,11 @@ describe("layoutDiagram — message rows and canvas size", () => {
     for (let i = 1; i < ys.length; i++) {
       expect(ys[i]).toBe(ys[i - 1] + MESSAGE_ROW_HEIGHT);
     }
-    // First row starts just below the participant box.
-    expect(ys[0]).toBe(TITLE_HEIGHT + PARTICIPANT_BOX_HEIGHT);
+    // First row starts just below the participant boxes, with clearance for
+    // its own label above the arrow.
+    expect(ys[0]).toBe(
+      TITLE_HEIGHT + PARTICIPANT_BOX_HEIGHT * 2 + MESSAGE_TOP_CLEARANCE,
+    );
   });
 
   it("sits arrow tails/heads exactly on the sender/receiver lifelines", () => {
@@ -160,9 +164,10 @@ describe("layoutDiagram — message rows and canvas size", () => {
 
   it("lengthens the canvas for the number of messages", () => {
     const layout = layoutDiagram(LOGIN);
-    const topY = TITLE_HEIGHT + PARTICIPANT_BOX_HEIGHT;
+    const bodyTop =
+      TITLE_HEIGHT + PARTICIPANT_BOX_HEIGHT * 2 + MESSAGE_TOP_CLEARANCE;
     expect(layout.height).toBe(
-      topY + layout.messages.length * MESSAGE_ROW_HEIGHT,
+      bodyTop + layout.messages.length * MESSAGE_ROW_HEIGHT,
     );
   });
 
@@ -431,7 +436,8 @@ describe("layoutDiagram — notes", () => {
     const layout = layoutDiagram(LOGIN);
     const messagesBottom =
       TITLE_HEIGHT +
-      PARTICIPANT_BOX_HEIGHT +
+      PARTICIPANT_BOX_HEIGHT * 2 +
+      MESSAGE_TOP_CLEARANCE +
       layout.messages.length * MESSAGE_ROW_HEIGHT;
     const firstNoteY = messagesBottom + NOTE_MARGIN_Y;
     for (let i = 0; i < layout.notes.length; i++) {
@@ -491,9 +497,11 @@ describe("layoutDiagram — notes", () => {
         notes: [note("over", "A", "spans")],
       }),
     );
-    // No title, so the body top is just below the participant box.
+    // No title, so the body top is just below the participant boxes.
     const bodyBottom =
-      PARTICIPANT_BOX_HEIGHT + layout.messages.length * MESSAGE_ROW_HEIGHT;
+      PARTICIPANT_BOX_HEIGHT * 2 +
+      MESSAGE_TOP_CLEARANCE +
+      layout.messages.length * MESSAGE_ROW_HEIGHT;
     const expectedBottom =
       bodyBottom + layout.notes.length * NOTE_ROW_HEIGHT + NOTE_MARGIN_Y;
     expect(layout.height).toBe(expectedBottom);
@@ -682,5 +690,69 @@ describe("layoutDiagram — activations", () => {
     const user = layout.participants[0];
     expect(layout.activations[0].participant).toBe("User");
     expect(layout.activations[0].x).toBe(user.x);
+  });
+});
+
+describe("layoutDiagram — vertical bands", () => {
+  it("places the first message row clear of the participant boxes", () => {
+    const layout = layoutDiagram(LOGIN);
+    const boxBottom = layout.participants[0].topY + PARTICIPANT_BOX_HEIGHT;
+    expect(layout.messages[0].y).toBeGreaterThan(boxBottom);
+  });
+
+  it("leaves room for the first row's label above its arrow", () => {
+    const layout = layoutDiagram(LOGIN);
+    const boxBottom = layout.participants[0].topY + PARTICIPANT_BOX_HEIGHT;
+    // The renderer draws a label 6px above the arrow line.
+    expect(layout.messages[0].y - 6).toBeGreaterThan(boxBottom);
+  });
+
+  it("derives the box top from the title, so both bands stay in step", () => {
+    const titled = layoutDiagram(LOGIN);
+    expect(titled.participants[0].topY).toBe(
+      TITLE_HEIGHT + PARTICIPANT_BOX_HEIGHT,
+    );
+
+    const untitled = layoutDiagram(
+      diagram({
+        participants: LOGIN.participants,
+        statements: LOGIN.statements,
+      }),
+    );
+    // No title band, so the boxes move up by exactly the title height.
+    expect(untitled.participants[0].topY).toBe(PARTICIPANT_BOX_HEIGHT);
+    expect(titled.participants[0].topY - untitled.participants[0].topY).toBe(
+      TITLE_HEIGHT,
+    );
+  });
+
+  it("keeps the canvas tall enough for the boxes when there is no title", () => {
+    // Regression: boxes were positioned with a title allowance the canvas
+    // height did not account for, so an untitled diagram clipped them and drew
+    // its first message above them.
+    const untitled = layoutDiagram(
+      diagram({ participants: LOGIN.participants }),
+    );
+    const box = untitled.participants[0];
+    expect(untitled.height).toBeGreaterThanOrEqual(
+      box.topY + PARTICIPANT_BOX_HEIGHT,
+    );
+    expect(untitled.messages).toEqual([]);
+  });
+
+  it("never places a message row above the boxes, titled or not", () => {
+    for (const title of [undefined, LOGIN.title]) {
+      const layout = layoutDiagram(
+        diagram({
+          title,
+          participants: LOGIN.participants,
+          statements: LOGIN.statements,
+        }),
+      );
+      const boxBottom = layout.participants[0].topY + PARTICIPANT_BOX_HEIGHT;
+      for (const message of layout.messages) {
+        expect(message.y).toBeGreaterThan(boxBottom);
+      }
+    }
   });
 });

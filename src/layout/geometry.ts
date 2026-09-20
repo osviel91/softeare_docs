@@ -16,6 +16,13 @@ export const PARTICIPANT_BOX_HEIGHT = 24;
 /** Vertical distance between consecutive message rows. */
 export const MESSAGE_ROW_HEIGHT = 44;
 
+/**
+ * Clearance between the participant boxes and the first message row. The first
+ * row also has to fit its own label above the arrow, so it needs more room than
+ * the box-to-box spacing alone.
+ */
+export const MESSAGE_TOP_CLEARANCE = 20;
+
 /** Horizontal distance between the centers of consecutive participants. */
 export const PARTICIPANT_SPACING = 120;
 

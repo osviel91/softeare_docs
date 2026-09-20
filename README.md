@@ -37,6 +37,22 @@ npm run build # type-check and produce a production build in dist/
 Other scripts: `npm run preview`, `npm run lint`, `npm run lint:fix`,
 `npm run format`, `npm run format:check`, `npm run typecheck`.
 
+## Docker
+
+The app is a static bundle, so it ships as a two-stage image: a Node stage
+builds the production bundle, and an `nginx` stage serves it over HTTP with
+client-side-routing fallback.
+
+```bash
+docker build -t sequencediagrams:latest .
+docker run -d --name sequencediagrams -p 8080:8080 sequencediagrams:latest
+# open http://localhost:8080/
+```
+
+Stop and remove it with `docker rm -f sequencediagrams`. The image is
+reproducible — `node_modules`, `dist`, and the npm cache are excluded via
+`.dockerignore`, and the build installs fresh from `package-lock.json`.
+
 ## Repository layout
 
 ```

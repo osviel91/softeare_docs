@@ -13,7 +13,10 @@ import {
   type DiagramLayout,
 } from "../../layout/geometry";
 import { layoutDiagram } from "../../layout/sequence-layout";
-import { renderDiagramToSvg } from "../../renderer/svg/sequence-svg-renderer";
+import {
+  diagramCanvasSize,
+  renderDiagramToSvg,
+} from "../../renderer/svg/sequence-svg-renderer";
 import { analyze } from "../../language/analyze";
 import { isValid } from "../../language/validator/validator";
 
@@ -30,6 +33,19 @@ function emptyLayout(): DiagramLayout {
 }
 
 /**
+ * Render a parsed AST to an SVG document string, plus the canvas size.
+ *
+ * The viewport needs the diagram's pixel size to center and fit it, and the
+ * renderer owns that calculation, so it is returned alongside the markup instead
+ * of being parsed back out of it.
+ */
+export interface DiagramDocument {
+  svg: string;
+  width: number;
+  height: number;
+}
+
+/**
  * Render a parsed AST to an SVG document string.
  *
  * Invalid ASTs (for example, duplicate participants that the validator flags
@@ -37,11 +53,19 @@ function emptyLayout(): DiagramLayout {
  * editor stays usable on malformed input (see ADR-003). `layoutDiagram`
  * asserts its preconditions, so validity is re-checked here before laying out.
  */
+export function renderDiagramDocument(
+  ast: SequenceDiagram | null,
+): DiagramDocument {
+  const layout = !ast || !isValid(ast) ? emptyLayout() : layoutDiagram(ast);
+  return {
+    svg: renderDiagramToSvg(layout),
+    ...diagramCanvasSize(layout),
+  };
+}
+
+/** Render a parsed AST to just its SVG document string. */
 export function renderDiagram(ast: SequenceDiagram | null): string {
-  if (!ast || !isValid(ast)) {
-    return renderDiagramToSvg(emptyLayout());
-  }
-  return renderDiagramToSvg(layoutDiagram(ast));
+  return renderDiagramDocument(ast).svg;
 }
 
 /** Turn DSL source into an SVG document string. */

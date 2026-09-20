@@ -236,6 +236,110 @@ async function runChecks(browser) {
     bars.length === 1 && bars[0].height > 0 && bars[0].width > 0,
   );
 
+  console.log("\nCanvas navigation:");
+  const zoomLevel = () =>
+    page.locator('[data-testid="zoom-level"]').textContent();
+  const zoomBefore = await zoomLevel();
+  await page.locator('[data-testid="zoom-in"]').click();
+  const zoomAfter = await zoomLevel();
+  check(
+    "zoom in raises the zoom level",
+    Number.parseInt(zoomAfter, 10) > Number.parseInt(zoomBefore, 10),
+    `${zoomBefore} -> ${zoomAfter}`,
+  );
+
+  await page.locator('[data-testid="zoom-reset"]').click();
+  check("reset returns to 100%", (await zoomLevel()) === "100%");
+
+  // The zoom transform must actually move the painted diagram, not just the
+  // readout: compare the canvas box before and after.
+  const boxBefore = await page
+    .locator('[data-testid="preview-svg"]')
+    .boundingBox();
+  await page.locator('[data-testid="zoom-in"]').click();
+  const boxAfter = await page
+    .locator('[data-testid="preview-svg"]')
+    .boundingBox();
+  check(
+    "zooming enlarges the painted diagram",
+    boxAfter.width > boxBefore.width,
+    `${Math.round(boxBefore.width)} -> ${Math.round(boxAfter.width)}`,
+  );
+
+  // Dragging the canvas pans it without changing the zoom.
+  const pane = await page
+    .locator('[data-testid="viewport-pane"]')
+    .boundingBox();
+  const zoomDuringPan = await zoomLevel();
+  await page.mouse.move(pane.x + pane.width / 2, pane.y + pane.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(
+    pane.x + pane.width / 2 + 80,
+    pane.y + pane.height / 2,
+    {
+      steps: 5,
+    },
+  );
+  await page.mouse.up();
+  const boxPanned = await page
+    .locator('[data-testid="preview-svg"]')
+    .boundingBox();
+  check(
+    "dragging pans the diagram",
+    Math.round(boxPanned.x) !== Math.round(boxAfter.x),
+    `x ${Math.round(boxAfter.x)} -> ${Math.round(boxPanned.x)}`,
+  );
+  check(
+    "panning does not change the zoom",
+    (await zoomLevel()) === zoomDuringPan,
+  );
+
+  check(
+    "minimap renders the diagram overview",
+    (await page.locator('[data-testid="minimap-image"]').count()) === 1,
+  );
+
+  console.log("\nEditor views and auto-update:");
+  await page.locator('[data-testid="view-docs"]').click();
+  await page.locator('[data-testid="dsl-reference"]').waitFor({
+    state: "visible",
+    timeout: UI_TIMEOUT_MS,
+  });
+  check("docs view shows the DSL reference", true);
+  check(
+    "the reference documents the activation construct",
+    (
+      await page.locator('[data-testid="dsl-reference"]').textContent()
+    ).includes("activate"),
+  );
+  await page.locator('[data-testid="view-code"]').click();
+  await page.locator('[data-testid="dsl-textarea"]').waitFor({
+    state: "visible",
+    timeout: UI_TIMEOUT_MS,
+  });
+  check("code view restores the editor", true);
+
+  // With auto-update off the canvas must keep the last rendered diagram.
+  await page.locator('[data-testid="auto-update-switch"]').click();
+  await page
+    .locator('[data-testid="dsl-textarea"]')
+    .fill("title Frozen\n\nparticipant Icicle\n");
+  check(
+    "the preview is frozen while paused",
+    !(await page.locator('[data-testid="preview-svg"]').textContent()).includes(
+      "Icicle",
+    ),
+  );
+  await page.locator('[data-testid="render-button"]').click();
+  await waitForText(
+    page.locator('[data-testid="preview-svg"]'),
+    (text) => text.includes("Icicle"),
+    "manually rendered SVG",
+  );
+  check("Render catches the canvas up", true);
+  // Restore live updates for the checks that follow.
+  await page.locator('[data-testid="auto-update-switch"]').click();
+
   console.log("\nInvalid DSL degrades gracefully:");
   // A syntax error is reported, but the parser recovers a partial tree, so the
   // preview keeps rendering rather than blanking out.

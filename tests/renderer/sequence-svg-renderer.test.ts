@@ -207,6 +207,19 @@ describe("renderDiagramToSvg — well-formedness", () => {
     expect(strayText).toBe("");
   });
 
+  it("starts each lifeline below its own name box", () => {
+    // A lifeline drawn from the box top would dash straight across the label.
+    const doc = parseSvg(renderDiagramToSvg(sampleLayout()));
+    const lifeline = Array.from(doc.querySelectorAll("line")).find(
+      (line) =>
+        line.getAttribute("x1") === line.getAttribute("x2") &&
+        line.getAttribute("x1") === "84.00",
+    );
+    expect(lifeline).toBeDefined();
+    // Participant box spans y 52..76 in the fixture.
+    expect(Number(lifeline!.getAttribute("y1"))).toBe(76);
+  });
+
   it("draws one lifeline per participant and one line per message", () => {
     const doc = parseSvg(renderDiagramToSvg(sampleLayout()));
     const lines = doc.querySelectorAll("line");

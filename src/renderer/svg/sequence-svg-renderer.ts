@@ -36,7 +36,7 @@ function renderParticipant(p: ParticipantLayout): string {
   const boxX = p.x - boxWidth / 2;
   const box = `<rect x="${boxX.toFixed(2)}" y="${p.topY.toFixed(2)}" width="${boxWidth}" height="${PARTICIPANT_BOX_HEIGHT}" rx="4" fill="#eef2f7" stroke="#94a3b8" stroke-width="${STROKE_WIDTH}"/>`;
   const label = `<text x="${p.x.toFixed(2)}" y="${(p.topY + PARTICIPANT_BOX_HEIGHT / 2 + 4).toFixed(2)}" text-anchor="middle" font-size="13" fill="#0f172a">${escapeXml(p.label)}</text>`;
-  const line = `<line x1="${p.x.toFixed(2)}" y1="${p.topY.toFixed(2)}" x2="${p.x.toFixed(2)}" y2="${p.bottomY.toFixed(2)}" stroke="#94a3b8" stroke-width="${STROKE_WIDTH}" stroke-dasharray="4 3"/>`;
+  const line = `<line x1="${p.x.toFixed(2)}" y1="${(p.topY + PARTICIPANT_BOX_HEIGHT).toFixed(2)}" x2="${p.x.toFixed(2)}" y2="${p.bottomY.toFixed(2)}" stroke="#94a3b8" stroke-width="${STROKE_WIDTH}" stroke-dasharray="4 3"/>`;
   return `${box}${label}${line}`;
 }
 
@@ -127,13 +127,29 @@ function renderTitle(layout: DiagramLayout): string {
   return `<text x="${x}" y="${y}" text-anchor="middle" font-size="16" font-weight="600" fill="#0f172a">${escapeXml(title)}</text>`;
 }
 
+/**
+ * Canvas size for a layout, after the renderer's minimum bounds are applied.
+ *
+ * Exported so the canvas size has one definition: the viewport layer needs the
+ * same numbers to center and fit the diagram that the SVG document is built
+ * with, and reading them back out of the markup would duplicate the rule.
+ */
+export function diagramCanvasSize(layout: DiagramLayout): {
+  width: number;
+  height: number;
+} {
+  return {
+    width: Math.max(MARGIN_X * 2, layout.width),
+    height: Math.max(
+      PARTICIPANT_BOX_HEIGHT + (layout.title ? TITLE_HEIGHT : 0),
+      layout.height,
+    ),
+  };
+}
+
 /** Produce a complete SVG document string for the given layout. */
 export function renderDiagramToSvg(layout: DiagramLayout): string {
-  const width = Math.max(MARGIN_X * 2, layout.width);
-  const height = Math.max(
-    PARTICIPANT_BOX_HEIGHT + (layout.title ? TITLE_HEIGHT : 0),
-    layout.height,
-  );
+  const { width, height } = diagramCanvasSize(layout);
 
   const parts: string[] = [];
   parts.push(

@@ -54,7 +54,10 @@ function arrowHeadPoints(msg: MessageLayout): string | null {
 /** Render a single message arrow (line, optional head, and label). */
 function renderMessage(msg: MessageLayout): string {
   const dashed = msg.kind === "response" ? ' stroke-dasharray="5 4"' : "";
-  const line = `<line x1="${msg.startX.toFixed(2)}" y1="${msg.y.toFixed(2)}" x2="${msg.endX.toFixed(2)}" y2="${msg.y.toFixed(2)}" fill="none" stroke="#0f172a" stroke-width="${STROKE_WIDTH}">${dashed}/>`;
+  // `dashed` must sit inside the tag, before the self-closing slash: emitting it
+  // after `>` would close the element early and swallow the arrowhead and label
+  // as children, which SVG `<line>` cannot render.
+  const line = `<line x1="${msg.startX.toFixed(2)}" y1="${msg.y.toFixed(2)}" x2="${msg.endX.toFixed(2)}" y2="${msg.y.toFixed(2)}" fill="none" stroke="#0f172a" stroke-width="${STROKE_WIDTH}"${dashed}/>`;
 
   // Solid sync messages get a filled head; dashed response (return) messages
   // are headless, keeping the two arrow styles visually distinct.

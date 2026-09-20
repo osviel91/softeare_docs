@@ -164,6 +164,89 @@ describe("renderDiagramToSvg — title", () => {
   });
 });
 
+describe("renderDiagramToSvg — well-formedness", () => {
+  /**
+   * Parse the SVG string the way a browser does. Substring assertions cannot
+   * catch a tag that closes early: the markup still *contains* every expected
+   * fragment, and only parsing reveals that elements ended up nested.
+   */
+  function parseSvg(svg: string): Document {
+    const doc = new DOMParser().parseFromString(svg, "image/svg+xml");
+    expect(doc.querySelector("parsererror")).toBeNull();
+    return doc;
+  }
+
+  it("does not nest drawing elements inside a line", () => {
+    // Regression: an early `>` on the message `<line>` made the arrowhead and
+    // label children of the line. SVG ignores children of `<line>`, so every
+    // message rendered as a bare stroke with no head and no label.
+    const doc = parseSvg(renderDiagramToSvg(sampleLayout()));
+    for (const line of Array.from(doc.querySelectorAll("line"))) {
+      expect(line.children.length).toBe(0);
+      expect(line.textContent).toBe("");
+    }
+  });
+
+  it("emits no stray markup as text content", () => {
+    // With the bug the raw string reads `...stroke-width="1.5">/>`: the tag is
+    // closed early and the leftover `/>` becomes a text node.
+    const svg = renderDiagramToSvg(sampleLayout());
+    expect(svg).not.toContain(">/>");
+
+    // Nothing but elements belongs directly under the root.
+    const doc = parseSvg(svg);
+    const strayText = Array.from(doc.documentElement.childNodes)
+      .filter((node) => node.nodeType === Node.TEXT_NODE)
+      .map((node) => node.textContent ?? "")
+      .join("")
+      .trim();
+    expect(strayText).toBe("");
+  });
+
+  it("draws one lifeline per participant and one line per message", () => {
+    const doc = parseSvg(renderDiagramToSvg(sampleLayout()));
+    const lines = doc.querySelectorAll("line");
+    // Two participant lifelines plus the single message arrow.
+    expect(lines.length).toBe(3);
+  });
+
+  it("keeps the message arrowhead and label as siblings of the line", () => {
+    const doc = parseSvg(renderDiagramToSvg(sampleLayout()));
+    const svg = doc.documentElement;
+    expect(svg.querySelector("line > polygon")).toBeNull();
+    expect(svg.querySelector("line > text")).toBeNull();
+    // Both are still present, directly under the root.
+    expect(svg.querySelector(":scope > polygon")).not.toBeNull();
+    expect(svg.querySelector(":scope > text")).not.toBeNull();
+  });
+
+  it("carries the dash pattern as an attribute, not as child text", () => {
+    const layout: DiagramLayout = {
+      width: 200,
+      height: 100,
+      participants: [participant("A", "A", 84), participant("B", "B", 204)],
+      messages: [
+        {
+          from: "A",
+          to: "B",
+          kind: "response",
+          label: "back",
+          y: 96,
+          startX: 84,
+          endX: 204,
+        },
+      ],
+      notes: [],
+    };
+    const doc = parseSvg(renderDiagramToSvg(layout));
+    const messageLine = Array.from(doc.querySelectorAll("line")).find(
+      (line) => line.getAttribute("stroke-dasharray") === "5 4",
+    );
+    expect(messageLine).toBeDefined();
+    expect(messageLine?.textContent).toBe("");
+  });
+});
+
 describe("renderDiagramToSvg — notes", () => {
   it("renders a folded note box for each note in the layout", () => {
     const layout: DiagramLayout = {

@@ -88,4 +88,25 @@ describe("lexer", () => {
     const second = tokens.find((t) => t.value === "CD");
     expect(second?.start).toEqual({ line: 1, column: 0 });
   });
+
+  it("recognizes the alias keyword", () => {
+    const tokens = lex("alias U = User").tokens;
+    expect(tokens[0]).toMatchObject({ type: TokenType.Alias, value: "alias" });
+  });
+
+  it("tokenizes the alias '=' separator", () => {
+    const tokens = lex("alias U = User").tokens;
+    expect(
+      tokens.some((t) => t.type === TokenType.Equals && t.value === "="),
+    ).toBe(true);
+  });
+
+  it("does not treat 'alias' as a plain identifier", () => {
+    const tokens = lex("alias U = User").tokens;
+    expect(
+      tokens.some(
+        (t) => t.type === TokenType.Identifier && t.value === "alias",
+      ),
+    ).toBe(false);
+  });
 });

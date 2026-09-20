@@ -146,3 +146,73 @@ describe("parse — structural rules", () => {
     ).toBeGreaterThan(0);
   });
 });
+
+describe("parse — aliases", () => {
+  it("parses a well-formed alias declaration", () => {
+    const { ast, diagnostics } = parse(
+      "participant User\nalias U = User\nU -> U: hi",
+    );
+    expect(diagnostics).toEqual([]);
+    const diagram = ast as unknown as SequenceDiagram;
+    expect(diagram.aliases).toHaveLength(1);
+    expect(diagram.aliases[0]).toMatchObject({
+      type: "alias",
+      alias: "U",
+      target: "User",
+    });
+  });
+
+  it("allows whitespace around the '=' separator", () => {
+    const { ast } = parse("participant User\nalias   U    =    User");
+    const diagram = ast as unknown as SequenceDiagram;
+    expect(diagram.aliases).toHaveLength(1);
+    expect(diagram.aliases[0]).toMatchObject({ alias: "U", target: "User" });
+  });
+
+  it("collects multiple aliases in order", () => {
+    const { ast } = parse(
+      "participant A\nparticipant B\nalias X = A\nalias Y = B",
+    );
+    const diagram = ast as unknown as SequenceDiagram;
+    expect(diagram.aliases.map((a) => a.alias)).toEqual(["X", "Y"]);
+  });
+
+  it("flags an alias missing its shorthand name", () => {
+    const { diagnostics } = parse("alias = User");
+    expect(
+      diagnostics.some((d) => d.code === DiagnosticCode.MalformedMessage),
+    ).toBe(true);
+  });
+
+  it("flags an alias missing the '=' separator", () => {
+    const { diagnostics } = parse("alias U User");
+    expect(
+      diagnostics.some((d) => d.code === DiagnosticCode.MalformedMessage),
+    ).toBe(true);
+  });
+
+  it("flags an alias missing its target name", () => {
+    const { diagnostics } = parse("alias U =");
+    expect(
+      diagnostics.some((d) => d.code === DiagnosticCode.MalformedMessage),
+    ).toBe(true);
+  });
+
+  it("flags trailing text after the alias target", () => {
+    const { diagnostics } = parse("alias U = User: extra");
+    expect(
+      diagnostics.some((d) => d.code === DiagnosticCode.MalformedMessage),
+    ).toBe(true);
+  });
+
+  it("requires aliases to be declared before messages", () => {
+    const { diagnostics } = parse("U -> U: hi\nalias U = User");
+    expect(
+      diagnostics.some((d) => d.code === DiagnosticCode.AliasBeforeMessage),
+    ).toBe(true);
+  });
+
+  it("never throws on a malformed alias line", () => {
+    expect(() => parse("alias =")).not.toThrow();
+  });
+});

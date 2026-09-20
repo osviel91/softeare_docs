@@ -19,6 +19,8 @@ export enum TokenType {
   Title = "title",
   /** `participant` keyword. */
   Participant = "participant",
+  /** `alias` keyword (Phase 7). */
+  Alias = "alias",
   /** An unquoted identifier, e.g. `User` or `API`. */
   Identifier = "identifier",
   /** A double-quoted string literal, e.g. `"Authentication API"`. */
@@ -29,6 +31,8 @@ export enum TokenType {
   ResponseArrow = "response-arrow",
   /** `:` separating a message receiver from its label. */
   Colon = "colon",
+  /** `=` binding an alias shorthand to a participant (Phase 7). */
+  Equals = "equals",
   /** Any other run of characters that did not match a rule. */
   Unknown = "unknown",
   /** End of the current line; used as a line boundary marker. */
@@ -163,6 +167,17 @@ function lexLine(
       i += 1;
       continue;
     }
+    // `=` binds an alias shorthand to a participant name (Phase 7).
+    if (ch === "=") {
+      tokens.push({
+        type: TokenType.Equals,
+        value: "=",
+        start,
+        end: { line: lineIndex, column: i + 1 },
+      });
+      i += 1;
+      continue;
+    }
 
     // Identifier: letters, digits, underscore, dot, and hyphen (for ids like
     // `payment-service`). We stop at a character that cannot extend it.
@@ -216,6 +231,7 @@ function isIdentifierPart(ch: string): boolean {
 function classifyKeyword(word: string): TokenType {
   if (word === "title") return TokenType.Title;
   if (word === "participant") return TokenType.Participant;
+  if (word === "alias") return TokenType.Alias;
   return TokenType.Identifier;
 }
 

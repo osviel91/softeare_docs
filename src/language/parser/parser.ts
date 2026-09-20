@@ -6,19 +6,21 @@
  * input: on a syntax error it records a diagnostic, skips to the end of the
  * offending line, and keeps going so the editor stays usable.
  *
- * Grammar (Phase 1):
+ * Grammar (Phase 1; aliases added in Phase 7):
  *
  *   document     := title? statement*
- *   statement    := participant | message
+ *   statement    := participant | alias | message
  *   participant  := "participant" ws+ id (ws* quotedLabel)?
+ *   alias        := "alias" ws+ id ws* "=" ws* id
  *   message      := id arrow id (":" labelText)?
  *   title        := "title" ws* lineText
  *
- * Structural rule: participants must be declared before any message. This
- * mirrors how sequence diagrams are read top-to-bottom and gives the parser a
- * clear phase boundary.
+ * Structural rule: participants and aliases must be declared before any message.
+ * This mirrors how sequence diagrams are read top-to-bottom and gives the parser
+ * a clear phase boundary.
  */
 import type {
+  AliasNode,
   MessageKind,
   ParticipantId,
   SourcePosition,
@@ -41,7 +43,11 @@ class Parser {
 
   /** Parse the whole document into a best-effort AST and diagnostics. */
   parse(): { ast: SequenceDiagram; diagnostics: Diagnostic[] } {
-    const ast: SequenceDiagram = { participants: [], statements: [] };
+    const ast: SequenceDiagram = {
+      participants: [],
+      aliases: [],
+      statements: [],
+    };
     this.diagnostics = [];
 
     // Optional title on the first line.
@@ -70,6 +76,20 @@ class Parser {
         } else {
           const participant = this.parseParticipant();
           if (participant) ast.participants.push(participant);
+          else this.skipToEol();
+        }
+      } else if (token.type === TokenType.Alias) {
+        // Aliases, like participants, are declarations and must precede any
+        // message. They introduce a shorthand usable in later messages.
+        if (sawMessage) {
+          this.errorHere(
+            "Alias must be declared before any message",
+            DiagnosticCode.AliasBeforeMessage,
+          );
+          this.skipToEol();
+        } else {
+          const alias = this.parseAlias();
+          if (alias) ast.aliases.push(alias);
           else this.skipToEol();
         }
       } else if (token.type === TokenType.Identifier) {
@@ -122,6 +142,59 @@ class Parser {
       type: "participant",
       id: idToken.value,
       label: idToken.value,
+      range: span(start, end),
+    };
+  }
+
+  /** Parse an alias declaration line: `alias <shorthand> = <participant>`. */
+  private parseAlias(): AliasNode | null {
+    const start = this.expect().start;
+
+    // Required shorthand identifier.
+    const aliasToken = this.peek();
+    if (!aliasToken || aliasToken.type !== TokenType.Identifier) {
+      this.errorHere(
+        'Expected an alias name after "alias"',
+        DiagnosticCode.MalformedMessage,
+      );
+      return null;
+    }
+    this.advance();
+
+    // Required `=` separator.
+    if (!this.peek() || this.peek()!.type !== TokenType.Equals) {
+      this.errorHere(
+        "Expected '=' in the alias declaration",
+        DiagnosticCode.MalformedMessage,
+      );
+      return null;
+    }
+    this.advance();
+
+    // Required target participant name.
+    const targetToken = this.peek();
+    if (!targetToken || targetToken.type !== TokenType.Identifier) {
+      this.errorHere(
+        "Expected a participant name after '=' in the alias declaration",
+        DiagnosticCode.MalformedMessage,
+      );
+      return null;
+    }
+    this.advance();
+
+    // Any trailing tokens on the line are malformed (e.g. a stray label).
+    if (this.peek()?.type !== TokenType.Eol && !this.atEnd()) {
+      this.errorHere(
+        "Unexpected text after the alias target",
+        DiagnosticCode.MalformedMessage,
+      );
+    }
+
+    const end = this.previousEnd();
+    return {
+      type: "alias",
+      alias: aliasToken.value,
+      target: targetToken.value,
       range: span(start, end),
     };
   }

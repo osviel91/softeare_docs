@@ -62,3 +62,58 @@ describe("validateSemantics", () => {
     expect(validateSemantics(diagram)).toEqual([]);
   });
 });
+
+describe("validateSemantics — aliases", () => {
+  it("passes an alias that targets a declared participant", () => {
+    const diagram = diagramOf("participant User\nalias U = User\nU -> U: hi");
+    expect(validateSemantics(diagram)).toEqual([]);
+  });
+
+  it("lets messages use an alias shorthand", () => {
+    const diagram = diagramOf("participant User\nalias U = User\nU -> U: hi");
+    expect(validateSemantics(diagram)).toEqual([]);
+  });
+
+  it("flags an alias whose target was never declared", () => {
+    const diagram = diagramOf("alias U = Ghost");
+    const diagnostics = validateSemantics(diagram);
+    expect(
+      diagnostics.some(
+        (d) =>
+          d.code === DiagnosticCode.UnknownAliasTarget &&
+          d.message.includes("Ghost"),
+      ),
+    ).toBe(true);
+  });
+
+  it("does not let an alias target another alias", () => {
+    const diagram = diagramOf(
+      "participant A\nalias X = A\nalias Y = X\nX -> X: hi",
+    );
+    const diagnostics = validateSemantics(diagram);
+    expect(
+      diagnostics.some((d) => d.code === DiagnosticCode.UnknownAliasTarget),
+    ).toBe(true);
+  });
+
+  it("does not flag a message that names an alias shorthand", () => {
+    const diagram = diagramOf(
+      "participant User\nalias U = User\nU -> User: hi",
+    );
+    expect(validateSemantics(diagram)).toEqual([]);
+  });
+
+  it("flags a message endpoint that is neither participant nor alias", () => {
+    const diagram = diagramOf(
+      "participant User\nalias U = User\nGhost -> U: hi",
+    );
+    const diagnostics = validateSemantics(diagram);
+    expect(
+      diagnostics.some(
+        (d) =>
+          d.code === DiagnosticCode.UnknownParticipant &&
+          d.message.includes("Ghost"),
+      ),
+    ).toBe(true);
+  });
+});

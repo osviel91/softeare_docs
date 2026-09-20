@@ -62,6 +62,23 @@ export interface MessageNode {
   range: SourceRange;
 }
 
+/**
+ * An alias binding, e.g. `alias U = User`.
+ *
+ * It introduces a second identifier (`alias`) that messages may use to refer to
+ * an already-declared participant (`target`). Aliases are resolved at
+ * validation time; the renderer never sees them.
+ */
+export interface AliasNode {
+  type: "alias";
+  /** The shorthand identifier messages use to reference the participant. */
+  alias: ParticipantId;
+  /** The declared participant this shorthand resolves to. */
+  target: ParticipantId;
+  /** Source span covering the whole alias declaration. */
+  range: SourceRange;
+}
+
 /** Any top-level statement in a diagram body. */
 export type Statement = MessageNode;
 
@@ -75,5 +92,7 @@ export interface TitleNode {
 export interface SequenceDiagram {
   title?: TitleNode;
   participants: ParticipantNode[];
+  /** Alias shorthands, resolved against declared participants at validation. */
+  aliases: AliasNode[];
   statements: Statement[];
 }

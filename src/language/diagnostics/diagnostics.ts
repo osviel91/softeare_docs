@@ -25,6 +25,10 @@ export enum DiagnosticCode {
   MalformedMessage = "seq.malformed-message",
   /** A construct appeared where participants must be declared. */
   StatementBeforeParticipant = "seq.statement-before-participant",
+  /** An alias was declared after a message; aliases must precede messages. */
+  AliasBeforeMessage = "seq.alias-before-message",
+  /** An alias references a participant that was never declared. */
+  UnknownAliasTarget = "seq.unknown-alias-target",
 }
 
 /** A single diagnostic message with optional source location. */

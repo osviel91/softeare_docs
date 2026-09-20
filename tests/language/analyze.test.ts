@@ -37,4 +37,18 @@ describe("analyze (end-to-end)", () => {
     const formatted = formatDiagnostic(result.diagnostics[0]);
     expect(formatted).toContain("Line 3");
   });
+
+  it("accepts a valid alias end-to-end", () => {
+    const result = analyze("participant User\nalias U = User\nU -> User: hi");
+    expect(result.diagnostics).toEqual([]);
+    const diagram = result.ast as unknown as SequenceDiagram;
+    expect(diagram.aliases).toHaveLength(1);
+  });
+
+  it("surfaces an unknown alias target through analyze", () => {
+    const result = analyze("alias U = Ghost");
+    expect(result.diagnostics.map((d) => d.code)).toContain(
+      "seq.unknown-alias-target",
+    );
+  });
 });

@@ -11,7 +11,13 @@ import { layoutDiagram } from "../../src/layout/sequence-layout";
 
 /** Build a minimal SequenceDiagram AST for layout tests. */
 function diagram(overrides: Partial<SequenceDiagram>): SequenceDiagram {
-  return { title: undefined, participants: [], statements: [], ...overrides };
+  return {
+    title: undefined,
+    participants: [],
+    aliases: [],
+    statements: [],
+    ...overrides,
+  };
 }
 
 const LOGIN: SequenceDiagram = diagram({

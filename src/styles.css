@@ -475,6 +475,8 @@ body {
   left: 0;
   z-index: 50;
   min-width: 250px;
+  max-height: min(60vh, 420px);
+  overflow-y: auto;
   margin: 0;
   padding: 5px;
   list-style: none;
@@ -861,6 +863,24 @@ body {
   text-overflow: ellipsis;
 }
 
+/* The kind glyph before a tab's title: a diagram frame or a markdown pilcrow. */
+.tab__icon {
+  font-size: 11px;
+  line-height: 1;
+  opacity: 0.75;
+}
+
+.tab--note .tab__icon {
+  color: var(--ok);
+}
+
+/* The modified indicator: a tab whose buffer has unsaved changes. */
+.tab__dirty {
+  font-size: 9px;
+  line-height: 1;
+  color: var(--accent);
+}
+
 .tab__close {
   display: inline-flex;
   align-items: center;
@@ -1181,8 +1201,1092 @@ body {
   font-size: 11.5px;
 }
 
+/* ==========================================================================
+   Project search
+   ========================================================================== */
+.search {
+  width: min(720px, calc(100vw - 32px));
+  max-height: 70vh;
+}
+
+.search__result {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.search__result-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.search__result-icon {
+  font-size: 11px;
+  opacity: 0.8;
+}
+
+.search__result-title {
+  font-weight: 600;
+}
+
+.search__result-where {
+  margin-left: auto;
+  font-size: 11.5px;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.search__result-excerpt {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.palette__item--active .search__result-where,
+.palette__item--active .search__result-excerpt {
+  color: var(--on-accent);
+  opacity: 0.85;
+}
+
+/* ==========================================================================
+   Destructive confirmation dialog
+   ========================================================================== */
+.dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(4, 6, 10, 0.62);
+  backdrop-filter: blur(2px);
+}
+
+.dialog {
+  width: min(460px, calc(100vw - 32px));
+  padding: 20px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-pop);
+}
+
+.dialog__title {
+  margin: 0 0 8px;
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.dialog__message {
+  margin: 0 0 18px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
+.dialog__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dialog__spacer {
+  flex: 1 1 auto;
+}
+
+.button--danger {
+  color: #2a0a0a;
+  background: var(--danger);
+  border-color: var(--danger);
+}
+
+.button--danger:hover:not(:disabled) {
+  background: #ef4444;
+  border-color: #ef4444;
+}
+
+.button--small {
+  padding: 3px 9px;
+  font-size: 11.5px;
+}
+
+.button--danger-text {
+  color: var(--danger);
+}
+
+.button--danger-text:hover:not(:disabled) {
+  color: var(--danger);
+  background: rgba(248, 113, 113, 0.12);
+  border-color: transparent;
+}
+
+/* ==========================================================================
+   Version history ("Trajectory")
+   ========================================================================== */
+.history {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: 100%;
+  min-height: 0;
+  padding: 16px;
+  overflow-y: auto;
+}
+
+.history__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.history__heading {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.history__title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.history__count {
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+
+.history__empty {
+  margin: auto;
+  max-width: 34ch;
+  padding: 20px;
+  text-align: center;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-muted);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-lg);
+}
+
+.history__list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.history__version {
+  padding: 10px 12px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.history__version--current {
+  border-color: var(--accent);
+}
+
+.history__version-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.history__time {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.history__label {
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.history__badge {
+  margin-left: auto;
+  padding: 2px 7px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: 999px;
+}
+
+.history__summary {
+  margin: 6px 0 8px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.history__actions {
+  display: flex;
+  gap: 6px;
+}
+
+/* ==========================================================================
+   Note bullets in the rendered canvas
+   ========================================================================== */
+.preview__notes {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px 4px 10px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  box-shadow: var(--shadow-card);
+}
+
+.preview__notes-label {
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.note-bullet circle:first-child {
+  transition: fill 120ms ease;
+}
+
+.note-bullet:hover circle:first-child {
+  fill: #ffe9a3;
+}
+
+.note-bullet:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ==========================================================================
+   Explorer hidden paths ("removed from app")
+   ========================================================================== */
+.explorer__hidden {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 12px;
+  font-size: 11.5px;
+  color: var(--warn);
+  background: rgba(251, 191, 36, 0.08);
+  border-bottom: 1px solid var(--border);
+}
+
+.explorer__hidden-button {
+  font: inherit;
+  font-size: 11.5px;
+  color: var(--warn);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.explorer__diagram {
+  display: flex;
+  align-items: center;
+}
+
+.explorer__diagram-button {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.explorer__diagram-delete {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-right: 4px;
+  font: inherit;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--text-faint);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  opacity: 0;
+}
+
+.explorer__diagram:hover .explorer__diagram-delete,
+.explorer__diagram-delete:focus-visible {
+  opacity: 1;
+}
+
+.explorer__diagram-delete:hover {
+  color: var(--danger);
+  background: rgba(248, 113, 113, 0.12);
+}
+
+/* ==========================================================================
+   Explorer notes
+   ========================================================================== */
+.explorer__notes {
+  list-style: none;
+  margin: 0;
+  padding: 0 4px 4px;
+}
+
+.explorer__note {
+  display: flex;
+  align-items: center;
+  border-radius: var(--radius-sm);
+}
+
+.explorer__note--selected {
+  background: var(--bg-hover);
+}
+
+.explorer__note-button {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: block;
+  width: 100%;
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  border-left: 2px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.explorer__note-button:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.explorer__note--selected .explorer__note-button {
+  color: var(--text);
+  border-left-color: var(--warn);
+}
+
+.explorer__item-icon {
+  margin-right: 6px;
+  color: var(--text-faint);
+  font-size: 10px;
+}
+
+.explorer__diagram-menu,
+.explorer__note-menu,
+.explorer__note-delete {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-right: 2px;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--text-faint);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  opacity: 0;
+}
+
+.explorer__diagram:hover .explorer__diagram-menu,
+.explorer__note:hover .explorer__note-menu,
+.explorer__note:hover .explorer__note-delete,
+.explorer__diagram-menu:focus-visible,
+.explorer__note-menu:focus-visible,
+.explorer__note-delete:focus-visible {
+  opacity: 1;
+}
+
+.explorer__diagram-menu:hover,
+.explorer__note-menu:hover {
+  color: var(--text);
+  background: var(--bg-elevated);
+}
+
+.explorer__note-delete:hover {
+  color: var(--danger);
+  background: rgba(248, 113, 113, 0.12);
+}
+
+.explorer__project-add {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--text-faint);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.explorer__project-add:hover {
+  color: var(--accent);
+  background: var(--bg-hover);
+}
+
+/* ==========================================================================
+   Context menu
+   ========================================================================== */
+.context-menu {
+  position: fixed;
+  z-index: 1200;
+  min-width: 168px;
+  padding: 4px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-pop);
+}
+
+.context-menu__item {
+  display: block;
+  width: 100%;
+  padding: 7px 10px;
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  color: var(--text);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.context-menu__item:hover,
+.context-menu__item:focus-visible {
+  background: var(--bg-hover);
+}
+
+.context-menu__item--danger {
+  color: var(--danger);
+}
+
+.context-menu__item--danger:hover,
+.context-menu__item--danger:focus-visible {
+  background: rgba(248, 113, 113, 0.12);
+}
+
+/* ==========================================================================
+   Prompt dialog field
+   ========================================================================== */
+.dialog__field {
+  display: block;
+  margin-bottom: 18px;
+}
+
+.dialog__label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-faint);
+}
+
+.dialog__input {
+  width: 100%;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  outline: none;
+}
+
+.dialog__input:focus {
+  border-color: var(--accent);
+}
+
+/* ==========================================================================
+   Markdown notes
+   ========================================================================== */
+.note-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  padding: 9px 12px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+}
+
+.note-header__icon {
+  color: var(--warn);
+  font-size: 12px;
+}
+
+.note-header__title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.note-header__name {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.editor--markdown {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.editor__markdown-hint {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.editor__textarea--drop {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.participant {
+  cursor: grab;
+}
+
+.participant:active {
+  cursor: grabbing;
+}
+
+.note-preview {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 28px 32px;
+}
+
+.markdown {
+  max-width: 74ch;
+  margin: 0 auto;
+  color: var(--text);
+  line-height: 1.7;
+  font-size: 14px;
+}
+
+.markdown h1,
+.markdown h2,
+.markdown h3,
+.markdown h4,
+.markdown h5,
+.markdown h6 {
+  margin: 1.4em 0 0.5em;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+
+.markdown h1 {
+  margin-top: 0;
+  font-size: 24px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 8px;
+}
+
+.markdown h2 {
+  font-size: 18px;
+}
+
+.markdown h3 {
+  font-size: 15px;
+}
+
+.markdown p {
+  margin: 0 0 1em;
+}
+
+.markdown ul,
+.markdown ol {
+  margin: 0 0 1em;
+  padding-left: 22px;
+}
+
+.markdown li {
+  margin-bottom: 4px;
+}
+
+.markdown code {
+  padding: 1px 5px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.markdown pre {
+  margin: 0 0 1em;
+  padding: 12px 14px;
+  overflow-x: auto;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.markdown pre code {
+  padding: 0;
+  background: transparent;
+  border: none;
+}
+
+.markdown blockquote {
+  margin: 0 0 1em;
+  padding-left: 14px;
+  border-left: 3px solid var(--border-strong);
+  color: var(--text-muted);
+}
+
+.markdown blockquote p {
+  margin: 0 0 0.5em;
+}
+
+.markdown hr {
+  margin: 1.5em 0;
+  border: none;
+  border-top: 1px solid var(--border);
+}
+
+.markdown__link {
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+}
+
+.markdown__link:hover {
+  border-bottom-color: currentColor;
+}
+
+.markdown__link--broken {
+  color: var(--warn);
+  border-bottom: 1px dashed currentColor;
+}
+
+/* ==========================================================================
+   Outline and Problems panels
+   Both are read-only views of a document or a project: a navigable tree and a
+   severity-grouped list. They reuse the panel surface, text and severity tokens
+   rather than introducing new colours, and restyle nothing that already exists.
+   ========================================================================== */
+.outline,
+.problems {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  background: var(--bg-panel);
+}
+
+.outline {
+  padding: 6px 0 10px;
+}
+
+.outline__empty,
+.problems__empty {
+  margin: 0;
+  padding: 14px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-faint);
+}
+
+.outline__item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px 3px 0;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  cursor: pointer;
+  outline: none;
+  white-space: nowrap;
+}
+
+.outline__item:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.outline__item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.outline__item--active {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.outline__twisty {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  font: inherit;
+  font-size: 10px;
+  line-height: 1;
+  color: var(--text-faint);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.outline__twisty:hover {
+  color: var(--text);
+  background: var(--bg-inset);
+}
+
+.outline__twisty--empty {
+  cursor: default;
+}
+
+.outline__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.outline__label[data-kind="note"] {
+  color: var(--warn);
+}
+
+.outline__label[data-kind="heading"] {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.outline__label[data-kind="alt"],
+.outline__label[data-kind="loop"],
+.outline__label[data-kind="opt"],
+.outline__label[data-kind="par"],
+.outline__label[data-kind="critical"],
+.outline__label[data-kind="break"],
+.outline__label[data-kind="branch"] {
+  color: var(--accent);
+}
+
+.outline__item--active .outline__label {
+  color: inherit;
+}
+
+.problems {
+  padding: 4px 0 12px;
+}
+
+.problems__heading {
+  margin: 0;
+  padding: 10px 14px 6px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-faint);
+}
+
+.problems__group--error .problems__heading {
+  color: var(--danger);
+}
+
+.problems__group--warning .problems__heading {
+  color: var(--warn);
+}
+
+.problems__group--info .problems__heading {
+  color: var(--accent);
+}
+
+.problems__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.problems__item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 7px 14px;
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  border-left: 2px solid transparent;
+  cursor: pointer;
+}
+
+.problems__item:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.problems__item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.problems__item--error {
+  border-left-color: var(--danger);
+}
+
+.problems__item--warning {
+  border-left-color: var(--warn);
+}
+
+.problems__item--info {
+  border-left-color: var(--accent);
+}
+
+.problems__message {
+  line-height: 1.45;
+}
+
+.problems__where {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
 @media (max-width: 900px) {
   .app__pane--explorer {
     display: none;
   }
+}
+
+/* ==========================================================================
+   Semantic completion, hover cards, and the project overview
+   ========================================================================== */
+.completions {
+  position: absolute;
+  bottom: 100%;
+  left: 8px;
+  z-index: 30;
+  min-width: 220px;
+  max-height: 220px;
+  overflow-y: auto;
+  margin: 0 0 4px;
+  padding: 4px;
+  list-style: none;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-pop);
+}
+
+.completions__item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 8px;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--text);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.completions__item--active {
+  color: var(--on-accent);
+  background: var(--accent);
+}
+
+.completions__detail {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.completions__item--active .completions__detail {
+  color: var(--on-accent);
+  opacity: 0.85;
+}
+
+/* The hover card follows the pointer, so it is positioned fixed and never
+   affects the editor's layout. */
+.hover-card {
+  position: fixed;
+  z-index: 40;
+  max-width: 320px;
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-pop);
+  pointer-events: none;
+}
+
+.hover-card__title {
+  margin-bottom: 4px;
+  font-weight: 600;
+  font-family: var(--font-mono);
+}
+
+.hover-card__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+}
+
+.hover-card__row {
+  display: flex;
+  gap: 8px;
+}
+
+.hover-card__row dt {
+  min-width: 74px;
+  color: var(--text-faint);
+}
+
+.hover-card__row dd {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+/* The statement the caret is on, highlighted inside the rendered diagram. */
+.viewport__content .svg-node--active {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.overview {
+  padding: 16px 18px;
+  overflow-y: auto;
+}
+
+.overview__title {
+  margin: 0 0 12px;
+  font-size: 15px;
+  font-family: var(--font-mono);
+}
+
+.overview__cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.overview__card {
+  flex: 1 1 150px;
+  padding: 10px 12px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.overview__card h3 {
+  margin: 0 0 6px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.overview__card p {
+  margin: 0;
+  font-size: 13px;
+}
+
+.overview__bad {
+  color: var(--danger);
+}
+
+.overview__heading {
+  margin: 0 0 8px;
+  font-size: 13px;
+}
+
+.overview__resources {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.overview__resource {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--text);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.overview__resource:hover {
+  background: var(--bg-hover);
+}
+
+.overview__resource-title {
+  font-weight: 500;
+}
+
+.overview__resource-meta {
+  color: var(--text-faint);
+  font-size: 11.5px;
+}
+
+.overview__resource-id {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--accent);
+}
+
+.overview__empty {
+  padding: 18px;
+  color: var(--text-faint);
+  font-size: 13px;
 }

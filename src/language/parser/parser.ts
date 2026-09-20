@@ -6,43 +6,83 @@
  * input: on a syntax error it records a diagnostic, skips to the end of the
  * offending line, and keeps going so the editor stays usable.
  *
- * Grammar (Phase 1; aliases added in Phase 7; notes added in Checkpoint 2;
- * activations added in Checkpoint 3):
+ * Grammar (extended for the Mermaid-parity backlog; see ADR-013/ADR-014):
  *
- *   document     := title? statement* note*
- *   note         := "note" ws* placement (ws* "of" ws* id)? (":" lineText)?
- *   statement    := participant | alias | activation | message
- *   participant  := "participant" ws+ id (ws* quotedLabel)?
- *   alias        := "alias" ws+ id ws* "=" ws* id
+ *   document     := line*
+ *   line         := title | declaration | note | statement
+ *   declaration  := ("participant" | "actor") ws+ id ("as" label)?
+ *                 | "alias" ws+ id ws* "=" ws* id
+ *   statement    := message | activation | fragment
+ *   message      := id arrow ("+" | "-")? id (":" lineText)?
  *   activation   := ("activate" | "deactivate") ws+ id
- *   message      := id arrow id (":" labelText)?
- *   title        := "title" ws* lineText
+ *   fragment     := loop | opt | break | alt | par | critical
+ *   loop         := "loop" lineText? block "end"
+ *   opt          := "opt" lineText? block "end"
+ *   break        := "break" lineText? block "end"
+ *   alt          := "alt" lineText? block ("else" lineText? block)* "end"
+ *   par          := "par" lineText? block ("and" lineText? block)* "end"
+ *   critical     := "critical" lineText? block ("option" lineText? block)* "end"
+ *   note         := "note" placement participants? (":" lineText | ":" multi "end note")
  *   placement    := "left" | "right" | "over"
  *
- * Structural rule: participants and aliases must be declared before any message.
- * This mirrors how sequence diagrams are read top-to-bottom and gives the parser
- * a clear phase boundary.
+ * Inline `+` / `-` on a message is normalized into an activation statement
+ * placed immediately before that message, so the bar's edge lines up with the
+ * arrow it belongs to (`+` activates the receiver, `-` deactivates the sender).
+ *
+ * Participants and aliases must be declared before any statement, and a title
+ * may appear on any line (a diagram carries at most one). Fragments nest.
  */
 import type {
+  ActivationAction,
   ActivationNode,
   AliasNode,
-  MessageKind,
+  AltBranch,
+  ArrowStyle,
+  CriticalBranch,
+  LineStyle,
+  MessageNode,
   NoteNode,
   NotePlacement,
+  ParBranch,
   ParticipantId,
+  ParticipantNode,
+  ParticipantType,
+  SequenceDiagram,
   SourcePosition,
   SourceRange,
+  Statement,
 } from "../../domain/diagram/ast";
-import type { SequenceDiagram } from "../../domain/diagram/ast";
 import type { Diagnostic, ParseResult } from "../diagnostics/diagnostics";
 import { DiagnosticCode, errorDiagnostic } from "../diagnostics/diagnostics";
 import { lex, type Token, TokenType } from "../lexer/lexer";
+
+/** Map every arrow spelling onto the line-style / arrow-style model. */
+const ARROW_STYLES: Record<
+  string,
+  { lineStyle: LineStyle; arrowStyle: ArrowStyle }
+> = {
+  "->": { lineStyle: "solid", arrowStyle: "arrow" },
+  "-->": { lineStyle: "dashed", arrowStyle: "arrow" },
+  "->>": { lineStyle: "solid", arrowStyle: "arrow" },
+  "-->>": { lineStyle: "dashed", arrowStyle: "arrow" },
+  "-x": { lineStyle: "solid", arrowStyle: "cross" },
+  "--x": { lineStyle: "dashed", arrowStyle: "cross" },
+  "-)": { lineStyle: "solid", arrowStyle: "open" },
+  "--)": { lineStyle: "dashed", arrowStyle: "open" },
+  "<<->>": { lineStyle: "solid", arrowStyle: "bidirectional" },
+  "<<-->>": { lineStyle: "dashed", arrowStyle: "bidirectional" },
+};
+
+/** Every arrow spelling, for a helpful error message and for the docs. */
+const ARROW_FORMS = Object.keys(ARROW_STYLES).join(", ");
 
 /** A parser that fails closed: it records diagnostics instead of throwing. */
 class Parser {
   private readonly tokens: Token[];
   private pos = 0;
   private diagnostics: Diagnostic[] = [];
+  /** Where nested notes are collected, so notes inside fragments are kept. */
+  private notes: NoteNode[] = [];
 
   constructor(tokens: Token[]) {
     this.tokens = tokens;
@@ -57,25 +97,41 @@ class Parser {
       notes: [],
     };
     this.diagnostics = [];
+    this.notes = ast.notes;
 
-    // Optional title on the first line.
-    if (this.peek()?.type === TokenType.Title) {
-      const title = this.parseTitle();
-      if (title) ast.title = title;
-    }
-
-    let sawMessage = false;
+    let sawStatement = false;
 
     while (!this.atEnd()) {
       const token = this.peek()!;
       if (token.type === TokenType.Eol) {
-        // Blank line; skip silently.
         this.advance();
         continue;
       }
 
-      if (token.type === TokenType.Participant) {
-        if (sawMessage) {
+      if (token.type === TokenType.Title) {
+        // A title names the diagram. It is metadata rather than a statement, so
+        // it may appear on any line; a diagram carries at most one, and a
+        // repeated title is reported rather than silently overwriting the first.
+        const title = this.parseTitle();
+        if (ast.title) {
+          this.diagnostics.push(
+            errorDiagnostic(
+              'A diagram may only declare one "title"',
+              DiagnosticCode.DuplicateTitle,
+              title.range,
+            ),
+          );
+        } else {
+          ast.title = title;
+        }
+        continue;
+      }
+
+      if (
+        token.type === TokenType.Participant ||
+        token.type === TokenType.Actor
+      ) {
+        if (sawStatement) {
           this.errorHere(
             "Participant must be declared before any message",
             DiagnosticCode.StatementBeforeParticipant,
@@ -86,10 +142,13 @@ class Parser {
           if (participant) ast.participants.push(participant);
           else this.skipToEol();
         }
-      } else if (token.type === TokenType.Alias) {
+        continue;
+      }
+
+      if (token.type === TokenType.Alias) {
         // Aliases, like participants, are declarations and must precede any
-        // message. They introduce a shorthand usable in later messages.
-        if (sawMessage) {
+        // statement. They introduce a shorthand usable in later messages.
+        if (sawStatement) {
           this.errorHere(
             "Alias must be declared before any message",
             DiagnosticCode.AliasBeforeMessage,
@@ -100,73 +159,186 @@ class Parser {
           if (alias) ast.aliases.push(alias);
           else this.skipToEol();
         }
-      } else if (token.type === TokenType.Note) {
-        // A note callout. Notes may appear anywhere in the document and are
-        // not messages, so they neither set `sawMessage` nor require the
-        // declaration-before-message ordering.
-        const note = this.parseNote();
-        if (note) ast.notes.push(note);
-        else this.skipToEol();
-      } else if (
-        token.type === TokenType.Activate ||
-        token.type === TokenType.Deactivate
-      ) {
-        // An activation is a statement that references a participant, so like a
-        // message it may only follow the participant declarations.
-        sawMessage = true;
-        const activation = this.parseActivation();
-        if (activation) ast.statements.push(activation);
-        else this.skipToEol();
-      } else if (token.type === TokenType.Identifier) {
-        // A message line.
-        sawMessage = true;
-        const message = this.parseMessage();
-        if (message) ast.statements.push(message);
-        else this.skipToEol();
-      } else {
-        this.errorHere(
-          `Unexpected token "${token.value}"`,
-          DiagnosticCode.UnsupportedSyntax,
-        );
-        this.skipToEol();
+        continue;
       }
+
+      // Everything else is a statement (or a note, which is collected apart
+      // from the statement list but may appear on any line).
+      if (this.isStatementStart(token)) sawStatement = true;
+      this.parseStatementInto(ast.statements);
     }
 
     return { ast, diagnostics: this.diagnostics };
   }
 
+  /** Whether a token opens a statement (message, activation, or fragment). */
+  private isStatementStart(token: Token): boolean {
+    switch (token.type) {
+      case TokenType.Identifier:
+      case TokenType.Activate:
+      case TokenType.Deactivate:
+      case TokenType.Loop:
+      case TokenType.Alt:
+      case TokenType.Opt:
+      case TokenType.Par:
+      case TokenType.Critical:
+      case TokenType.Break:
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  /** Parse one statement and push it onto `out`. Always makes progress. */
+  private parseStatementInto(out: Statement[]): void {
+    const token = this.peek();
+    if (!token) return;
+    switch (token.type) {
+      case TokenType.Identifier: {
+        const message = this.parseMessage();
+        if (message) out.push(...message.statements);
+        else this.skipToEol();
+        return;
+      }
+      case TokenType.Activate:
+      case TokenType.Deactivate: {
+        const activation = this.parseActivation();
+        if (activation) out.push(activation);
+        else this.skipToEol();
+        return;
+      }
+      case TokenType.Note: {
+        const note = this.parseNote();
+        if (note) this.notes.push(note);
+        else this.skipToEol();
+        return;
+      }
+      case TokenType.Loop: {
+        out.push(this.parseSimpleFragment("loop", "loop"));
+        return;
+      }
+      case TokenType.Opt: {
+        out.push(this.parseSimpleFragment("opt", "opt"));
+        return;
+      }
+      case TokenType.Break: {
+        out.push(this.parseSimpleFragment("break", "break"));
+        return;
+      }
+      case TokenType.Alt: {
+        out.push(this.parseAlternative());
+        return;
+      }
+      case TokenType.Par: {
+        out.push(this.parseParallel());
+        return;
+      }
+      case TokenType.Critical: {
+        out.push(this.parseCritical());
+        return;
+      }
+      case TokenType.End:
+      case TokenType.Else:
+      case TokenType.And:
+      case TokenType.Option: {
+        this.errorHere(
+          `"${token.value}" has no matching fragment to close or extend`,
+          DiagnosticCode.UnexpectedFragmentKeyword,
+        );
+        this.skipToEol();
+        return;
+      }
+      default:
+        this.errorHere(
+          `Unexpected token "${token.value}"`,
+          DiagnosticCode.UnsupportedSyntax,
+        );
+        this.skipToEol();
+    }
+  }
+
+  /** Parse statements until a terminator keyword or the end of input. */
+  private parseStatements(terminators: TokenType[]): Statement[] {
+    const statements: Statement[] = [];
+    while (!this.atEnd()) {
+      const token = this.peek()!;
+      if (token.type === TokenType.Eol) {
+        this.advance();
+        continue;
+      }
+      if (terminators.includes(token.type)) break;
+      this.parseStatementInto(statements);
+    }
+    return statements;
+  }
+
   /** Parse a title line: `title <text>` where text may be quoted. */
-  private parseTitle(): { value: string; range: SourceRange } | null {
+  private parseTitle(): { value: string; range: SourceRange } {
     const start = this.expect().start;
     const value = this.readLineText();
     const end = this.previousEnd();
     return { value, range: span(start, end) };
   }
 
-  /** Parse a participant declaration line. */
-  private parseParticipant(): {
-    type: "participant";
-    id: ParticipantId;
-    label: string;
-    range: SourceRange;
-  } | null {
-    const start = this.expect().start;
+  /**
+   * Parse a participant or actor declaration.
+   *
+   *   participant <id> [as <label>]
+   *   actor <id> [as <label>]
+   *
+   * The label may be a quoted string or a bare identifier; either way the id
+   * stays the stable token messages reference.
+   */
+  private parseParticipant(): ParticipantNode | null {
+    const keyword = this.expect();
+    const start = keyword.start;
+    const participantType: ParticipantType =
+      keyword.type === TokenType.Actor ? "actor" : "participant";
+    const keywordLabel = participantType === "actor" ? "actor" : "participant";
 
     const idToken = this.peek();
     if (!idToken || idToken.type !== TokenType.Identifier) {
       this.errorHere(
-        'Expected a participant name after "participant"',
-        DiagnosticCode.MalformedMessage,
+        `Expected a name after "${keywordLabel}"`,
+        DiagnosticCode.MalformedParticipant,
       );
       return null;
     }
     this.advance();
 
+    let label = idToken.value;
+    if (this.peekKeyword("as")) {
+      this.advance();
+      const labelToken = this.peek();
+      if (
+        labelToken &&
+        (labelToken.type === TokenType.StringLiteral ||
+          labelToken.type === TokenType.Identifier)
+      ) {
+        label = this.advance().value;
+      } else {
+        this.errorHere(
+          `Expected a label after "as" in the ${keywordLabel} declaration`,
+          DiagnosticCode.MalformedParticipant,
+        );
+        return null;
+      }
+    }
+
+    // Any trailing tokens on the line are malformed.
+    if (this.peek() && this.peek()!.type !== TokenType.Eol) {
+      this.errorHere(
+        `Unexpected text after the ${keywordLabel} declaration`,
+        DiagnosticCode.MalformedParticipant,
+      );
+    }
+
     const end = this.previousEnd();
     return {
       type: "participant",
+      participantType,
       id: idToken.value,
-      label: idToken.value,
+      label,
       range: span(start, end),
     };
   }
@@ -224,15 +396,26 @@ class Parser {
     };
   }
 
-  /** Parse a note callout: `note left/right/over [of id] : text`. */
+  /**
+   * Parse a note callout.
+   *
+   *   note left|right|over [of] <id> : text
+   *   note over <id> (, <id>)* : text          — spanning note
+   *   note over : text                         — diagram-wide
+   *   note on <number> : text                  — attached to a message step
+   *   note <placement> <target>:               — multiline form
+   *     line
+   *     line
+   *   end note
+   */
   private parseNote(): NoteNode | null {
     const start = this.expect().start;
 
-    // Required placement keyword: left, right, or over.
+    // Required placement keyword: left, right, over, or on.
     const placementToken = this.peek();
     if (!placementToken || placementToken.type !== TokenType.Identifier) {
       this.errorHere(
-        'Expected a note placement (left, right, or over) after "note"',
+        'Expected a note placement (left, right, over, or on) after "note"',
         DiagnosticCode.MalformedNote,
       );
       return null;
@@ -240,45 +423,67 @@ class Parser {
     const placement = this.resolvePlacement(placementToken);
     if (placement === null) {
       this.errorHere(
-        `Invalid note placement "${placementToken.value}"; expected left, right, or over`,
+        `Invalid note placement "${placementToken.value}"; expected left, right, over, or on`,
         DiagnosticCode.MalformedNote,
       );
       return null;
     }
     this.advance();
 
-    // Optional participant target. `over` may be diagram-wide (no target).
-    let participant: ParticipantId | undefined;
-    if (placement === "over") {
-      if (this.peekKeyword("of")) {
-        this.advance(); // tolerate a stray "of" before the id
-      } else if (this.peek()?.type === TokenType.Identifier) {
-        participant = this.advance().value;
-      }
-    } else if (this.peekKeyword("of")) {
-      this.advance(); // consume "of"
-      if (this.peek()?.type !== TokenType.Identifier) {
+    const participants: ParticipantId[] = [];
+    let messageNumber: number | undefined;
+    if (placement === "on") {
+      // `note on <n>` attaches to the message whose circled step number is `n`.
+      const numberToken = this.peek();
+      if (!numberToken || numberToken.type !== TokenType.Number) {
         this.errorHere(
-          `Expected a participant after "of" in a ${placement} note`,
+          'Expected a message number after "note on", e.g. "note on 3 : text"',
           DiagnosticCode.MalformedNote,
         );
         return null;
       }
-      participant = this.advance().value;
-    } else if (this.peek()?.type === TokenType.Identifier) {
-      // `note left/right <id>` — a bare id anchors the note.
-      participant = this.advance().value;
+      this.advance();
+      messageNumber = Number.parseInt(numberToken.value, 10);
+      if (!Number.isInteger(messageNumber) || messageNumber < 1) {
+        this.errorHere(
+          "A note's message number must be a positive whole number",
+          DiagnosticCode.MalformedNote,
+        );
+        return null;
+      }
+    } else if (placement === "over") {
+      // `of` is optional and tolerated for symmetry with left/right.
+      if (this.peekKeyword("of")) this.advance();
+      if (this.peek()?.type === TokenType.Identifier) {
+        participants.push(this.advance().value);
+        // One or more comma-separated participants make the note span them.
+        while (this.peek()?.type === TokenType.Comma) {
+          this.advance();
+          const next = this.peek();
+          if (!next || next.type !== TokenType.Identifier) {
+            this.errorHere(
+              "Expected a participant after ',' in a spanning note",
+              DiagnosticCode.MalformedSpanningNote,
+            );
+            return null;
+          }
+          participants.push(this.advance().value);
+        }
+      }
     } else {
-      // left / right with no target is malformed; use `note over` for a
-      // diagram-wide note.
-      this.errorHere(
-        `A ${placement} note must reference a participant, e.g. "note ${placement} of User : text"`,
-        DiagnosticCode.MalformedNote,
-      );
-      return null;
+      if (this.peekKeyword("of")) this.advance(); // consume "of"
+      const target = this.peek();
+      if (!target || target.type !== TokenType.Identifier) {
+        this.errorHere(
+          `A ${placement} note must reference a participant, e.g. "note ${placement} of User : text"`,
+          DiagnosticCode.MalformedNote,
+        );
+        return null;
+      }
+      participants.push(this.advance().value);
     }
 
-    // Required `: text` terminator with a non-empty body.
+    // Required `:` terminator introducing the text.
     if (this.peek()?.type !== TokenType.Colon) {
       this.errorHere(
         "Expected ':' after a note to introduce its text",
@@ -287,23 +492,79 @@ class Parser {
       return null;
     }
     this.advance();
-    const text = this.readLineText();
-    if (text === "") {
-      this.errorHere(
-        "A note must have text after ':'",
-        DiagnosticCode.MalformedNote,
-      );
-      return null;
+
+    const inline = this.readLineText();
+    let text = inline;
+    if (inline === "") {
+      // Nothing after the colon: the multiline form, ended by `end note`.
+      if (this.peekMultilineNoteEnd()) {
+        this.errorHere(
+          "A note must have text after ':'",
+          DiagnosticCode.MalformedNote,
+        );
+        return null;
+      }
+      const body = this.readMultilineNote();
+      if (!body.closed) {
+        this.errorHere(
+          'Expected "end note" to close the multiline note',
+          DiagnosticCode.MalformedNote,
+        );
+        return null;
+      }
+      if (body.text === "") {
+        this.errorHere(
+          'A note must have text; add it after ":" or use "end note" to close a multiline note',
+          DiagnosticCode.MalformedNote,
+        );
+        return null;
+      }
+      text = body.text;
     }
 
     const end = this.previousEnd();
     return {
       type: "note",
       placement,
-      participant,
+      participants,
+      messageNumber,
       text,
       range: span(start, end),
     };
+  }
+
+  /** Read a multiline note body until the `end note` terminator. */
+  private readMultilineNote(): { text: string; closed: boolean } {
+    const lines: string[] = [];
+    let closed = false;
+    while (!this.atEnd()) {
+      if (this.peekMultilineNoteEnd()) {
+        this.advance(); // `end`
+        this.advance(); // `note`
+        if (this.peek() && this.peek()!.type !== TokenType.Eol) {
+          this.errorHere(
+            'Unexpected text after "end note"',
+            DiagnosticCode.MalformedNote,
+          );
+        }
+        this.skipToEol();
+        closed = true;
+        break;
+      }
+      lines.push(this.readLineText());
+    }
+    // Drop blank leading/trailing lines so the box is not padded with air.
+    while (lines.length > 0 && lines[0] === "") lines.shift();
+    while (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
+    return { text: lines.join("\n"), closed };
+  }
+
+  /** Whether the cursor is at an `end note` terminator. */
+  private peekMultilineNoteEnd(): boolean {
+    return (
+      this.peek()?.type === TokenType.End &&
+      this.peekAt(1)?.type === TokenType.Note
+    );
   }
 
   /** Map a placement identifier to its NotePlacement, or null when invalid. */
@@ -315,6 +576,8 @@ class Parser {
         return "right";
       case "over":
         return "over";
+      case "on":
+        return "on";
       default:
         return null;
     }
@@ -329,7 +592,7 @@ class Parser {
   /** Parse an activation line: `activate <id>` or `deactivate <id>`. */
   private parseActivation(): ActivationNode | null {
     const keyword = this.expect();
-    const action =
+    const action: ActivationAction =
       keyword.type === TokenType.Activate ? "activate" : "deactivate";
     const start = keyword.start;
 
@@ -360,15 +623,13 @@ class Parser {
     };
   }
 
-  /** Parse a message line: `from arrow to (":" label)?`. */
-  private parseMessage(): {
-    type: "message";
-    kind: MessageKind;
-    from: ParticipantId;
-    to: ParticipantId;
-    label: string;
-    range: SourceRange;
-  } | null {
+  /**
+   * Parse a message line: `from arrow ("+" | "-")? to (":" label)?`.
+   *
+   * Returns the statements the line produces: an optional inline activation
+   * first (so its bar edge aligns with this message's row), then the message.
+   */
+  private parseMessage(): { statements: Statement[] } | null {
     const start = this.peek()!.start;
 
     const from = this.peek();
@@ -382,21 +643,25 @@ class Parser {
     this.advance();
 
     const arrow = this.peek();
-    if (!arrow) {
+    if (!arrow || arrow.type !== TokenType.Arrow) {
       this.errorHere(
-        "Expected an arrow (-> or -->) in the message",
+        `Expected an arrow (${ARROW_FORMS}) in the message`,
         DiagnosticCode.MalformedMessage,
       );
       return null;
     }
-    if (arrow.type === TokenType.SyncArrow) this.advance();
-    else if (arrow.type === TokenType.ResponseArrow) this.advance();
-    else {
-      this.errorHere(
-        "Expected an arrow (-> or -->) in the message",
-        DiagnosticCode.MalformedMessage,
-      );
-      return null;
+    this.advance();
+    const style = ARROW_STYLES[arrow.value];
+
+    // Inline activation suffix: `+` activates the receiver, `-` deactivates the
+    // sender (matching Mermaid's `->>+B` / `-->>-A` shorthand).
+    let inline: ActivationAction | null = null;
+    if (this.peek()?.type === TokenType.Plus) {
+      inline = "activate";
+      this.advance();
+    } else if (this.peek()?.type === TokenType.Minus) {
+      inline = "deactivate";
+      this.advance();
     }
 
     const to = this.peek();
@@ -409,10 +674,7 @@ class Parser {
     }
     this.advance();
 
-    const kind: MessageKind = arrow.value === "->" ? "sync" : "response";
-
     let label = "";
-    // Optional `: label`.
     if (this.peek()?.type === TokenType.Colon) {
       this.advance();
       label = this.readLineText();
@@ -425,25 +687,173 @@ class Parser {
     }
 
     const end = this.previousEnd();
-    return {
+    const statements: Statement[] = [];
+    if (inline) {
+      statements.push({
+        type: "activation",
+        action: inline,
+        participant: inline === "activate" ? to.value : from.value,
+        range: span(start, end),
+      });
+    }
+    const message: MessageNode = {
       type: "message",
-      kind,
+      lineStyle: style.lineStyle,
+      arrowStyle: style.arrowStyle,
       from: from.value,
       to: to.value,
       label,
       range: span(start, end),
     };
+    statements.push(message);
+    return { statements };
   }
 
-  /** Read the remaining text of the current line as a label/title value. */
-  private readLineText(): string {
-    let text = "";
-    while (!this.atEnd() && this.peek()!.type !== TokenType.Eol) {
-      const token = this.advance();
-      if (text !== "") text += " ";
-      text += token.value;
+  /** Parse a single-block fragment (`loop`, `opt`, `break`). */
+  private parseSimpleFragment(
+    name: "loop" | "opt" | "break",
+    keywordLabel: string,
+  ): Statement {
+    const start = this.expect().start;
+    const label = this.readLineText();
+    const statements = this.parseStatements([TokenType.End]);
+    const end = this.expectEnd(keywordLabel, start);
+    return { type: name, label, statements, range: span(start, end) };
+  }
+
+  /** Parse an `alt`/`else` fragment. */
+  private parseAlternative(): Statement {
+    const start = this.expect().start;
+    const first = this.readLineText();
+
+    const branches: AltBranch[] = [];
+    let condition = first;
+    let branchStart = start;
+    for (;;) {
+      const statements = this.parseStatements([TokenType.End, TokenType.Else]);
+      branches.push({
+        condition,
+        statements,
+        range: span(branchStart, this.statementEnd(statements, branchStart)),
+      });
+      if (this.peek()?.type === TokenType.Else) {
+        branchStart = this.advance().start;
+        condition = this.readLineText();
+        continue;
+      }
+      break;
     }
-    return text.trim();
+    const end = this.expectEnd("alt", start);
+    return { type: "alt", branches, range: span(start, end) };
+  }
+
+  /** Parse a `par`/`and` fragment. */
+  private parseParallel(): Statement {
+    const start = this.expect().start;
+    let label = this.readLineText();
+
+    const branches: ParBranch[] = [];
+    let branchStart = start;
+    for (;;) {
+      const statements = this.parseStatements([TokenType.End, TokenType.And]);
+      branches.push({
+        label,
+        statements,
+        range: span(branchStart, this.statementEnd(statements, branchStart)),
+      });
+      if (this.peek()?.type === TokenType.And) {
+        branchStart = this.advance().start;
+        label = this.readLineText();
+        continue;
+      }
+      break;
+    }
+    const end = this.expectEnd("par", start);
+    return { type: "par", branches, range: span(start, end) };
+  }
+
+  /** Parse a `critical`/`option` fragment. */
+  private parseCritical(): Statement {
+    const start = this.expect().start;
+    let label = this.readLineText();
+
+    const branches: CriticalBranch[] = [];
+    let branchStart = start;
+    for (;;) {
+      const statements = this.parseStatements([
+        TokenType.End,
+        TokenType.Option,
+      ]);
+      branches.push({
+        label,
+        statements,
+        range: span(branchStart, this.statementEnd(statements, branchStart)),
+      });
+      if (this.peek()?.type === TokenType.Option) {
+        branchStart = this.advance().start;
+        label = this.readLineText();
+        continue;
+      }
+      break;
+    }
+    const end = this.expectEnd("critical", start);
+    return { type: "critical", branches, range: span(start, end) };
+  }
+
+  /** End position for a branch span: its last statement, or its start. */
+  private statementEnd(
+    statements: Statement[],
+    fallback: SourcePosition,
+  ): SourcePosition {
+    const last = statements[statements.length - 1];
+    return last ? last.range.end : fallback;
+  }
+
+  /** Consume the `end` that closes a fragment, reporting when it is missing. */
+  private expectEnd(name: string, start: SourcePosition): SourcePosition {
+    const token = this.peek();
+    if (token && token.type === TokenType.End) {
+      this.advance();
+      if (this.peek() && this.peek()!.type !== TokenType.Eol) {
+        this.errorHere(
+          'Unexpected text after "end"',
+          DiagnosticCode.MalformedFragment,
+        );
+      }
+      this.skipToEol();
+      return this.previousEnd();
+    }
+    this.errorHere(
+      `Expected "end" to close the ${name}`,
+      DiagnosticCode.UnclosedFragment,
+    );
+    // Fall back to the last consumed token so the range stays valid.
+    return this.tokens[Math.max(0, this.pos - 1)]?.end ?? start;
+  }
+
+  /** Read the remaining raw text of the current line, then consume the line. */
+  private readLineText(): string {
+    const eol = this.currentLineEol();
+    const first = this.peek();
+    let value =
+      first && first.type !== TokenType.Eol
+        ? eol.value.slice(first.start.column, eol.start.column).trim()
+        : "";
+    // A value wrapped entirely in double quotes is a quoted literal: drop the
+    // quotes (and any padding inside them), matching the token-based reading.
+    if (value.length >= 2 && value.startsWith('"') && value.endsWith('"')) {
+      value = value.slice(1, -1).trim();
+    }
+    this.skipToEol();
+    return value;
+  }
+
+  /** The `Eol` token that ends the line the cursor is on. */
+  private currentLineEol(): Token {
+    for (let i = this.pos; i < this.tokens.length; i++) {
+      if (this.tokens[i].type === TokenType.Eol) return this.tokens[i];
+    }
+    return this.tokens[this.tokens.length - 1]!;
   }
 
   // --- Token cursor helpers -------------------------------------------------
@@ -454,6 +864,10 @@ class Parser {
 
   private peek(): Token | undefined {
     return this.tokens[this.pos];
+  }
+
+  private peekAt(offset: number): Token | undefined {
+    return this.tokens[this.pos + offset];
   }
 
   private advance(): Token {
@@ -468,7 +882,7 @@ class Parser {
 
   /** Record an error diagnostic at the current token's span. */
   private errorHere(message: string, code: DiagnosticCode): void {
-    const token = this.peek()!;
+    const token = this.peek() ?? this.tokens[this.tokens.length - 1]!;
     const diagnostic = errorDiagnostic(
       message,
       code,

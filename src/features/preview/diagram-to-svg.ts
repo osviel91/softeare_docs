@@ -16,6 +16,7 @@ import { layoutDiagram } from "../../layout/sequence-layout";
 import {
   diagramCanvasSize,
   renderDiagramToSvg,
+  type RenderOptions,
 } from "../../renderer/svg/sequence-svg-renderer";
 import { analyze } from "../../language/analyze";
 import { isValid } from "../../language/validator/validator";
@@ -28,6 +29,7 @@ function emptyLayout(): DiagramLayout {
     participants: [],
     messages: [],
     activations: [],
+    fragments: [],
     notes: [],
   };
 }
@@ -55,11 +57,14 @@ export interface DiagramDocument {
  */
 export function renderDiagramDocument(
   ast: SequenceDiagram | null,
+  options: RenderOptions = {},
 ): DiagramDocument {
   const layout = !ast || !isValid(ast) ? emptyLayout() : layoutDiagram(ast);
   return {
-    svg: renderDiagramToSvg(layout),
-    ...diagramCanvasSize(layout),
+    svg: renderDiagramToSvg(layout, options),
+    // Padding changes the canvas the SVG is drawn on, so the size reported to
+    // the viewport (and to exporters) must use the same padding.
+    ...diagramCanvasSize(layout, options.padding),
   };
 }
 

@@ -75,14 +75,19 @@ class FakeDirectory {
 
   async getFileHandle(
     name: string,
-    options?: { createIfNotExists?: boolean },
+    // This double plays the *native* `FileSystemDirectoryHandle`, whose option
+    // for creating a missing file is `create`. The repository's own adapter
+    // interface spells it `createIfNotExists`, and the bridge in
+    // `create-file-system-repository.ts` translates between the two — so a double
+    // that accepted the adapter's spelling would hide a broken translation.
+    options?: { create?: boolean },
   ): Promise<FsFileHandle> {
     const existing = this.children.get(name);
     if (existing && existing.kind === "file") return existing;
     if (existing && existing.kind === "directory") {
       throw new Error(`entry exists as directory: ${name}`);
     }
-    if (options?.createIfNotExists) {
+    if (options?.create) {
       const file = new FakeFile(name, "");
       // FakeFile is a native handle (its `getFile()` yields a File-like object),
       // so it is cast here into the adapter contract the repository expects.
@@ -172,6 +177,42 @@ describe("App — local folder (Phase 5)", () => {
     });
   });
 
+  it("renames a diagram from the title in its source, live", async () => {
+    render(<App />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("open-folder-button"));
+    });
+
+    // The file on disk is `welcome.seq`; `title Welcome` names it everywhere.
+    await waitFor(() => {
+      expect(screen.getByLabelText("Load diagram Welcome")).toBeInTheDocument();
+    });
+    expect(screen.getByTestId("tab-label")).toHaveTextContent("Welcome");
+
+    // Editing the title renames the diagram without a separate rename step.
+    await act(async () => {
+      fireEvent.change(screen.getByTestId("dsl-textarea"), {
+        target: { value: "title Renamed\nA -> B: hi" },
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Load diagram Renamed")).toBeInTheDocument();
+    });
+    expect(screen.queryByLabelText("Load diagram Welcome")).toBeNull();
+    expect(screen.getByTestId("tab-label")).toHaveTextContent("Renamed");
+
+    // The file keeps its own name, so the title is free to differ from it.
+    const project = fakeRoot.children.get(
+      "Onboarding",
+    ) as unknown as FakeDirectory;
+    await waitFor(() => {
+      const file = project.children.get("welcome.seq") as unknown as FakeFile;
+      expect(file.source).toContain("title Renamed");
+    });
+  });
+
   it("closes the folder and returns to in-browser projects", async () => {
     render(<App />);
 
@@ -231,8 +272,9 @@ describe("App — local folder (Phase 5)", () => {
 
     // The Onboarding project (first in the tree) loads first; its Welcome
     // diagram is not searchable by "report". The Work file is named
-    // "report.seq", so the search matches on that name across projects.
-    expect(screen.queryByLabelText("Load diagram report.seq")).toBeNull();
+    // "report.seq" but titled "Report", so it is listed and matched by its
+    // title (and its file name remains searchable too).
+    expect(screen.queryByLabelText("Load diagram Report")).toBeNull();
 
     // Searching "report" surfaces the Work project's diagram across projects.
     await act(async () => {
@@ -241,18 +283,166 @@ describe("App — local folder (Phase 5)", () => {
       });
     });
     await waitFor(() => {
-      expect(
-        screen.getByLabelText("Load diagram report.seq"),
-      ).toBeInTheDocument();
+      expect(screen.getByLabelText("Load diagram Report")).toBeInTheDocument();
     });
 
     // Clicking the matched diagram opens it: the preview reflects "Report".
     await act(async () => {
-      fireEvent.click(screen.getByLabelText("Load diagram report.seq"));
+      fireEvent.click(screen.getByLabelText("Load diagram Report"));
     });
     await waitFor(() => {
       const svg = screen.getByTestId("preview-svg");
       expect(svg.textContent).toContain("Report");
+    });
+  });
+});
+
+/** Open the local folder and wait until its diagram is listed. */
+async function openFolderWithDiagram(): Promise<void> {
+  render(<App />);
+  await act(async () => {
+    fireEvent.click(screen.getByTestId("open-folder-button"));
+  });
+  await waitFor(() => {
+    expect(screen.getByLabelText("Load diagram Welcome")).toBeInTheDocument();
+  });
+}
+
+/** The Onboarding project directory inside the fake tree. */
+function onboarding(): FakeDirectory {
+  return fakeRoot.children.get("Onboarding") as unknown as FakeDirectory;
+}
+
+describe("App — safe delete in a folder", () => {
+  it("confirms before removing a diagram", async () => {
+    await openFolderWithDiagram();
+
+    fireEvent.click(screen.getByTestId("delete-diagram-button"));
+    expect(screen.getByTestId("confirm-dialog")).toHaveTextContent(
+      "Delete diagram",
+    );
+
+    // Cancelling leaves everything untouched.
+    fireEvent.click(screen.getByTestId("confirm-dialog-cancel"));
+    expect(screen.queryByTestId("confirm-dialog")).toBeNull();
+    expect(screen.getByLabelText("Load diagram Welcome")).toBeInTheDocument();
+    expect(onboarding().children.has("welcome.seq")).toBe(true);
+  });
+
+  it("removes a diagram from the app but keeps the file on disk", async () => {
+    await openFolderWithDiagram();
+
+    fireEvent.click(screen.getByTestId("delete-diagram-button"));
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("confirm-dialog-alternative"));
+    });
+
+    // Gone from the explorer...
+    await waitFor(() => {
+      expect(screen.queryByLabelText("Load diagram Welcome")).toBeNull();
+    });
+    // ...but still on disk, and recoverable from the explorer banner.
+    expect(onboarding().children.has("welcome.seq")).toBe(true);
+    expect(screen.getByTestId("explorer-hidden")).toHaveTextContent(
+      "1 removed from app",
+    );
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("unhide-all-button"));
+    });
+    await waitFor(() => {
+      expect(screen.getByLabelText("Load diagram Welcome")).toBeInTheDocument();
+    });
+  });
+
+  it("deletes a diagram from disk when that scope is chosen", async () => {
+    await openFolderWithDiagram();
+
+    fireEvent.click(screen.getByTestId("delete-diagram-button"));
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("confirm-dialog-confirm"));
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByLabelText("Load diagram Welcome")).toBeNull();
+    });
+    expect(onboarding().children.has("welcome.seq")).toBe(false);
+    // A disk delete is permanent, so nothing is offered for restore.
+    expect(screen.queryByTestId("explorer-hidden")).toBeNull();
+  });
+
+  it("removes a whole project from the app without deleting its directory", async () => {
+    await openFolderWithDiagram();
+
+    fireEvent.click(screen.getByTestId("delete-project-button"));
+    expect(screen.getByTestId("confirm-dialog")).toHaveTextContent(
+      "Delete project",
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("confirm-dialog-alternative"));
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("explorer-project")).toBeNull();
+    });
+    expect(fakeRoot.children.has("Onboarding")).toBe(true);
+  });
+});
+
+describe("App — diagram history", () => {
+  it("records an initial version and captures checkpoints on demand", async () => {
+    await openFolderWithDiagram();
+
+    // The History view is a first-class editor view.
+    fireEvent.click(screen.getByTestId("view-history"));
+    await waitFor(() => {
+      expect(screen.getByTestId("history-panel")).toBeInTheDocument();
+    });
+    await waitFor(() => {
+      expect(screen.getAllByTestId("history-version")).toHaveLength(1);
+    });
+    expect(screen.getByTestId("version-label")).toHaveTextContent(
+      "Initial version",
+    );
+
+    // Edit the source, then capture it explicitly.
+    fireEvent.click(screen.getByTestId("view-code"));
+    fireEvent.change(screen.getByTestId("dsl-textarea"), {
+      target: { value: "title Welcome v2\nA -> B: hi" },
+    });
+    fireEvent.click(screen.getByTestId("view-history"));
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("save-version-button"));
+    });
+    await waitFor(() => {
+      expect(screen.getAllByTestId("history-version")).toHaveLength(2);
+    });
+  });
+
+  it("restores an older version into the editor", async () => {
+    await openFolderWithDiagram();
+
+    fireEvent.click(screen.getByTestId("view-code"));
+    fireEvent.change(screen.getByTestId("dsl-textarea"), {
+      target: { value: "title Welcome\nA -> B: changed" },
+    });
+    fireEvent.click(screen.getByTestId("view-history"));
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("save-version-button"));
+    });
+    await waitFor(() => {
+      expect(screen.getAllByTestId("history-version")).toHaveLength(2);
+    });
+
+    // Restore the older (initial) version: the editor buffer follows.
+    await act(async () => {
+      fireEvent.click(screen.getAllByTestId("restore-version-button")[1]);
+    });
+    fireEvent.click(screen.getByTestId("view-code"));
+    await waitFor(() => {
+      expect(screen.getByTestId("dsl-textarea")).toHaveValue(
+        "title Welcome\nA -> B: hi",
+      );
     });
   });
 });

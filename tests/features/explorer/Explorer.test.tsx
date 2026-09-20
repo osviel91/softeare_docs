@@ -67,6 +67,64 @@ describe("Explorer", () => {
     expect(screen.getByLabelText("Load diagram Welcome")).toBeInTheDocument();
   });
 
+  it("shows a diagram by the title in its source, not its file name", () => {
+    const named: DiagramFile = {
+      id: "diag-9",
+      name: "report.seq",
+      source: "title Quarterly Report",
+      projectId: "proj-1",
+    };
+    render(
+      <Explorer
+        projects={[project]}
+        diagrams={[named]}
+        selectedProjectId={project.id}
+        selectedDiagramId={null}
+        isLoading={false}
+        onCreateProject={vi.fn()}
+        onDeleteProject={vi.fn()}
+        onLoadDiagram={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByLabelText("Load diagram Quarterly Report"),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText("Load diagram report.seq")).toBeNull();
+  });
+
+  it("finds a diagram by its title or by its file name", () => {
+    const named: DiagramFile = {
+      id: "diag-9",
+      name: "report.seq",
+      source: "title Quarterly Report",
+      projectId: "proj-1",
+    };
+    render(
+      <Explorer
+        projects={[project]}
+        diagrams={[named]}
+        allDiagrams={[named]}
+        selectedProjectId={project.id}
+        selectedDiagramId={null}
+        isLoading={false}
+        onCreateProject={vi.fn()}
+        onDeleteProject={vi.fn()}
+        onLoadDiagram={vi.fn()}
+      />,
+    );
+
+    const search = screen.getByTestId("diagram-search-input");
+    fireEvent.change(search, { target: { value: "quarterly" } });
+    expect(
+      screen.getByLabelText("Load diagram Quarterly Report"),
+    ).toBeInTheDocument();
+
+    fireEvent.change(search, { target: { value: "report.seq" } });
+    expect(
+      screen.getByLabelText("Load diagram Quarterly Report"),
+    ).toBeInTheDocument();
+  });
+
   it("shows a hint for a selected project with no diagrams", () => {
     render(
       <Explorer
@@ -119,6 +177,44 @@ describe("Explorer", () => {
     );
     fireEvent.click(screen.getByLabelText("Delete project Onboarding"));
     expect(onDeleteProject).toHaveBeenCalledWith(project.id);
+  });
+
+  it("opens the add menu for a project instead of creating straight away", () => {
+    const onAddMenu = vi.fn();
+    render(
+      <Explorer
+        projects={[project]}
+        diagrams={[diagram]}
+        selectedProjectId={project.id}
+        selectedDiagramId={diagram.id}
+        isLoading={false}
+        onCreateProject={vi.fn()}
+        onDeleteProject={vi.fn()}
+        onAddMenu={onAddMenu}
+        onLoadDiagram={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("project-add-button"));
+    expect(onAddMenu).toHaveBeenCalledWith(
+      project,
+      expect.objectContaining({ x: expect.any(Number), y: expect.any(Number) }),
+    );
+  });
+
+  it("omits the add button when no add handler is provided", () => {
+    render(
+      <Explorer
+        projects={[project]}
+        diagrams={[diagram]}
+        selectedProjectId={project.id}
+        selectedDiagramId={diagram.id}
+        isLoading={false}
+        onCreateProject={vi.fn()}
+        onDeleteProject={vi.fn()}
+        onLoadDiagram={vi.fn()}
+      />,
+    );
+    expect(screen.queryByTestId("project-add-button")).toBeNull();
   });
 
   it("enables the create button only after typing a name", () => {
@@ -337,7 +433,7 @@ describe("Explorer", () => {
       target: { value: "does-not-exist" },
     });
     expect(screen.getByTestId("explorer-empty")).toHaveTextContent(
-      "No diagrams match",
+      "No diagrams or notes match",
     );
   });
 
@@ -355,5 +451,103 @@ describe("Explorer", () => {
       />,
     );
     expect(screen.queryByTestId("open-folder-button")).toBeNull();
+  });
+});
+
+describe("Explorer — deleting diagrams", () => {
+  it("offers a delete button per diagram when a handler is provided", () => {
+    const onDeleteDiagram = vi.fn();
+    render(
+      <Explorer
+        projects={[project]}
+        diagrams={[diagram]}
+        selectedProjectId={project.id}
+        selectedDiagramId={diagram.id}
+        isLoading={false}
+        onCreateProject={vi.fn()}
+        onDeleteProject={vi.fn()}
+        onDeleteDiagram={onDeleteDiagram}
+        onLoadDiagram={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("delete-diagram-button"));
+    expect(onDeleteDiagram).toHaveBeenCalledWith(diagram);
+  });
+
+  it("omits the delete button when no handler is provided", () => {
+    render(
+      <Explorer
+        projects={[project]}
+        diagrams={[diagram]}
+        selectedProjectId={project.id}
+        selectedDiagramId={diagram.id}
+        isLoading={false}
+        onCreateProject={vi.fn()}
+        onDeleteProject={vi.fn()}
+        onLoadDiagram={vi.fn()}
+      />,
+    );
+    expect(screen.queryByTestId("delete-diagram-button")).toBeNull();
+  });
+
+  it("does not load the diagram when its delete button is clicked", () => {
+    const onDeleteDiagram = vi.fn();
+    const onLoadDiagram = vi.fn();
+    render(
+      <Explorer
+        projects={[project]}
+        diagrams={[diagram]}
+        selectedProjectId={project.id}
+        selectedDiagramId={diagram.id}
+        isLoading={false}
+        onCreateProject={vi.fn()}
+        onDeleteProject={vi.fn()}
+        onDeleteDiagram={onDeleteDiagram}
+        onLoadDiagram={onLoadDiagram}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("delete-diagram-button"));
+    expect(onLoadDiagram).not.toHaveBeenCalled();
+  });
+});
+
+describe("Explorer — paths removed from the app", () => {
+  it("shows a restore control when paths are hidden", () => {
+    const onUnhideAll = vi.fn();
+    render(
+      <Explorer
+        projects={[project]}
+        diagrams={[diagram]}
+        selectedProjectId={project.id}
+        selectedDiagramId={diagram.id}
+        isLoading={false}
+        onCreateProject={vi.fn()}
+        onDeleteProject={vi.fn()}
+        onLoadDiagram={vi.fn()}
+        hiddenCount={2}
+        onUnhideAll={onUnhideAll}
+      />,
+    );
+    expect(screen.getByTestId("explorer-hidden")).toHaveTextContent(
+      "2 removed from app",
+    );
+    fireEvent.click(screen.getByTestId("unhide-all-button"));
+    expect(onUnhideAll).toHaveBeenCalledTimes(1);
+  });
+
+  it("hides the restore control when nothing is hidden", () => {
+    render(
+      <Explorer
+        projects={[project]}
+        diagrams={[diagram]}
+        selectedProjectId={project.id}
+        selectedDiagramId={diagram.id}
+        isLoading={false}
+        onCreateProject={vi.fn()}
+        onDeleteProject={vi.fn()}
+        onLoadDiagram={vi.fn()}
+      />,
+    );
+    expect(screen.queryByTestId("explorer-hidden")).toBeNull();
   });
 });

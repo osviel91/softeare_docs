@@ -3,10 +3,12 @@
  *
  * Validation is a pure function over the AST, independent of parsing and UI.
  * It checks contextual rules that cannot be enforced by the grammar alone:
- * every message must reference a participant that was actually declared, and no
- * participant may be declared twice.
+ * every message must reference a participant that was actually declared, no
+ * participant may be declared twice, activations must pair up, and fragment
+ * nesting is traversed rather than flattened.
  */
 import type { ParticipantId, SequenceDiagram } from "../../domain/diagram/ast";
+import { walkStatements } from "../../domain/diagram/ast";
 import {
   type Diagnostic,
   DiagnosticCode,
@@ -63,10 +65,12 @@ export function validateSemantics(diagram: SequenceDiagram): Diagnostic[] {
   const resolve = (id: ParticipantId): ParticipantId =>
     aliasTargets.get(id) ?? id;
 
+  // Walk every statement, including those nested inside fragments, in source
+  // order. Messages and activations both reference participants by name.
+  const statements = [...walkStatements(diagram.statements)];
+
   // Every message endpoint must resolve to a declared participant or alias.
-  for (const statement of diagram.statements) {
-    // Activations are statements too, but carry no endpoints; they are checked
-    // separately below.
+  for (const statement of statements) {
     if (statement.type !== "message") continue;
     for (const endpoint of [statement.from, statement.to]) {
       if (!resolvableIds.has(endpoint)) {
@@ -81,11 +85,43 @@ export function validateSemantics(diagram: SequenceDiagram): Diagnostic[] {
     }
   }
 
+  // Notes reference participants, or a message by its step number. A `note on
+  // <n>` must point at a message the diagram actually has; the number is the
+  // same 1-based step the renderer prints in the circled badge.
+  const messageCount = statements.filter(
+    (statement) => statement.type === "message",
+  ).length;
+  for (const note of diagram.notes) {
+    for (const participant of note.participants) {
+      if (!resolvableIds.has(participant)) {
+        diagnostics.push(
+          errorDiagnostic(
+            `Unknown participant "${participant}"`,
+            DiagnosticCode.UnknownParticipant,
+            note.range,
+          ),
+        );
+      }
+    }
+    if (note.placement !== "on") continue;
+    const number = note.messageNumber;
+    if (number === undefined || number < 1 || number > messageCount) {
+      diagnostics.push(
+        errorDiagnostic(
+          `Note references message ${number ?? "?"}, but the diagram has ${messageCount} message${messageCount === 1 ? "" : "s"}`,
+          DiagnosticCode.UnknownMessageNumber,
+          note.range,
+        ),
+      );
+    }
+  }
+
   // Activations pair up like brackets, per participant: each `deactivate` must
   // close an open `activate`. Nesting is legal, so the number of open bars is
-  // counted rather than tracked with a single flag.
+  // counted rather than tracked with a single flag. The walk is in source order,
+  // so fragments do not break the pairing.
   const openActivations = new Map<ParticipantId, number>();
-  for (const statement of diagram.statements) {
+  for (const statement of statements) {
     if (statement.type !== "activation") continue;
     if (!resolvableIds.has(statement.participant)) {
       diagnostics.push(

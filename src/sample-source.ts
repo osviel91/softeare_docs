@@ -10,8 +10,8 @@ participant User
 participant API
 participant DB
 
-User -> API: Login
-API -> DB: Find user
+User ->> API: Login
+API ->> DB: Find user
 DB --> API: User
 API --> User: Token
 `;

@@ -6,17 +6,23 @@ import TabBar from "../../../src/features/tabs/TabBar";
 const tabs: Tab[] = [
   {
     id: "diag-1",
-    diagramId: "diag-1",
+    kind: "diagram",
+    documentId: "diag-1",
     projectId: "proj-1",
+    name: "Welcome",
     title: "Welcome",
     source: "",
+    savedSource: "",
   },
   {
-    id: "diag-2",
-    diagramId: "diag-2",
+    id: "note-2",
+    kind: "note",
+    documentId: "note-2",
     projectId: "proj-1",
+    name: "Flow.md",
     title: "Flow",
-    source: "",
+    source: "# Flow",
+    savedSource: "# Flow",
   },
 ];
 
@@ -34,7 +40,7 @@ describe("TabBar", () => {
     expect(screen.queryByTestId("tab-bar")).toBeNull();
   });
 
-  it("renders one tab per open diagram", () => {
+  it("renders one tab per open document", () => {
     render(
       <TabBar
         tabs={tabs}
@@ -48,11 +54,51 @@ describe("TabBar", () => {
     expect(screen.getAllByTestId("tab-label")[0]).toHaveTextContent("Welcome");
   });
 
+  it("names each tab's document kind", () => {
+    render(
+      <TabBar
+        tabs={tabs}
+        activeTabId="diag-1"
+        onActivateTab={vi.fn()}
+        onCloseTab={vi.fn()}
+      />,
+    );
+    const buttons = screen.getAllByTestId("tab");
+    expect(buttons[0]).toHaveAttribute("data-kind", "diagram");
+    expect(buttons[1]).toHaveAttribute("data-kind", "note");
+  });
+
+  it("shows no modified indicator while a buffer is saved", () => {
+    render(
+      <TabBar
+        tabs={tabs}
+        activeTabId="diag-1"
+        onActivateTab={vi.fn()}
+        onCloseTab={vi.fn()}
+      />,
+    );
+    expect(screen.queryByTestId("tab-dirty")).toBeNull();
+  });
+
+  it("marks a tab with unsaved changes", () => {
+    const dirty: Tab[] = [{ ...tabs[0], source: "participant A" }];
+    render(
+      <TabBar
+        tabs={dirty}
+        activeTabId="diag-1"
+        onActivateTab={vi.fn()}
+        onCloseTab={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId("tab-dirty")).toHaveTextContent("●");
+    expect(screen.getByTestId("tab")).toHaveClass("tab--dirty");
+  });
+
   it("marks the active tab with aria-selected", () => {
     render(
       <TabBar
         tabs={tabs}
-        activeTabId="diag-2"
+        activeTabId="note-2"
         onActivateTab={vi.fn()}
         onCloseTab={vi.fn()}
       />,
@@ -73,7 +119,7 @@ describe("TabBar", () => {
       />,
     );
     fireEvent.click(screen.getAllByTestId("tab")[1]);
-    expect(onActivateTab).toHaveBeenCalledWith("diag-2");
+    expect(onActivateTab).toHaveBeenCalledWith("note-2");
   });
 
   it("closes a tab via its ✕ without activating it", () => {
@@ -95,7 +141,7 @@ describe("TabBar", () => {
     render(
       <TabBar
         tabs={tabs}
-        activeTabId="diag-2"
+        activeTabId="note-2"
         onActivateTab={onActivateTab}
         onCloseTab={vi.fn()}
       />,

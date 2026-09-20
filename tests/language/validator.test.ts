@@ -183,3 +183,102 @@ describe("validateSemantics — activations", () => {
     expect(validateSemantics(diagram)).toEqual([]);
   });
 });
+
+describe("validateSemantics — notes and fragments", () => {
+  it("flags a note anchored to an unknown participant", () => {
+    const diagram = diagramOf("participant A\nnote right of Ghost : hi");
+    const diagnostics = validateSemantics(diagram);
+    expect(
+      diagnostics.some(
+        (d) =>
+          d.code === DiagnosticCode.UnknownParticipant &&
+          d.message.includes("Ghost"),
+      ),
+    ).toBe(true);
+  });
+
+  it("accepts a spanning note over declared participants", () => {
+    const diagram = diagramOf(
+      "participant A\nparticipant B\nnote over A,B : boundary",
+    );
+    expect(validateSemantics(diagram)).toEqual([]);
+  });
+
+  it("validates participants referenced inside fragments", () => {
+    const diagram = diagramOf(
+      "participant A\nloop retry\n  A ->> Ghost: x\nend",
+    );
+    const diagnostics = validateSemantics(diagram);
+    expect(
+      diagnostics.some(
+        (d) =>
+          d.code === DiagnosticCode.UnknownParticipant &&
+          d.message.includes("Ghost"),
+      ),
+    ).toBe(true);
+  });
+
+  it("pairs activations across fragment boundaries", () => {
+    const diagram = diagramOf(
+      [
+        "participant A",
+        "activate A",
+        "loop retry",
+        "  A ->> A: work",
+        "end",
+        "deactivate A",
+      ].join("\n"),
+    );
+    expect(validateSemantics(diagram)).toEqual([]);
+  });
+
+  it("flags an unmatched deactivate nested inside a fragment", () => {
+    const diagram = diagramOf("participant A\nopt maybe\n  deactivate A\nend");
+    const diagnostics = validateSemantics(diagram);
+    expect(
+      diagnostics.some((d) => d.code === DiagnosticCode.UnmatchedDeactivate),
+    ).toBe(true);
+  });
+
+  it("accepts a note on a message number the diagram has", () => {
+    const diagram = diagramOf(
+      "participant A\nparticipant B\nA ->> B: one\nB -->> A: two\nnote on 2 : ok",
+    );
+    expect(validateSemantics(diagram)).toEqual([]);
+  });
+
+  it("flags a note on a message number past the end", () => {
+    const diagram = diagramOf(
+      "participant A\nparticipant B\nA ->> B: one\nnote on 2 : gone",
+    );
+    const diagnostics = validateSemantics(diagram);
+    const diagnostic = diagnostics.find(
+      (d) => d.code === DiagnosticCode.UnknownMessageNumber,
+    );
+    expect(diagnostic).toBeDefined();
+    expect(diagnostic?.message).toContain("has 1 message");
+  });
+
+  it("flags a note on a message when there are no messages at all", () => {
+    const diagram = diagramOf("participant A\nnote on 1 : nothing to point at");
+    const diagnostics = validateSemantics(diagram);
+    expect(
+      diagnostics.some((d) => d.code === DiagnosticCode.UnknownMessageNumber),
+    ).toBe(true);
+  });
+
+  it("counts messages nested inside fragments when numbering notes", () => {
+    const diagram = diagramOf(
+      [
+        "participant A",
+        "participant B",
+        "A ->> B: first",
+        "loop retry",
+        "  A ->> B: second",
+        "end",
+        "note on 2 : inside the loop",
+      ].join("\n"),
+    );
+    expect(validateSemantics(diagram)).toEqual([]);
+  });
+});

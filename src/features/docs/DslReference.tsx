@@ -27,15 +27,23 @@ export const DSL_CONSTRUCTS: DslConstruct[] = [
   {
     name: "Title",
     syntax: "title <text>",
-    summary: "An optional heading for the diagram.",
+    summary:
+      "The diagram's name and heading. It may appear on any line (at most one per diagram); the explorer and tab bar show it instead of the file name.",
     example: "title Authentication Flow",
   },
   {
     name: "Participant",
-    syntax: "participant <name>",
+    syntax: "participant <id> [as <label>]",
     summary:
-      "Declares a lifeline. Participants must be declared before any message.",
-    example: "participant User\nparticipant API",
+      "Declares a lifeline. Participants must be declared before any message, and their order controls left-to-right placement. `as` gives the lifeline a human-readable label while messages keep using the stable id.",
+    example: 'participant auth as "Authentication Service"',
+  },
+  {
+    name: "Actor",
+    syntax: "actor <id> [as <label>]",
+    summary:
+      "Like a participant, but drawn as a human figure — for the person or role that starts the flow. Actors share the same lifeline and message rules as participants.",
+    example: 'actor user as "End User"',
   },
   {
     name: "Alias",
@@ -46,30 +54,107 @@ export const DSL_CONSTRUCTS: DslConstruct[] = [
   },
   {
     name: "Message",
-    syntax: "<from> -> <to> [: label]",
+    syntax: "<from> <arrow> <to> [: label]",
     summary:
-      "A solid arrow from one lifeline to another. The label is optional.",
-    example: "User -> API: Login",
+      "An arrow between two lifelines, labelled optionally (the label may be empty). The arrow spelling chooses the line style and the ending; see Arrow styles. When both endpoints name the same participant the message is drawn as a loop back onto that lifeline.",
+    example: "User ->> API: Login",
   },
   {
-    name: "Response",
-    syntax: "<from> --> <to> [: label]",
-    summary: "A dashed, headless arrow, drawn as a return message.",
-    example: "API --> User: Token",
+    name: "Arrow styles",
+    syntax: "->  -->  ->>  -->>  -x  --x  -)  --)  <<->>  <<-->>",
+    summary:
+      "A solid or dashed line (`--` adds the dash) ending in a filled arrowhead (`->`, `-->`), the same shapes written with a double chevron (`->>`, `-->>`), a cross for a failed delivery (`-x`, `--x`), an open async chevron (`-)`, `--)`), or heads at both ends (`<<->>`, `<<-->>`). Every message line points somewhere.",
+    example:
+      "A ->> B: Request\nB --> A: Reply\nA -) Queue: Publish event\nA -x B: Failed",
   },
   {
     name: "Note",
     syntax: "note left|right of <participant> : <text>",
     summary:
-      "A callout beside a lifeline. Use `note over : <text>` to span the whole diagram.",
+      "A callout attached to a lifeline as a bullet; click the bullet to expand or collapse its text. `note over <participant> : <text>` centers it on one lifeline, and `note over : <text>` spans the whole diagram.",
     example: "note right of API : Reads from cache",
+  },
+  {
+    name: "Spanning note",
+    syntax: "note over <participant>, <participant> : <text>",
+    summary:
+      "A note that covers several lifelines, drawn as one box from the first named participant to the last.",
+    example: "note over API,DB : Transaction boundary",
+  },
+  {
+    name: "Multiline note",
+    syntax: "note <placement> <participant>:\n  <line>\n  <line>\nend note",
+    summary:
+      "When nothing follows the `:`, the note body runs until `end note`, one line per row of the expanded box.",
+    example: "note right of API:\nValidate JWT\nCheck expiration\nend note",
+  },
+  {
+    name: "Note on a message",
+    syntax: "note on <number> : <text>",
+    summary:
+      "Attaches the note to a single message by the step number the diagram prints in its circle (1 is the first message in source order, counting calls and responses). The bullet sits under that arrow and the box hangs below it. Multiline form: end with `end note`.",
+    example: "User ->> API: Login\nnote on 1 : Retries twice on timeout",
   },
   {
     name: "Activation",
     syntax: "activate <participant> / deactivate <participant>",
     summary:
       "Draws a bar over a lifeline for the span in which that participant is working. Bars nest, and one left open runs to the end of the diagram.",
-    example: "activate API\nAPI -> API: Work\ndeactivate API",
+    example: "activate API\nAPI ->> API: Work\ndeactivate API",
+  },
+  {
+    name: "Inline activation",
+    syntax: "<from> <arrow>+ <to> / <from> <arrow>- <to>",
+    summary:
+      "A `+` right after the arrow activates the receiver at that row; a `-` deactivates the sender. Inline suffixes nest exactly like the explicit statements.",
+    example: "User ->>+ API: Login\nAPI -->>- User: Token",
+  },
+  {
+    name: "Loop",
+    syntax: "loop <label>\n  <statements>\nend",
+    summary:
+      "A `loop` fragment frames the statements it contains and labels the frame. Fragments nest inside each other.",
+    example: "loop retry up to 3 times\n  Client ->> API: Request\nend",
+  },
+  {
+    name: "Alt / else",
+    syntax:
+      "alt <condition>\n  <statements>\nelse <condition>\n  <statements>\nend",
+    summary:
+      "Alternative branches, separated by `else`. Each branch gets its own labelled region inside one frame.",
+    example:
+      "alt user exists\n  API ->> DB: Load user\nelse user missing\n  API -->> Client: 404\nend",
+  },
+  {
+    name: "Opt",
+    syntax: "opt <label>\n  <statements>\nend",
+    summary:
+      "An optional block: the statements run only when the condition holds.",
+    example: "opt cache hit\n  API -->> Client: Cached\nend",
+  },
+  {
+    name: "Par / and",
+    syntax: "par <label>\n  <statements>\nand <label>\n  <statements>\nend",
+    summary:
+      "Parallel regions, separated by `and`, all of which may run at once.",
+    example:
+      "par send email\n  API ->> Mail: Notify\nand write audit\n  API ->> DB: Log\nend",
+  },
+  {
+    name: "Critical / option",
+    syntax:
+      "critical <label>\n  <statements>\noption <label>\n  <statements>\nend",
+    summary:
+      "A critical region with alternative handling, separated by `option`.",
+    example:
+      "critical commit\n  API ->> DB: Commit\noption rollback\n  API ->> DB: Rollback\nend",
+  },
+  {
+    name: "Break",
+    syntax: "break <label>\n  <statements>\nend",
+    summary:
+      "An interruption flow: the statements describe what breaks out of the enclosing fragment.",
+    example: "break request rejected\n  API -->> Client: 400\nend",
   },
   {
     name: "Comment",

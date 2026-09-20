@@ -41,7 +41,7 @@ const REPLACEMENT_SOURCE = [
   "participant Browser",
   "participant Gateway",
   "",
-  "Browser -> Gateway: Submit order",
+  "Browser ->> Gateway: Submit order",
   "activate Gateway",
   "Gateway --> Browser: Accepted",
   "deactivate Gateway",
@@ -59,7 +59,7 @@ const SYNTAX_ERROR_SOURCE = "Browser ->\n";
 const SEMANTIC_ERROR_SOURCE = [
   "participant Browser",
   "",
-  "Browser -> Gateway: Submit order",
+  "Browser ->> Gateway: Submit order",
   "",
 ].join("\n");
 
@@ -204,9 +204,20 @@ async function runChecks(browser) {
     .locator('[data-testid="preview-svg"] polygon')
     .count();
   check(
-    "each sync message paints an arrowhead",
-    arrowHeads === 2,
+    "every message line paints an arrowhead",
+    arrowHeads === 4,
     `found ${arrowHeads}`,
+  );
+
+  // Every call and every response is numbered in source order; the sample has
+  // four messages (two calls, two responses).
+  const stepNumbers = await page
+    .locator('[data-testid="preview-svg"] [data-sequence-number]')
+    .count();
+  check(
+    "every message carries a circled step number",
+    stepNumbers === 4,
+    `found ${stepNumbers}`,
   );
 
   console.log("\nLive editing updates the preview:");
@@ -340,6 +351,299 @@ async function runChecks(browser) {
   // Restore live updates for the checks that follow.
   await page.locator('[data-testid="auto-update-switch"]').click();
 
+  console.log("\nNotes expand from their bullet:");
+  // A note renders as a bullet on its element; expanding it is a real pointer
+  // interaction, so this is where the pan surface's pointer handling is checked
+  // (a stray pointer capture would swallow the click).
+  const NOTES_SOURCE = [
+    "title Notes demo",
+    "",
+    "participant User",
+    "participant API",
+    "",
+    "User -> API: Login",
+    "note right of API : Reads from cache",
+    "",
+  ].join("\n");
+  await page.locator('[data-testid="dsl-textarea"]').fill(NOTES_SOURCE);
+  await page.locator('[data-testid="preview-notes"]').waitFor({
+    state: "visible",
+    timeout: UI_TIMEOUT_MS,
+  });
+  check(
+    "notes toolbar reports the note count",
+    (
+      (await page.locator('[data-testid="preview-notes"]').textContent()) ?? ""
+    ).includes("1 note"),
+  );
+  const bullet = page.locator(
+    '[data-testid="preview-svg"] [data-note-index="0"]',
+  );
+  check(
+    "a bullet is attached to the annotated element",
+    (await bullet.count()) === 1,
+  );
+  check(
+    "note text is hidden while collapsed",
+    !(await page.locator('[data-testid="preview-svg"]').textContent()).includes(
+      "Reads from cache",
+    ),
+  );
+
+  const canvasBefore = await page
+    .locator('[data-testid="preview-svg"]')
+    .boundingBox();
+  await bullet.click();
+  const expanded = await waitForText(
+    page.locator('[data-testid="preview-svg"]'),
+    (text) => text.includes("Reads from cache"),
+    "expanded note",
+  );
+  check(
+    "clicking the bullet expands the note",
+    expanded.includes("Reads from cache"),
+  );
+  const canvasAfter = await page
+    .locator('[data-testid="preview-svg"]')
+    .boundingBox();
+  check(
+    "expanding a bullet does not resize the canvas",
+    Math.round(canvasAfter.height) === Math.round(canvasBefore.height),
+    `${Math.round(canvasBefore.height)} -> ${Math.round(canvasAfter.height)}`,
+  );
+
+  await bullet.click();
+  check(
+    "clicking the bullet again collapses the note",
+    !(await page.locator('[data-testid="preview-svg"]').textContent()).includes(
+      "Reads from cache",
+    ),
+  );
+
+  console.log("\nSelf-messages render as loops:");
+  // A message whose endpoints are the same participant must draw a cycle, not a
+  // zero-length horizontal arrow that disappears.
+  const SELF_SOURCE = [
+    "title Self loop",
+    "",
+    "participant API",
+    "",
+    "API ->> API: Retry",
+    "",
+  ].join("\n");
+  await page.locator('[data-testid="dsl-textarea"]').fill(SELF_SOURCE);
+  await waitForText(
+    page.locator('[data-testid="preview-svg"]'),
+    (text) => text.includes("Retry"),
+    "self-message loop",
+  );
+  const loopPaths = await page
+    .locator('[data-testid="preview-svg"] path')
+    .count();
+  check(
+    "a self-message paints a loop path",
+    loopPaths === 1,
+    `found ${loopPaths}`,
+  );
+  const loopHeads = await page
+    .locator('[data-testid="preview-svg"] polygon')
+    .count();
+  check("the loop carries an arrowhead", loopHeads === 1, `found ${loopHeads}`);
+  const loopPainted = await page.$$eval(
+    '[data-testid="preview-svg"] path',
+    (nodes) =>
+      nodes.every((node) => {
+        const box = node.getBoundingClientRect();
+        return box.width > 0 && box.height > 0;
+      }),
+  );
+  check("the loop is painted, not collapsed to a point", loopPainted);
+
+  console.log("\nMermaid-parity constructs:");
+  // Actors, labelled ids, every arrow family, inline activation, nested
+  // fragments, and a spanning + multiline note in one diagram.
+  const PARITY_SOURCE = [
+    "title Mermaid parity",
+    "",
+    "actor User",
+    "participant API",
+    'participant DB as "User Database"',
+    "participant Queue",
+    "",
+    "User ->>+ API: Login",
+    "API -> DB: Cache miss",
+    "API -x DB: Dropped",
+    "API -) Queue: Publish",
+    "API <<->> API: Sync",
+    "activate API",
+    "API ->> API: Work",
+    "deactivate API",
+    "API -->>- User: Token",
+    "loop retry up to 3 times",
+    "  API ->> DB: Query",
+    "end",
+    "alt found",
+    "  DB -->> API: Row",
+    "else missing",
+    "  API -->> User: 404",
+    "end",
+    "note over API,DB : Transaction boundary",
+    "note right of API:",
+    "  Validate JWT",
+    "  Check expiration",
+    "end note",
+    "note on 1 : First step note",
+    "",
+  ].join("\n");
+  await page.locator('[data-testid="dsl-textarea"]').fill(PARITY_SOURCE);
+  await page.locator('[data-testid="preview-svg"]').waitFor({
+    state: "visible",
+    timeout: UI_TIMEOUT_MS,
+  });
+  const svgText = await waitForText(
+    page.locator('[data-testid="preview-svg"]'),
+    (text) => text.includes("Transaction boundary") || text.includes("Query"),
+    "parity diagram",
+  );
+  check("the parity diagram renders", svgText.length > 0);
+  check(
+    "an actor is drawn as a figure",
+    (await page.locator('[data-participant-type="actor"]').count()) === 1,
+  );
+  check(
+    "a loop frame is drawn",
+    (await page.locator('[data-fragment-kind="loop"]').count()) === 1,
+  );
+  check(
+    "an alt frame is drawn with both branches",
+    (await page.locator('[data-fragment-kind="alt"]').textContent())?.includes(
+      "missing",
+    ) === true,
+  );
+  check(
+    "an open (async) arrow is drawn",
+    (await page.locator(".arrow-open").count()) === 1,
+  );
+  check(
+    "a cross (failed) arrow is drawn",
+    (await page.locator(".arrow-cross").count()) === 1,
+  );
+  // Ten messages: Login, Cache miss, Dropped, Publish, Sync, Work, Token,
+  // Query, Row, 404.
+  const parityNumbers = await page
+    .locator('[data-testid="preview-svg"] [data-sequence-number]')
+    .count();
+  check(
+    "every message is still numbered",
+    parityNumbers === 10,
+    `found ${parityNumbers}`,
+  );
+  // The parity source carries three notes: a spanning one, a multiline one, and
+  // one attached to message 1 by its step number.
+  check(
+    "a note can be attached to a message by its number",
+    (
+      (await page.locator('[data-testid="preview-notes"]').textContent()) ?? ""
+    ).includes("3 notes"),
+  );
+
+  console.log("\nMarkdown notes:");
+  // A project documents a system: create one, add a diagram to link to, then a
+  // note that references it.
+  await page.locator('[data-testid="project-name-input"]').fill("Handbook");
+  await page.locator('[data-testid="create-project-button"]').click();
+  await page.locator('[data-testid="project-name"]').first().waitFor({
+    state: "visible",
+    timeout: UI_TIMEOUT_MS,
+  });
+  check("creating a project works with notes", true);
+
+  await page.locator('[data-testid="command-palette-button"]').click();
+  await page.locator('[data-testid="palette-input"]').fill("New Diagram");
+  await page.locator('[data-testid="palette-item-button"]').first().click();
+  await page.locator('[data-testid="dsl-textarea"]').waitFor({
+    state: "visible",
+    timeout: UI_TIMEOUT_MS,
+  });
+  check("a diagram can be created to link to", true);
+
+  await page.locator('[data-testid="project-add-button"]').first().click();
+  await page.locator('[data-testid="context-menu-new-note"]').click();
+  await page.locator('[data-testid="markdown-textarea"]').waitFor({
+    state: "visible",
+    timeout: UI_TIMEOUT_MS,
+  });
+  await page
+    .locator('[data-testid="markdown-textarea"]')
+    .fill("# Runbook\n\nSee [[Untitled]] for the flow.");
+  const markdownBody = page.locator('[data-testid="markdown-body"]');
+  const rendered = await waitForText(
+    markdownBody,
+    (text) => text.includes("Runbook") && text.includes("Untitled"),
+    "rendered markdown",
+  );
+  check("the note renders as markdown", rendered.includes("Runbook"));
+  check(
+    "a wiki-link to an existing diagram resolves",
+    (await page.locator('[data-testid="markdown-body"] h1').textContent()) ===
+      "Runbook",
+  );
+  check(
+    "the resolved wiki-link is not marked broken",
+    (await page
+      .locator('[data-testid="markdown-body"] a[data-diagram-link]')
+      .getAttribute("class")) === "markdown__link",
+  );
+
+  // The explorer's context menu drives rename / change title / delete.
+  await page.locator('[data-testid="explorer-note"]').first().click({
+    button: "right",
+  });
+  await page.locator('[data-testid="context-menu"]').waitFor({
+    state: "visible",
+    timeout: UI_TIMEOUT_MS,
+  });
+  check("right-clicking a note opens its context menu", true);
+  await page.locator('[data-testid="context-menu-title"]').click();
+  await page.locator('[data-testid="prompt-dialog-input"]').fill("Operations");
+  await page.locator('[data-testid="prompt-dialog-confirm"]').click();
+  const noteTitle = await waitForText(
+    page.locator('[data-testid="note-title"]'),
+    (text) => text.includes("Operations"),
+    "note title",
+  );
+  check(
+    "changing a note's title rewrites its heading",
+    noteTitle.includes("Operations"),
+  );
+  check(
+    "the context menu closed after choosing an action",
+    (await page.locator('[data-testid="context-menu"]').count()) === 0,
+  );
+
+  // Duplicate is offered for both kinds of file; a note copy keeps its content.
+  await page.locator('[data-testid="explorer-note"]').first().click({
+    button: "right",
+  });
+  await page.locator('[data-testid="context-menu-duplicate"]').click();
+  await page.locator('[data-testid="explorer-note"]').nth(1).waitFor({
+    state: "visible",
+    timeout: UI_TIMEOUT_MS,
+  });
+  check(
+    "duplicating a note adds a copy",
+    (await page.locator('[data-testid="explorer-note"]').count()) === 2,
+  );
+
+  // Selecting a diagram leaves note mode, which the invalid-DSL checks below
+  // need (they drive the DSL editor).
+  await page.locator('[data-testid="select-diagram-button"]').first().click();
+  await page.locator('[data-testid="dsl-textarea"]').waitFor({
+    state: "visible",
+    timeout: UI_TIMEOUT_MS,
+  });
+  check("selecting a diagram leaves note mode", true);
+
   console.log("\nInvalid DSL degrades gracefully:");
   // A syntax error is reported, but the parser recovers a partial tree, so the
   // preview keeps rendering rather than blanking out.
@@ -362,6 +666,353 @@ async function runChecks(browser) {
     "empty state points at the issue count",
     /Fix 1 issue to preview/.test((await empty.textContent()) ?? ""),
   );
+  console.log("\nDocumentation workspace:");
+  // A fresh project so the tab strip, search, and archive checks below start from
+  // a known state. Tabs are workspace-wide, so the count is captured rather than
+  // assumed; each creation waits for its tab to appear, because the editor is
+  // already on screen when a document is created and waiting for the editor alone
+  // would race the new tab.
+  const tabs = page.locator('[data-testid="tab"]');
+  const tabsBefore = await tabs.count();
+  const waitForTabs = (count) =>
+    page.waitForFunction(
+      (expected) =>
+        document.querySelectorAll('[data-testid="tab"]').length === expected,
+      count,
+      { timeout: UI_TIMEOUT_MS },
+    );
+  // Locate a project row by name, so the checks do not depend on the
+  // repository's project ordering.
+  const projectRow = (name) =>
+    page.locator('[data-testid="explorer-project"]').filter({ hasText: name });
+
+  await page.locator('[data-testid="project-name-input"]').fill("Workspace");
+  await page.locator('[data-testid="create-project-button"]').click();
+
+  await projectRow("Workspace")
+    .locator('[data-testid="project-add-button"]')
+    .click();
+  await page.locator('[data-testid="context-menu-new-diagram"]').click();
+  await waitForTabs(tabsBefore + 1);
+  await page
+    .locator('[data-testid="dsl-textarea"]')
+    .fill(
+      [
+        "title Checkout",
+        "participant CartService",
+        "participant PaymentService",
+        "CartService ->> PaymentService: SEARCHMARKER",
+      ].join("\n"),
+    );
+
+  await projectRow("Workspace")
+    .locator('[data-testid="project-add-button"]')
+    .click();
+  await page.locator('[data-testid="context-menu-new-note"]').click();
+  await waitForTabs(tabsBefore + 2);
+  await page.locator('[data-testid="markdown-textarea"]').waitFor({
+    state: "visible",
+    timeout: UI_TIMEOUT_MS,
+  });
+  await page
+    .locator('[data-testid="markdown-textarea"]')
+    .fill(
+      [
+        "# Handbook",
+        "",
+        "| Step | Owner |",
+        "| --- | --- |",
+        "| Authorize | PaymentService |",
+      ].join("\n"),
+    );
+
+  // Both kinds share one strip: the diagram tab and the document tab coexist.
+  check(
+    "a diagram and a document open in one tab strip",
+    (await tabs.count()) === tabsBefore + 2,
+    `${tabsBefore} → ${await tabs.count()}`,
+  );
+  check(
+    "each tab names its document kind",
+    (await tabs.nth(tabsBefore).getAttribute("data-kind")) === "diagram" &&
+      (await tabs.nth(tabsBefore + 1).getAttribute("data-kind")) === "note",
+  );
+  check(
+    "the markdown document renders a table",
+    (await page.locator('[data-testid="markdown-body"] table').count()) === 1,
+  );
+  check(
+    "a table cell carries its text",
+    (
+      (await page
+        .locator('[data-testid="markdown-body"] table td')
+        .first()
+        .textContent()) ?? ""
+    ).includes("Authorize"),
+  );
+
+  // Project-wide search spans both kinds and lands the caret on the match.
+  await page.keyboard.press("Control+Shift+F");
+  await page.locator('[data-testid="search-panel"]').waitFor({
+    state: "visible",
+    timeout: UI_TIMEOUT_MS,
+  });
+  await page.locator('[data-testid="search-input"]').fill("SEARCHMARKER");
+  await page.locator('[data-testid="search-result"]').first().waitFor({
+    state: "visible",
+    timeout: UI_TIMEOUT_MS,
+  });
+  check(
+    "search finds text inside a diagram",
+    (await page.locator('[data-testid="search-result"]').count()) === 1,
+  );
+  await page.locator('[data-testid="search-result-button"]').first().click();
+  await page.locator('[data-testid="dsl-textarea"]').waitFor({
+    state: "visible",
+    timeout: UI_TIMEOUT_MS,
+  });
+  const selection = await page
+    .locator('[data-testid="dsl-textarea"]')
+    .evaluate((element) => ({
+      start: element.selectionStart,
+      end: element.selectionEnd,
+      selected: element.value.slice(
+        element.selectionStart,
+        element.selectionEnd,
+      ),
+    }));
+  check(
+    "opening a result selects the matching text",
+    selection.selected === "SEARCHMARKER",
+    `selected ${JSON.stringify(selection.selected)}`,
+  );
+  // A `participant:` query lists the documents declaring that participant.
+  await page.keyboard.press("Control+Shift+F");
+  await page
+    .locator('[data-testid="search-input"]')
+    .fill("participant:CartService");
+  await page.locator('[data-testid="search-result"]').first().waitFor({
+    state: "visible",
+    timeout: UI_TIMEOUT_MS,
+  });
+  check(
+    "a participant query finds the declaring diagram",
+    (await page.locator('[data-testid="search-result"]').count()) === 1,
+  );
+  await page.keyboard.press("Escape");
+  check(
+    "Escape dismisses the search overlay",
+    (await page.locator('[data-testid="search-panel"]').count()) === 0,
+  );
+
+  // Export the project as a ZIP and import that exact file back.
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    (async () => {
+      await page.locator('[data-testid="command-palette-button"]').click();
+      await page
+        .locator('[data-testid="palette-input"]')
+        .fill("Export Project");
+      await page.locator('[data-testid="palette-item-button"]').first().click();
+    })(),
+  ]);
+  check(
+    "Export Project downloads a named ZIP",
+    download.suggestedFilename() === "Workspace.zip",
+    download.suggestedFilename(),
+  );
+
+  const archivePath = await download.path();
+  await page
+    .locator('[data-testid="import-file-input"]')
+    .setInputFiles(archivePath);
+  // The import is asynchronous, so wait for the third project to appear.
+  await page.waitForFunction(
+    () =>
+      document.querySelectorAll('[data-testid="explorer-project"]').length ===
+      3,
+    undefined,
+    { timeout: UI_TIMEOUT_MS },
+  );
+  check("importing the exported archive adds the project", true);
+
+  // The imported project becomes the selected one, so the explorer shows its
+  // files and the first of them is loaded.
+  const importedSource = await waitForText(
+    page.locator('[data-testid="dsl-textarea"]'),
+    (text) => text.includes("SEARCHMARKER"),
+    "imported diagram source",
+  );
+  check(
+    "the imported document keeps its content",
+    importedSource.includes("CartService"),
+  );
+  check(
+    "the imported project carries its files",
+    (await page.locator('[data-testid="explorer-diagram"]').count()) === 1 &&
+      (await page.locator('[data-testid="explorer-note"]').count()) === 1,
+  );
+
+  console.log("\nProject intelligence:");
+  // A dedicated project, so every check below starts from a known state rather
+  // than from whichever document the earlier sections happened to leave open.
+  const intelRow = page
+    .locator('[data-testid="explorer-project"]')
+    .filter({ hasText: "Intel" });
+  const tabsAtIntel = await page.locator('[data-testid="tab"]').count();
+  await page.locator('[data-testid="project-name-input"]').fill("Intel");
+  await page.locator('[data-testid="create-project-button"]').click();
+
+  await page
+    .locator('[data-testid="explorer-project"]')
+    .filter({ hasText: "Intel" })
+    .locator('[data-testid="project-add-button"]')
+    .click();
+  await page.locator('[data-testid="context-menu-new-diagram"]').click();
+  await page.waitForFunction(
+    (expected) =>
+      document.querySelectorAll('[data-testid="tab"]').length === expected,
+    tabsAtIntel + 1,
+    { timeout: UI_TIMEOUT_MS },
+  );
+  await page
+    .locator('[data-testid="dsl-textarea"]')
+    .fill(
+      [
+        "title Checkout",
+        "participant CartService",
+        "participant PaymentService",
+        "",
+        "CartService ->> PaymentService: Authorize",
+      ].join("\n"),
+    );
+
+  // The outline describes the diagram's structure.
+  await page.locator('[data-testid="view-outline"]').click();
+  await page.locator('[data-testid="outline"]').waitFor({
+    state: "visible",
+    timeout: UI_TIMEOUT_MS,
+  });
+  // Section rows start collapsed; the first toggle belongs to "Participants".
+  await page.locator('[data-testid="outline-item-toggle"]').first().click();
+  const outlineText =
+    (await page.locator('[data-testid="outline"]').textContent()) ?? "";
+  check(
+    "the outline lists the diagram's participants",
+    outlineText.includes("CartService") &&
+      outlineText.includes("PaymentService"),
+  );
+  check("the outline lists the diagram's flow", outlineText.includes("Flow"));
+
+  // A document with a broken link becomes a project diagnostic.
+  await page.locator('[data-testid="view-code"]').click();
+  await page
+    .locator('[data-testid="explorer-project"]')
+    .filter({ hasText: "Intel" })
+    .locator('[data-testid="project-add-button"]')
+    .click();
+  await page.locator('[data-testid="context-menu-new-note"]').click();
+  await page.locator('[data-testid="markdown-textarea"]').waitFor({
+    state: "visible",
+    timeout: UI_TIMEOUT_MS,
+  });
+  await page
+    .locator('[data-testid="markdown-textarea"]')
+    .fill("# Handbook\n\nSee [gone](nowhere.seq).");
+
+  await page.locator('[data-testid="view-problems"]').click();
+  await page.locator('[data-testid="problem-item"]').first().waitFor({
+    state: "visible",
+    timeout: UI_TIMEOUT_MS,
+  });
+  const brokenProblem = page
+    .locator('[data-testid="problem-item"]')
+    .filter({ hasText: "nowhere.seq" })
+    .first();
+  await brokenProblem.waitFor({ state: "visible", timeout: UI_TIMEOUT_MS });
+  check("a broken link raises a project problem", true);
+  check(
+    "the problem names the link that does not resolve",
+    ((await brokenProblem.textContent()) ?? "").includes("nowhere.seq"),
+  );
+  check(
+    "the problem is a warning, not an error",
+    (await brokenProblem.getAttribute("data-severity")) === "warning",
+  );
+
+  // Quick open reaches a resource by name.
+  await page.keyboard.press("Control+p");
+  await page.locator('[data-testid="quick-open"]').waitFor({
+    state: "visible",
+    timeout: UI_TIMEOUT_MS,
+  });
+  await page.locator('[data-testid="quick-open-input"]').fill("checkout");
+  await page.locator('[data-testid="quick-open-item"]').first().waitFor({
+    state: "visible",
+    timeout: UI_TIMEOUT_MS,
+  });
+  await page.locator('[data-testid="quick-open-item"]').first().click();
+  await page.locator('[data-testid="dsl-textarea"]').waitFor({
+    state: "visible",
+    timeout: UI_TIMEOUT_MS,
+  });
+  check("quick open opens a diagram by name", true);
+
+  // Semantic completion offers the project's participants after an arrow.
+  await page
+    .locator('[data-testid="dsl-textarea"]')
+    .fill(
+      [
+        "title Checkout",
+        "participant CartService",
+        "participant PaymentService",
+        "",
+        "CartService ->> PaymentService: Authorize",
+        "CartService -> ",
+      ].join("\n"),
+    );
+  // `fill` sets the value without moving the caret reliably, and completion is
+  // answered for the caret, so put it at the end of the line first.
+  await page.locator('[data-testid="dsl-textarea"]').press("End");
+  await page.locator('[data-testid="completions"]').waitFor({
+    state: "visible",
+    timeout: UI_TIMEOUT_MS,
+  });
+  const completionText =
+    (await page.locator('[data-testid="completions"]').textContent()) ?? "";
+  check(
+    "completion offers the participants this project declares",
+    completionText.includes("PaymentService"),
+  );
+
+  // Clicking a rendered message selects exactly that statement in the source.
+  await page.locator('[data-testid="dsl-textarea"]').press("Escape");
+  // A message is drawn as a horizontal `<line>`, whose bounding box has no
+  // height — Playwright therefore refuses a real click. The delegated handler is
+  // what is under test, so the event is dispatched directly.
+  await page
+    .locator('[data-testid="preview-svg"] [data-node-id^="message@"]')
+    .first()
+    .dispatchEvent("click");
+  const selectedText = await page
+    .locator('[data-testid="dsl-textarea"]')
+    .evaluate((element) =>
+      element.value.slice(element.selectionStart, element.selectionEnd),
+    );
+  check(
+    "clicking a rendered message selects its source statement",
+    selectedText.includes("Authorize"),
+    `selected ${JSON.stringify(selectedText)}`,
+  );
+
+  // ... and the caret's statement is highlighted on the canvas in return.
+  check(
+    "the caret's statement is highlighted on the canvas",
+    (await page
+      .locator('[data-testid="preview-svg"] .svg-node--active')
+      .count()) === 1,
+  );
+
   check(
     "still no uncaught page errors",
     consoleErrors.length === 0,

@@ -6,14 +6,18 @@
  *
  * - A {@link Project} is a subdirectory of the opened folder. Its id is that
  *   directory's path relative to the folder root (normalized with `/`).
- * - A {@link DiagramFile} is a file inside a project directory. Its id is the
- *   file's path relative to the folder root, e.g. `onboarding/welcome.seq`.
+ * - A {@link DiagramFile} is a non-markdown file inside a project directory. Its
+ *   id is the file's path relative to the folder root, e.g. `onboarding/welcome.seq`.
+ * - A {@link ProjectMetadata} sidecar lives beside those files as `project.json`
+ *   and is reserved, so it is never listed as a diagram.
+ * - A {@link NoteFile} is a markdown file (`.md`). Notes and diagrams are told
+ *   apart by extension, so a project directory mixes prose and diagrams freely.
  *
  * Because the filesystem is the source of truth, ids are derived from paths
  * rather than generated — opening the same folder twice yields the same ids, so
- * the explorer's selection and any exported snapshot stay stable. The
- * repository holds no cache: every operation reads the current directory tree,
- * so files dropped in from outside or edits made elsewhere appear immediately.
+ * the explorer's selection and any exported snapshot stay stable. The repository
+ * holds no cache: every operation reads the current directory tree, so files
+ * dropped in from outside or edits made elsewhere appear immediately.
  *
  * The repository never touches the real File System Access API directly; it
  * depends only on {@link FsDirectoryHandle} (see `fs-access-adapter.ts`), which
@@ -21,9 +25,26 @@
  */
 import type {
   DiagramFile,
+  NoteFile,
   Project,
   WorkspaceSnapshot,
 } from "../../domain/workspace/types";
+import {
+  PROJECT_METADATA_FILE_NAME,
+  parseProjectMetadata,
+  serializeProjectMetadata,
+  type ProjectMetadata,
+} from "../../domain/workspace/metadata";
+import {
+  EMPTY_NOTE_MARKDOWN,
+  ensureMarkdownExtension,
+  uniqueNoteName,
+} from "../../domain/workspace/note";
+import { uniqueCopyName } from "../../domain/workspace/copy-name";
+import {
+  EMPTY_DIAGRAM_NAME,
+  uniqueDiagramName,
+} from "../../domain/workspace/diagram";
 import type { Result } from "../../shared/result/result";
 import { err, ok } from "../../shared/result/result";
 import type { WorkspaceRepository } from "../WorkspaceRepository";
@@ -47,6 +68,29 @@ function normalize(relPath: string): string {
 /** Join path pieces into a single normalized relative path. */
 function joinRel(...segments: string[]): string {
   return normalize(segments.join("/"));
+}
+
+/** True when a file name denotes a markdown note (as opposed to a diagram). */
+function isMarkdownName(name: string): boolean {
+  return /\.md$/i.test(name);
+}
+
+/**
+ * The file names a project directory reserves for repository bookkeeping rather
+ * than for user content.
+ *
+ * A folder project mixes content and sidecars in one directory, so any file the
+ * repository writes for itself is invisible to enumeration. New reserved files
+ * are added here and nowhere else, which is what keeps a future sidecar from
+ * leaking into the explorer as a diagram or a note.
+ */
+const RESERVED_PROJECT_FILE_NAMES: ReadonlySet<string> = new Set([
+  PROJECT_METADATA_FILE_NAME,
+]);
+
+/** Whether a project-directory entry is repository bookkeeping, not a resource. */
+function isReservedProjectFile(name: string): boolean {
+  return RESERVED_PROJECT_FILE_NAMES.has(name);
 }
 
 /** Turn any unexpected error into a plain, serializable Error. */
@@ -122,6 +166,7 @@ export function createFileSystemWorkspaceRepository(
           id: dir.relPath,
           name: dir.handle.name,
           datasetIds: [],
+          noteIds: [],
         })),
       );
     } catch (error) {
@@ -143,6 +188,7 @@ export function createFileSystemWorkspaceRepository(
         id: match.relPath,
         name: match.handle.name,
         datasetIds: [],
+        noteIds: [],
       });
     } catch (error) {
       return err(toRepoError(error));
@@ -165,7 +211,7 @@ export function createFileSystemWorkspaceRepository(
       const dirName = segments.pop() as string;
       const { dir } = await resolveParent(relPath);
       await dir.getDirectoryHandle(dirName);
-      return ok({ id: relPath, name: dirName, datasetIds: [] });
+      return ok({ id: relPath, name: dirName, datasetIds: [], noteIds: [] });
     } catch (error) {
       return err(toRepoError(error));
     }
@@ -191,7 +237,80 @@ export function createFileSystemWorkspaceRepository(
     }
   }
 
-  /** Enumerate the diagram files of a project directory, in display order. */
+  /**
+   * Read a project's metadata sidecar, or `null` when it is absent or unusable.
+   *
+   * Absence is the migration signal: a project created before stable ids existed
+   * has no sidecar. A malformed or foreign file must not stop the app from
+   * opening the project either, so every unreadable case reads as "no metadata"
+   * and the caller reconciles a fresh document from the files on disk.
+   */
+  async function readProjectMetadata(
+    projectId: string,
+  ): Promise<Result<ProjectMetadata | null, Error>> {
+    try {
+      const dirPath = normalize(projectId);
+      if (dirPath === "") return ok(null);
+      let dir: FsDirectoryHandle;
+      try {
+        dir = await resolveDir(dirPath);
+      } catch {
+        // The project directory does not exist, so it has no metadata.
+        return ok(null);
+      }
+      let file: FsFileHandle;
+      try {
+        file = await dir.getFileHandle(PROJECT_METADATA_FILE_NAME);
+      } catch {
+        // No sidecar yet: a project that predates ids.
+        return ok(null);
+      }
+      const text = await file.getFile();
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        // Malformed JSON is "no metadata", never a failure to open the project.
+        return ok(null);
+      }
+      return ok(parseProjectMetadata(parsed));
+    } catch (error) {
+      return err(toRepoError(error));
+    }
+  }
+
+  /**
+   * Write a project's metadata sidecar, creating the project directory when
+   * needed. A folder project has no separate registry — the directory *is* the
+   * project — so a write may materialize it, exactly as saving a diagram does.
+   */
+  async function writeProjectMetadata(
+    projectId: string,
+    metadata: ProjectMetadata,
+  ): Promise<Result<void, Error>> {
+    try {
+      const dirPath = normalize(projectId);
+      if (dirPath === "")
+        return err(new Error("Metadata must belong to a project"));
+      const relPath = joinRel(dirPath, PROJECT_METADATA_FILE_NAME);
+      const { dir, name } = await resolveParent(relPath);
+      const writable = await dir
+        .getFileHandle(name, { createIfNotExists: true })
+        .then((handle) => handle.createWritable());
+      try {
+        await writable.write(
+          new TextEncoder().encode(serializeProjectMetadata(metadata)),
+        );
+      } finally {
+        await writable.close();
+      }
+      return ok(undefined);
+    } catch (error) {
+      return err(toRepoError(error));
+    }
+  }
+
+  /** Enumerate the diagram files of a project directory (non-markdown files). */
   async function listDiagramFiles(
     projectId: string,
   ): Promise<Result<DiagramFile[], Error>> {
@@ -208,6 +327,8 @@ export function createFileSystemWorkspaceRepository(
       const files: DiagramFile[] = [];
       for (const [name, entry] of await dir.entries()) {
         if (entry.kind !== "file") continue;
+        // Markdown files are notes, not diagrams; reserved sidecars are neither.
+        if (isMarkdownName(name) || isReservedProjectFile(name)) continue;
         files.push({
           id: joinRel(normalized, name),
           name,
@@ -283,9 +404,9 @@ export function createFileSystemWorkspaceRepository(
   }
 
   /**
-   * Create an empty diagram on disk inside a project directory. The new file is
-   * named "Untitled" and written with an empty source; it reuses {@link
-   * saveDiagramFile} so the file is materialized on disk in one step.
+   * Create an empty diagram on disk inside a project directory. The file is
+   * named "Untitled" (or the next free variant) and written with an empty source;
+   * it reuses {@link saveDiagramFile} so the file is materialized in one step.
    */
   async function createEmptyDiagram(
     projectId: string,
@@ -294,13 +415,49 @@ export function createFileSystemWorkspaceRepository(
       const dirPath = normalize(projectId);
       if (dirPath === "")
         return err(new Error("Diagram must belong to a project"));
+      const existing = await listDiagramFiles(dirPath);
+      if (!existing.ok) return existing;
       const diagram: DiagramFile = {
-        id: joinRel(dirPath, "Untitled"),
-        name: "Untitled",
+        id: joinRel(dirPath, EMPTY_DIAGRAM_NAME),
+        name: uniqueDiagramName(existing.value.map((entry) => entry.name)),
         source: "",
         projectId: dirPath,
       };
       return await saveDiagramFile(dirPath, diagram);
+    } catch (error) {
+      return err(toRepoError(error));
+    }
+  }
+
+  /**
+   * Duplicate a diagram file on disk: the same source under the next free
+   * " copy" name, so duplicating never overwrites a sibling.
+   */
+  async function duplicateDiagramFile(
+    projectId: string,
+    diagramId: string,
+  ): Promise<Result<DiagramFile, Error>> {
+    try {
+      const dirPath = normalize(projectId);
+      const relPath = normalize(diagramId);
+      if (dirPath === "" || relPath === "")
+        return err(new Error(`Unknown diagram: ${diagramId}`));
+      if (!relPath.startsWith(`${dirPath}/`))
+        return err(new Error(`Unknown diagram: ${diagramId}`));
+
+      const existing = await getDiagramFile(dirPath, relPath);
+      if (!existing.ok) return existing;
+      if (!existing.value)
+        return err(new Error(`Unknown diagram: ${diagramId}`));
+
+      const siblings = await listDiagramFiles(dirPath);
+      if (!siblings.ok) return siblings;
+      const name = uniqueCopyName(
+        existing.value.name,
+        siblings.value.map((entry) => entry.name),
+      );
+      // `saveDiagramFile` derives the id from the (new, free) file name.
+      return await saveDiagramFile(dirPath, { ...existing.value, name });
     } catch (error) {
       return err(toRepoError(error));
     }
@@ -324,18 +481,280 @@ export function createFileSystemWorkspaceRepository(
     }
   }
 
+  /** Enumerate the markdown notes of a project directory. */
+  async function listNoteFiles(
+    projectId: string,
+  ): Promise<Result<NoteFile[], Error>> {
+    try {
+      const normalized = normalize(projectId);
+      if (normalized === "") return ok([]);
+      let dir: FsDirectoryHandle;
+      try {
+        dir = await resolveDir(normalized);
+      } catch {
+        return ok([]);
+      }
+      const files: NoteFile[] = [];
+      for (const [name, entry] of await dir.entries()) {
+        if (entry.kind !== "file" || !isMarkdownName(name)) continue;
+        if (isReservedProjectFile(name)) continue;
+        files.push({
+          id: joinRel(normalized, name),
+          name,
+          markdown: await entry.getFile(),
+          projectId: normalized,
+        });
+      }
+      return ok(files);
+    } catch (error) {
+      return err(toRepoError(error));
+    }
+  }
+
+  /** Load one note from a project by its root-relative path. */
+  async function getNoteFile(
+    projectId: string,
+    noteId: string,
+  ): Promise<Result<NoteFile | null, Error>> {
+    try {
+      const dirPath = normalize(projectId);
+      const relPath = normalize(noteId);
+      if (dirPath === "" || relPath === "") return ok(null);
+      if (!relPath.startsWith(`${dirPath}/`)) return ok(null);
+      const { dir, name } = await resolveParent(relPath);
+      let file: FsFileHandle;
+      try {
+        file = await dir.getFileHandle(name);
+      } catch {
+        return ok(null);
+      }
+      return ok({
+        id: relPath,
+        name: file.name,
+        markdown: await file.getFile(),
+        projectId: dirPath,
+      });
+    } catch (error) {
+      return err(toRepoError(error));
+    }
+  }
+
+  /** Write (create or overwrite) a note's markdown on disk. */
+  async function saveNoteFile(
+    projectId: string,
+    note: NoteFile,
+  ): Promise<Result<NoteFile, Error>> {
+    try {
+      const dirPath = normalize(projectId);
+      if (dirPath === "")
+        return err(new Error("A note must belong to a project"));
+      const name = ensureMarkdownExtension(note.name);
+      const relPath = joinRel(dirPath, name);
+      const { dir, name: leaf } = await resolveParent(relPath);
+      const writable = await dir
+        .getFileHandle(leaf, { createIfNotExists: true })
+        .then((handle) => handle.createWritable());
+      try {
+        await writable.write(new TextEncoder().encode(note.markdown));
+      } finally {
+        await writable.close();
+      }
+      return ok({
+        id: relPath,
+        name,
+        markdown: note.markdown,
+        projectId: dirPath,
+      });
+    } catch (error) {
+      return err(toRepoError(error));
+    }
+  }
+
+  /** Create a markdown note seeded with a heading. */
+  async function createEmptyNote(
+    projectId: string,
+  ): Promise<Result<NoteFile, Error>> {
+    try {
+      const dirPath = normalize(projectId);
+      if (dirPath === "")
+        return err(new Error("A note must belong to a project"));
+      const existing = await listNoteFiles(dirPath);
+      if (!existing.ok) return existing;
+      const note: NoteFile = {
+        id: "",
+        name: uniqueNoteName(existing.value.map((entry) => entry.name)),
+        markdown: EMPTY_NOTE_MARKDOWN,
+        projectId: dirPath,
+      };
+      return await saveNoteFile(dirPath, note);
+    } catch (error) {
+      return err(toRepoError(error));
+    }
+  }
+
+  /** Duplicate a note on disk: the same markdown under the next free copy name. */
+  async function duplicateNoteFile(
+    projectId: string,
+    noteId: string,
+  ): Promise<Result<NoteFile, Error>> {
+    try {
+      const dirPath = normalize(projectId);
+      const relPath = normalize(noteId);
+      if (dirPath === "" || relPath === "")
+        return err(new Error(`Unknown note: ${noteId}`));
+      if (!relPath.startsWith(`${dirPath}/`))
+        return err(new Error(`Unknown note: ${noteId}`));
+
+      const existing = await getNoteFile(dirPath, relPath);
+      if (!existing.ok) return existing;
+      if (!existing.value) return err(new Error(`Unknown note: ${noteId}`));
+
+      const siblings = await listNoteFiles(dirPath);
+      if (!siblings.ok) return siblings;
+      const name = uniqueCopyName(
+        existing.value.name,
+        siblings.value.map((entry) => entry.name),
+      );
+      return await saveNoteFile(dirPath, { ...existing.value, name });
+    } catch (error) {
+      return err(toRepoError(error));
+    }
+  }
+
+  /** Remove a single note file from a project. */
+  async function deleteNoteFile(
+    projectId: string,
+    noteId: string,
+  ): Promise<Result<void, Error>> {
+    try {
+      const dirPath = normalize(projectId);
+      const relPath = normalize(noteId);
+      if (dirPath === "" || relPath === "") return ok(undefined);
+      if (!relPath.startsWith(`${dirPath}/`)) return ok(undefined);
+      const { dir, name } = await resolveParent(relPath);
+      await dir.removeEntry(name);
+      return ok(undefined);
+    } catch (error) {
+      return err(toRepoError(error));
+    }
+  }
+
+  /**
+   * Whether a file already exists at `relPath`.
+   *
+   * `getFileHandle` without `createIfNotExists` rejects when the entry is
+   * absent (and when a directory of that name exists), which is exactly the
+   * "something is already there" answer a rename needs.
+   */
+  async function fileExists(relPath: string): Promise<boolean> {
+    try {
+      const { dir, name } = await resolveParent(relPath);
+      await dir.getFileHandle(name);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Rename a diagram file by writing the same source under the new name and
+   * removing the old one. The File System Access API's move support is uneven, so
+   * copy-then-delete keeps rename working everywhere (and the repository is the
+   * only layer that knows how it is done).
+   */
+  async function renameDiagramFile(
+    projectId: string,
+    diagramId: string,
+    newName: string,
+  ): Promise<Result<DiagramFile, Error>> {
+    try {
+      const dirPath = normalize(projectId);
+      const oldRel = normalize(diagramId);
+      const name = newName.trim();
+      if (dirPath === "" || oldRel === "")
+        return err(new Error("Unknown diagram"));
+      if (name === "") return err(new Error("A diagram name is required"));
+      if (isMarkdownName(name))
+        return err(new Error("A diagram name must not end with .md"));
+      if (!oldRel.startsWith(`${dirPath}/`))
+        return err(new Error(`Unknown diagram: ${diagramId}`));
+
+      const existing = await getDiagramFile(dirPath, oldRel);
+      if (!existing.ok) return existing;
+      if (!existing.value)
+        return err(new Error(`Unknown diagram: ${diagramId}`));
+      if (existing.value.name === name) return ok(existing.value);
+
+      const newRel = joinRel(dirPath, name);
+      if (await fileExists(newRel)) {
+        return err(new Error(`A file named "${name}" already exists`));
+      }
+      const written = await saveDiagramFile(dirPath, {
+        ...existing.value,
+        name,
+      });
+      if (!written.ok) return written;
+      const removed = await deleteDiagramFile(dirPath, oldRel);
+      if (!removed.ok) return removed;
+      return ok(written.value);
+    } catch (error) {
+      return err(toRepoError(error));
+    }
+  }
+
+  /** Rename a note by writing the same markdown under the new name. */
+  async function renameNoteFile(
+    projectId: string,
+    noteId: string,
+    newName: string,
+  ): Promise<Result<NoteFile, Error>> {
+    try {
+      const dirPath = normalize(projectId);
+      const oldRel = normalize(noteId);
+      const trimmed = newName.trim();
+      if (dirPath === "" || oldRel === "")
+        return err(new Error("Unknown note"));
+      if (trimmed === "") return err(new Error("A note name is required"));
+      if (!oldRel.startsWith(`${dirPath}/`))
+        return err(new Error(`Unknown note: ${noteId}`));
+
+      const existing = await getNoteFile(dirPath, oldRel);
+      if (!existing.ok) return existing;
+      if (!existing.value) return err(new Error(`Unknown note: ${noteId}`));
+
+      const name = ensureMarkdownExtension(trimmed);
+      if (existing.value.name === name) return ok(existing.value);
+
+      const newRel = joinRel(dirPath, name);
+      if (await fileExists(newRel)) {
+        return err(new Error(`A file named "${name}" already exists`));
+      }
+      const written = await saveNoteFile(dirPath, { ...existing.value, name });
+      if (!written.ok) return written;
+      const removed = await deleteNoteFile(dirPath, oldRel);
+      if (!removed.ok) return removed;
+      return ok(written.value);
+    } catch (error) {
+      return err(toRepoError(error));
+    }
+  }
+
   /** Capture the whole workspace: every project and its files. */
   async function listAll(): Promise<Result<WorkspaceSnapshot, Error>> {
     try {
       const projects = await listProjects();
       if (!projects.ok) return projects;
       const diagrams: DiagramFile[] = [];
+      const notes: NoteFile[] = [];
       for (const project of projects.value) {
         const files = await listDiagramFiles(project.id);
         if (!files.ok) return files;
         diagrams.push(...files.value);
+        const noteFiles = await listNoteFiles(project.id);
+        if (!noteFiles.ok) return noteFiles;
+        notes.push(...noteFiles.value);
       }
-      return ok({ projects: projects.value, diagrams });
+      return ok({ projects: projects.value, diagrams, notes });
     } catch (error) {
       return err(toRepoError(error));
     }
@@ -346,11 +765,22 @@ export function createFileSystemWorkspaceRepository(
     getProject,
     createProject,
     deleteProject,
+    readProjectMetadata,
+    writeProjectMetadata,
     listDiagramFiles,
     getDiagramFile,
     saveDiagramFile,
     createEmptyDiagram,
     deleteDiagramFile,
+    duplicateDiagramFile,
+    renameDiagramFile,
+    listNoteFiles,
+    getNoteFile,
+    saveNoteFile,
+    createEmptyNote,
+    deleteNoteFile,
+    duplicateNoteFile,
+    renameNoteFile,
     listAll,
   };
 }

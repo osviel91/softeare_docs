@@ -2,9 +2,13 @@
  * Command palette controller (Phase 6).
  *
  * Owns the transient open/closed state of the palette and wires the global
- * shortcut (Ctrl/Cmd+P toggles it, Esc dismisses it). The palette itself owns
- * the query and row selection; this hook only decides whether the modal is shown
- * and how it is opened/closed, so the App stays a thin shell.
+ * shortcut (Ctrl/Cmd+Shift+P toggles it, Esc dismisses it). The palette itself
+ * owns the query and row selection; this hook only decides whether the modal is
+ * shown and how it is opened/closed, so the App stays a thin shell.
+ *
+ * Shift is part of the binding because plain Ctrl/Cmd+P belongs to quick open —
+ * the two overlays answer different questions ("what can I do?" versus "what can
+ * I open?") and sharing one shortcut would make each unreliable.
  */
 import { useCallback, useEffect, useState } from "react";
 
@@ -21,16 +25,20 @@ export interface CommandPaletteController {
 /**
  * Manage the palette's open state and its global keyboard shortcut.
  *
- * Ctrl/Cmd+P toggles the palette open and closed (a common editor pattern), and
- * Esc dismisses it when open. The shortcut is attached to `document` so it works
- * regardless of where focus currently is.
+ * Ctrl/Cmd+Shift+P toggles the palette open and closed, and Esc dismisses it
+ * when open. The shortcut is attached to `document` so it works regardless of
+ * where focus currently is.
  */
 export function useCommandPalette(): CommandPaletteController {
   const [isOpen, setIsOpen] = useState(false);
 
   useEffect(() => {
     function onKeydown(event: KeyboardEvent): void {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "p") {
+      if (
+        (event.metaKey || event.ctrlKey) &&
+        event.shiftKey &&
+        event.key.toLowerCase() === "p"
+      ) {
         event.preventDefault();
         setIsOpen((open) => !open);
         return;

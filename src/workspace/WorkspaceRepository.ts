@@ -15,14 +15,19 @@
  * - A {@link DiagramFile} always belongs to exactly one project.
  * - `Project.datasetIds` lists the ids of the files that belong to it, in order.
  * - Deleting a project removes its diagram files as well (no orphans).
+ * - A project's metadata (see {@link ProjectMetadata}) is stored and dropped
+ *   with the project, never orphaned.
  */
+import type { ProjectMetadata } from "../domain/workspace/metadata";
 import type {
   DiagramFile,
+  NoteFile,
   Project,
   WorkspaceSnapshot,
 } from "../domain/workspace/types";
 import type {
   DiagramFileId,
+  NoteFileId,
   ProjectId,
 } from "../domain/workspace/workspace-ids";
 import type { Result } from "../shared/result/result";
@@ -37,8 +42,30 @@ export interface WorkspaceRepository {
   /** Create an empty project with a fresh id and the given name. */
   createProject(name: string): Promise<Result<Project, Error>>;
 
-  /** Delete a project and all of its diagram files. */
+  /** Delete a project and all of its diagram and note files. */
   deleteProject(id: ProjectId): Promise<Result<void, Error>>;
+
+  /**
+   * Read a project's metadata document, or `null` when it has none yet.
+   *
+   * A project without metadata is not an error: it is the signal that the
+   * project predates stable resource ids, so the caller reconciles one from the
+   * files it can see and writes the result back.
+   */
+  readProjectMetadata(
+    projectId: ProjectId,
+  ): Promise<Result<ProjectMetadata | null, Error>>;
+
+  /**
+   * Write a project's metadata document, replacing any previous one.
+   *
+   * Writing for a project that does not exist fails instead of silently doing
+   * nothing, since a document with no project to belong to would be lost.
+   */
+  writeProjectMetadata(
+    projectId: ProjectId,
+    metadata: ProjectMetadata,
+  ): Promise<Result<void, Error>>;
 
   /** List the diagram files belonging to a project, in display order. */
   listDiagramFiles(projectId: ProjectId): Promise<Result<DiagramFile[], Error>>;
@@ -67,11 +94,80 @@ export interface WorkspaceRepository {
    */
   createEmptyDiagram(projectId: ProjectId): Promise<Result<DiagramFile, Error>>;
 
+  /**
+   * Duplicate a diagram within its project: a new file with the same source and
+   * a free name derived from the original (`flow copy`, then `flow copy 2`, ...).
+   * Where the id is derived from the file name (the local-folder repository) the
+   * returned file carries a fresh id; callers must follow it.
+   */
+  duplicateDiagramFile(
+    projectId: ProjectId,
+    diagramId: DiagramFileId,
+  ): Promise<Result<DiagramFile, Error>>;
+
   /** Remove a diagram file from a project. */
   deleteDiagramFile(
     projectId: ProjectId,
     diagramId: DiagramFileId,
   ): Promise<Result<void, Error>>;
+
+  /**
+   * Change a diagram file's name. Where the id is derived from the file name
+   * (the local-folder repository) the returned file carries a new id; callers
+   * must follow it. Implementations refuse to overwrite an existing file.
+   */
+  renameDiagramFile(
+    projectId: ProjectId,
+    diagramId: DiagramFileId,
+    newName: string,
+  ): Promise<Result<DiagramFile, Error>>;
+
+  /** List the markdown notes belonging to a project, in display order. */
+  listNoteFiles(projectId: ProjectId): Promise<Result<NoteFile[], Error>>;
+
+  /** Load one note from a project, or `null` when absent. */
+  getNoteFile(
+    projectId: ProjectId,
+    noteId: NoteFileId,
+  ): Promise<Result<NoteFile | null, Error>>;
+
+  /** Insert or replace a note within a project, returning the stored copy. */
+  saveNoteFile(
+    projectId: ProjectId,
+    note: NoteFile,
+  ): Promise<Result<NoteFile, Error>>;
+
+  /**
+   * Create a note seeded with a heading inside a project and return the stored
+   * copy. The new file is appended to the project's noteIds.
+   */
+  createEmptyNote(projectId: ProjectId): Promise<Result<NoteFile, Error>>;
+
+  /**
+   * Duplicate a note within its project: a new file with the same markdown and a
+   * free name derived from the original (`Untitled copy.md`, ...). The same id
+   * caveat as {@link duplicateDiagramFile} applies.
+   */
+  duplicateNoteFile(
+    projectId: ProjectId,
+    noteId: NoteFileId,
+  ): Promise<Result<NoteFile, Error>>;
+
+  /** Remove a note from a project. */
+  deleteNoteFile(
+    projectId: ProjectId,
+    noteId: NoteFileId,
+  ): Promise<Result<void, Error>>;
+
+  /**
+   * Change a note's file name, with the same id caveat as
+   * {@link renameDiagramFile}.
+   */
+  renameNoteFile(
+    projectId: ProjectId,
+    noteId: NoteFileId,
+    newName: string,
+  ): Promise<Result<NoteFile, Error>>;
 
   /** Capture the entire workspace as an immutable snapshot (for export). */
   listAll(): Promise<Result<WorkspaceSnapshot, Error>>;

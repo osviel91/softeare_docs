@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 
-import Editor from "../../../src/features/editor/Editor";
+import Editor, { SNIPPETS } from "../../../src/features/editor/Editor";
+import { analyze } from "../../../src/language/analyze";
 import {
   DiagnosticCode,
   type Diagnostic,
@@ -98,6 +99,16 @@ describe("Editor — line numbers", () => {
 });
 
 describe("Editor — snippets", () => {
+  /** Open the snippet menu and choose the snippet whose label contains `label`. */
+  function insertSnippet(label: string): void {
+    fireEvent.click(screen.getByTestId("snippets-button"));
+    const item = screen
+      .getAllByTestId("snippet-item")
+      .find((element) => element.textContent?.includes(label));
+    if (!item) throw new Error(`no snippet labelled ${label}`);
+    fireEvent.click(item);
+  }
+
   it("keeps the menu closed until asked", () => {
     render(<Editor value="" onChange={vi.fn()} />);
     expect(screen.queryByTestId("snippets-menu")).toBeNull();
@@ -111,8 +122,7 @@ describe("Editor — snippets", () => {
     const textarea = screen.getByTestId("dsl-textarea") as HTMLTextAreaElement;
     // Caret at the end of the existing text.
     textarea.setSelectionRange(10, 10);
-    fireEvent.click(screen.getByTestId("snippets-button"));
-    fireEvent.click(screen.getAllByTestId("snippet-item")[0]);
+    insertSnippet("Participants");
     // A newline is added first so the fragment starts on its own line.
     expect(onChange).toHaveBeenCalledWith(
       "title Flow\nparticipant User\nparticipant API",
@@ -120,11 +130,17 @@ describe("Editor — snippets", () => {
     expect(screen.queryByTestId("snippets-menu")).toBeNull();
   });
 
+  it("offers a title snippet that names the diagram", () => {
+    const onChange = vi.fn();
+    render(<Editor value="" onChange={onChange} />);
+    insertSnippet("Title");
+    expect(onChange).toHaveBeenCalledWith("title My Diagram");
+  });
+
   it("does not add a leading newline on an empty document", () => {
     const onChange = vi.fn();
     render(<Editor value="" onChange={onChange} />);
-    fireEvent.click(screen.getByTestId("snippets-button"));
-    fireEvent.click(screen.getAllByTestId("snippet-item")[1]);
+    insertSnippet("Alias");
     expect(onChange).toHaveBeenCalledWith("alias U = User");
   });
 
@@ -133,8 +149,7 @@ describe("Editor — snippets", () => {
     render(<Editor value="keep me" onChange={onChange} />);
     const textarea = screen.getByTestId("dsl-textarea") as HTMLTextAreaElement;
     textarea.setSelectionRange(5, 7); // select "me"
-    fireEvent.click(screen.getByTestId("snippets-button"));
-    fireEvent.click(screen.getAllByTestId("snippet-item")[1]);
+    insertSnippet("Alias");
     expect(onChange).toHaveBeenCalledWith("keep \nalias U = User");
   });
 
@@ -143,10 +158,102 @@ describe("Editor — snippets", () => {
     fireEvent.click(screen.getByTestId("snippets-button"));
     const labels = screen
       .getAllByTestId("snippet-item")
-      .map((item) => item.textContent);
-    expect(labels.length).toBeGreaterThanOrEqual(6);
-    expect(labels.join(" ")).toMatch(/Activation/);
-    expect(labels.join(" ")).toMatch(/Note/);
-    expect(labels.join(" ")).toMatch(/Alias/);
+      .map((item) => item.textContent ?? "");
+    expect(labels.length).toBeGreaterThanOrEqual(20);
+    const all = labels.join(" ");
+    for (const expected of [
+      "Title",
+      "Participants",
+      "Actor",
+      "Labelled participant",
+      "Alias",
+      "Message",
+      "Response",
+      "Self message",
+      "Note",
+      "Spanning note",
+      "Multiline note",
+      "Note on message",
+      "Activation",
+      "Inline activation",
+      "Loop",
+      "Alt / else",
+      "Opt",
+      "Par / and",
+      "Critical / option",
+      "Break",
+    ]) {
+      expect(all, `missing snippet: ${expected}`).toContain(expected);
+    }
+  });
+
+  it("keeps every snippet free of diagnostics once its lifelines exist", () => {
+    // The snippets are hand-written, so guard them against drifting behind the
+    // grammar: each one must analyze cleanly once its lifelines are declared.
+    const STATEMENT_PRELUDE =
+      "actor Caller\nparticipant User\nparticipant API\nparticipant DB\nparticipant Mail\nparticipant Queue\n";
+    const sourceFor = (label: string, text: string): string => {
+      if (label === "Alias") return `participant User\n${text}`;
+      if (label === "Note on message") {
+        return `${STATEMENT_PRELUDE}API ->> DB: Request\n${text}`;
+      }
+      if (
+        ["Title", "Participants", "Actor", "Labelled participant"].includes(
+          label,
+        )
+      ) {
+        return text;
+      }
+      return `${STATEMENT_PRELUDE}\n${text}`;
+    };
+
+    for (const snippet of SNIPPETS) {
+      expect(
+        analyze(sourceFor(snippet.label, snippet.text)).diagnostics,
+        `snippet "${snippet.label}" is not valid DSL`,
+      ).toEqual([]);
+    }
+  });
+});
+
+describe("Editor — dropping a participant name", () => {
+  /** A drag payload as the browser would deliver it. */
+  function dragPayload(text: string) {
+    return {
+      dataTransfer: {
+        types: ["text/plain"],
+        getData: () => text,
+        setData: vi.fn(),
+        dropEffect: "",
+      },
+    };
+  }
+
+  it("inserts a dropped participant name at the caret", () => {
+    const onChange = vi.fn();
+    render(<Editor value={"participant \n"} onChange={onChange} />);
+    const textarea = screen.getByTestId("dsl-textarea") as HTMLTextAreaElement;
+    textarea.setSelectionRange(12, 12);
+
+    fireEvent.drop(textarea, dragPayload("API"));
+    expect(onChange).toHaveBeenCalledWith("participant API\n");
+  });
+
+  it("shows a drop hint while a drag is over the editor", () => {
+    render(<Editor value="" onChange={vi.fn()} />);
+    const textarea = screen.getByTestId("dsl-textarea");
+    fireEvent.dragOver(textarea, dragPayload("API"));
+    expect(textarea).toHaveClass("editor__textarea--drop");
+    fireEvent.dragLeave(textarea);
+    expect(textarea).not.toHaveClass("editor__textarea--drop");
+  });
+
+  it("ignores a drop with no text payload", () => {
+    const onChange = vi.fn();
+    render(<Editor value="participant A" onChange={onChange} />);
+    fireEvent.drop(screen.getByTestId("dsl-textarea"), {
+      dataTransfer: { types: [], getData: () => "" },
+    });
+    expect(onChange).not.toHaveBeenCalled();
   });
 });

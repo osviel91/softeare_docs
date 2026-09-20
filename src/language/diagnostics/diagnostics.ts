@@ -35,6 +35,20 @@ export enum DiagnosticCode {
   MalformedActivation = "seq.malformed-activation",
   /** A `deactivate` has no matching open `activate` for that participant. */
   UnmatchedDeactivate = "seq.unmatched-deactivate",
+  /** A diagram declares more than one `title`. */
+  DuplicateTitle = "seq.duplicate-title",
+  /** A fragment was opened but never closed with `end`. */
+  UnclosedFragment = "seq.unclosed-fragment",
+  /** A fragment header is missing its description or is otherwise malformed. */
+  MalformedFragment = "seq.malformed-fragment",
+  /** An `end`/`else`/`and`/`option` appeared with no fragment to attach to. */
+  UnexpectedFragmentKeyword = "seq.unexpected-fragment-keyword",
+  /** A participant/actor declaration is missing its name or has trailing text. */
+  MalformedParticipant = "seq.malformed-participant",
+  /** A `note over A,B` spans fewer than two distinct participants. */
+  MalformedSpanningNote = "seq.malformed-spanning-note",
+  /** A `note on <n>` names a message number the diagram does not have. */
+  UnknownMessageNumber = "seq.unknown-message-number",
 }
 
 /** A single diagnostic message with optional source location. */

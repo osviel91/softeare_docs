@@ -61,7 +61,7 @@ describe("analyze (end-to-end)", () => {
     expect(diagram.notes).toHaveLength(1);
     expect(diagram.notes[0]).toMatchObject({
       placement: "left",
-      participant: "User",
+      participants: ["User"],
       text: "secret",
     });
   });
@@ -83,5 +83,87 @@ describe("analyze (end-to-end)", () => {
 
   it("keeps the editor usable on a malformed note line", () => {
     expect(() => analyze("note")).not.toThrow();
+  });
+});
+
+describe("analyze — Mermaid-parity constructs end to end", () => {
+  const PARITY = `title Mermaid parity
+
+actor User
+participant API
+participant DB as "User Database"
+participant Queue
+
+User ->>+ API: Login
+API -> DB: Cache miss
+API -x DB: Dropped
+API -) Queue: Publish
+API <<->> API: Sync
+activate API
+API ->> API: Work
+deactivate API
+API -->>- User: Token
+loop retry up to 3 times
+  API ->> DB: Query
+end
+alt found
+  DB -->> API: Row
+else missing
+  API -->> User: 404
+end
+par left
+  API ->> DB: L
+and right
+  API ->> DB: R
+end
+critical commit
+  API ->> DB: Commit
+option rollback
+  API ->> DB: Rollback
+end
+opt cached
+  API -->> User: Cached
+end
+break rejected
+  API -->> User: 400
+end
+note over API,DB : Transaction boundary
+note right of API:
+  Validate JWT
+  Check expiration
+end note
+`;
+
+  it("parses and validates without a single diagnostic", () => {
+    const result = analyze(PARITY);
+    expect(result.diagnostics).toEqual([]);
+    expect(result.ast).not.toBeNull();
+  });
+
+  it("keeps every fragment explicitly in the AST", () => {
+    const result = analyze(PARITY);
+    const diagram = result.ast as unknown as SequenceDiagram;
+    const kinds = diagram.statements
+      .filter((s) => !["message", "activation"].includes(s.type))
+      .map((s) => s.type);
+    expect(kinds).toEqual(["loop", "alt", "par", "critical", "opt", "break"]);
+  });
+
+  it("captures the actor, the labelled id, and the spanning/multiline notes", () => {
+    const result = analyze(PARITY);
+    const diagram = result.ast as unknown as SequenceDiagram;
+    expect(diagram.participants[0]).toMatchObject({
+      id: "User",
+      participantType: "actor",
+    });
+    expect(diagram.participants[2]).toMatchObject({
+      id: "DB",
+      label: "User Database",
+    });
+    expect(diagram.notes[0]).toMatchObject({
+      placement: "over",
+      participants: ["API", "DB"],
+    });
+    expect(diagram.notes[1]?.text).toBe("Validate JWT\nCheck expiration");
   });
 });

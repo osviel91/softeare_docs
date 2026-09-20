@@ -10,7 +10,7 @@ const VALID = `title Login
 participant User
 participant API
 
-User -> API: Login
+User ->> API: Login
 API --> User: Token
 `;
 
@@ -27,6 +27,18 @@ describe("diagramToSvg — valid source", () => {
     expect(svg).toContain("Login");
     // A sync message gets a filled head.
     expect(svg).toContain("<polygon");
+  });
+
+  it("numbers each call and response in source order", () => {
+    // The sample has one call and one response, so it should read 1 then 2.
+    const doc = new DOMParser().parseFromString(
+      diagramToSvg(VALID),
+      "image/svg+xml",
+    );
+    const badges = Array.from(
+      doc.querySelectorAll("[data-sequence-number]"),
+    ).map((badge) => badge.textContent);
+    expect(badges).toEqual(["1", "2"]);
   });
 });
 

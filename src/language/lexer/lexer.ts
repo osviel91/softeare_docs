@@ -3,13 +3,15 @@
  *
  * The lexer turns raw source text into a flat list of tokens with precise
  * start/end positions. It is deliberately simple: it recognizes keywords,
- * identifiers, the two arrow forms, the label colon, quoted labels, and
- * comments. Line/column tracking is handled up front by splitting the source
- * into lines, so every token knows where it lives.
+ * identifiers, every message arrow form, the punctuation used by declarations
+ * and fragments, quoted labels, and comments. Line/column tracking is handled up
+ * front by splitting the source into lines, so every token knows where it lives.
  *
  * The lexer does not validate grammar; it only groups characters into tokens.
  * That separation lets the parser own structure and the diagnostics layer own
- * meaning.
+ * meaning. Arrows are emitted as one {@link TokenType.Arrow} token carrying the
+ * matched spelling; mapping a spelling onto line/arrow style is the parser's
+ * job, which keeps the arrow table in exactly one place (see ADR-013).
  */
 import type { Column, Line, SourcePosition } from "../../domain/diagram/ast";
 
@@ -19,29 +21,63 @@ export enum TokenType {
   Title = "title",
   /** `participant` keyword. */
   Participant = "participant",
-  /** `alias` keyword (Phase 7). */
+  /** `actor` keyword. */
+  Actor = "actor",
+  /** `alias` keyword. */
   Alias = "alias",
-  /** `note` keyword (Checkpoint 2). */
+  /** `note` keyword. */
   Note = "note",
-  /** `activate` keyword (Checkpoint 3). */
+  /** `activate` keyword. */
   Activate = "activate",
-  /** `deactivate` keyword (Checkpoint 3). */
+  /** `deactivate` keyword. */
   Deactivate = "deactivate",
+  /** `loop` keyword. */
+  Loop = "loop",
+  /** `alt` keyword. */
+  Alt = "alt",
+  /** `else` keyword. */
+  Else = "else",
+  /** `opt` keyword. */
+  Opt = "opt",
+  /** `par` keyword. */
+  Par = "par",
+  /** `and` keyword. */
+  And = "and",
+  /** `critical` keyword. */
+  Critical = "critical",
+  /** `option` keyword. */
+  Option = "option",
+  /** `break` keyword. */
+  Break = "break",
+  /** `end` keyword, closing a fragment or a multiline note. */
+  End = "end",
   /** An unquoted identifier, e.g. `User` or `API`. */
   Identifier = "identifier",
+  /**
+   * A run of digits, e.g. the `3` in `note on 3 : text`. Numbers are their own
+   * token so a message-step reference is unambiguous.
+   */
+  Number = "number",
   /** A double-quoted string literal, e.g. `"Authentication API"`. */
   StringLiteral = "string",
-  /** `->` (synchronous arrow). */
-  SyncArrow = "sync-arrow",
-  /** `-->` (asynchronous / response arrow). */
-  ResponseArrow = "response-arrow",
-  /** `:` separating a message receiver from its label. */
+  /**
+   * Any message arrow: `->`, `-->`, `->>`, `-->>`, `-x`, `--x`, `-)`, `--)`,
+   * `<<->>`, `<<-->>`. The raw spelling is in the token's value.
+   */
+  Arrow = "arrow",
+  /** `:` separating a message receiver from its label, or a note from its text. */
   Colon = "colon",
-  /** `=` binding an alias shorthand to a participant (Phase 7). */
+  /** `,` separating participants in a spanning `note over A,B`. */
+  Comma = "comma",
+  /** `=` binding an alias shorthand to a participant. */
   Equals = "equals",
+  /** `+` opening an inline activation on a message. */
+  Plus = "plus",
+  /** `-` closing an inline activation on a message. */
+  Minus = "minus",
   /** Any other run of characters that did not match a rule. */
   Unknown = "unknown",
-  /** End of the current line; used as a line boundary marker. */
+  /** End of the current line; value carries the raw line text. */
   Eol = "eol",
 }
 
@@ -61,6 +97,24 @@ export interface LexResult {
   diagnostics: { message: string; line: Line; column: Column }[];
 }
 
+/**
+ * Every arrow spelling, longest first so `-->>` is never read as `-->` and
+ * `<<-->>` is never read as `<<->>`. The parser maps each spelling onto the
+ * `lineStyle` × `arrowStyle` model.
+ */
+const ARROW_FORMS = [
+  "<<-->>",
+  "<<->>",
+  "-->>",
+  "-->",
+  "--x",
+  "--)",
+  "->>",
+  "->",
+  "-x",
+  "-)",
+] as const;
+
 /** Split source into lines, always preserving a trailing empty line marker. */
 function splitLines(source: string): string[] {
   const normalized = source.replace(/\r\n?/g, "\n");
@@ -73,7 +127,8 @@ function splitLines(source: string): string[] {
 
 /**
  * Lex a single line into tokens. `lineIndex` is the zero-based line number.
- * A trailing `Eol` token marks the end of the line for the parser.
+ * A trailing `Eol` token marks the end of the line for the parser and carries
+ * the line's raw text, so labels and multiline notes can preserve punctuation.
  */
 function lexLine(
   line: string,
@@ -83,6 +138,9 @@ function lexLine(
   const tokens: Token[] = [];
   let i = 0;
   const n = line.length;
+  // Where the meaningful part of the line ends. A `//` comment truncates it, so
+  // the parser's raw-line reader never picks comment text up as a label.
+  let lineEnd = n;
 
   while (i < n) {
     const ch = line[i];
@@ -95,6 +153,7 @@ function lexLine(
 
     // Line comments: `//` ... to end of line.
     if (ch === "/" && line[i + 1] === "/") {
+      lineEnd = i;
       break;
     }
 
@@ -140,25 +199,16 @@ function lexLine(
       continue;
     }
 
-    // Two-character arrows first so `-->` is not read as `-` then `->`.
-    if (ch === "-" && line[i + 1] === ">") {
+    // Arrows, longest spelling first.
+    const arrow = ARROW_FORMS.find((form) => line.startsWith(form, i));
+    if (arrow) {
       tokens.push({
-        type: TokenType.SyncArrow,
-        value: "->",
+        type: TokenType.Arrow,
+        value: arrow,
         start,
-        end: { line: lineIndex, column: i + 2 },
+        end: { line: lineIndex, column: i + arrow.length },
       });
-      i += 2;
-      continue;
-    }
-    if (ch === "-" && line[i + 1] === "-" && line[i + 2] === ">") {
-      tokens.push({
-        type: TokenType.ResponseArrow,
-        value: "-->",
-        start,
-        end: { line: lineIndex, column: i + 3 },
-      });
-      i += 3;
+      i += arrow.length;
       continue;
     }
 
@@ -173,7 +223,16 @@ function lexLine(
       i += 1;
       continue;
     }
-    // `=` binds an alias shorthand to a participant name (Phase 7).
+    if (ch === ",") {
+      tokens.push({
+        type: TokenType.Comma,
+        value: ",",
+        start,
+        end: { line: lineIndex, column: i + 1 },
+      });
+      i += 1;
+      continue;
+    }
     if (ch === "=") {
       tokens.push({
         type: TokenType.Equals,
@@ -182,6 +241,44 @@ function lexLine(
         end: { line: lineIndex, column: i + 1 },
       });
       i += 1;
+      continue;
+    }
+    // `+` / `-` are the inline activation suffixes; a `-` that begins an arrow
+    // was already consumed above, and a `-` inside an identifier is matched by
+    // the identifier rule because identifiers never start with one.
+    if (ch === "+") {
+      tokens.push({
+        type: TokenType.Plus,
+        value: "+",
+        start,
+        end: { line: lineIndex, column: i + 1 },
+      });
+      i += 1;
+      continue;
+    }
+    if (ch === "-") {
+      tokens.push({
+        type: TokenType.Minus,
+        value: "-",
+        start,
+        end: { line: lineIndex, column: i + 1 },
+      });
+      i += 1;
+      continue;
+    }
+
+    // A run of digits is a number token. Identifiers may contain digits after
+    // their first character, so this only applies at the start of a token.
+    if (ch >= "0" && ch <= "9") {
+      let j = i + 1;
+      while (j < n && line[j] >= "0" && line[j] <= "9") j++;
+      tokens.push({
+        type: TokenType.Number,
+        value: line.slice(i, j),
+        start,
+        end: { line: lineIndex, column: j },
+      });
+      i = j;
       continue;
     }
 
@@ -216,9 +313,9 @@ function lexLine(
 
   tokens.push({
     type: TokenType.Eol,
-    value: "",
-    start: { line: lineIndex, column: n },
-    end: { line: lineIndex, column: n },
+    value: line,
+    start: { line: lineIndex, column: lineEnd },
+    end: { line: lineIndex, column: lineEnd },
   });
   return tokens;
 }
@@ -235,13 +332,44 @@ function isIdentifierPart(ch: string): boolean {
 
 /** Map a word to its keyword token type, or leave it an identifier. */
 function classifyKeyword(word: string): TokenType {
-  if (word === "title") return TokenType.Title;
-  if (word === "participant") return TokenType.Participant;
-  if (word === "alias") return TokenType.Alias;
-  if (word === "note") return TokenType.Note;
-  if (word === "activate") return TokenType.Activate;
-  if (word === "deactivate") return TokenType.Deactivate;
-  return TokenType.Identifier;
+  switch (word) {
+    case "title":
+      return TokenType.Title;
+    case "participant":
+      return TokenType.Participant;
+    case "actor":
+      return TokenType.Actor;
+    case "alias":
+      return TokenType.Alias;
+    case "note":
+      return TokenType.Note;
+    case "activate":
+      return TokenType.Activate;
+    case "deactivate":
+      return TokenType.Deactivate;
+    case "loop":
+      return TokenType.Loop;
+    case "alt":
+      return TokenType.Alt;
+    case "else":
+      return TokenType.Else;
+    case "opt":
+      return TokenType.Opt;
+    case "par":
+      return TokenType.Par;
+    case "and":
+      return TokenType.And;
+    case "critical":
+      return TokenType.Critical;
+    case "option":
+      return TokenType.Option;
+    case "break":
+      return TokenType.Break;
+    case "end":
+      return TokenType.End;
+    default:
+      return TokenType.Identifier;
+  }
 }
 
 /** Lex the entire source document into a flat token stream. */

@@ -6,8 +6,10 @@
  * and character range in the original document. The AST is framework-free — it
  * knows nothing about rendering, editing, or persistence.
  *
- * Node discrimination uses the `type` field; a message additionally carries a
- * `kind` field for its arrow direction, per the product's AST shape.
+ * Node discrimination uses the `type` field. Messages carry their visual
+ * semantics explicitly ({@link LineStyle} × {@link ArrowStyle}) rather than an
+ * arrow string, so the parser's job is only to map DSL syntax onto this model
+ * and the renderer never re-interprets source text (see ADR-004, ADR-013).
  */
 
 /** A stable identifier for a participant within a single diagram. */
@@ -33,9 +35,18 @@ export interface SourceRange {
   end: SourcePosition;
 }
 
-/** A participant declaration, e.g. `participant User`. */
+/**
+ * Whether a lifeline is drawn as a rectangular participant box or as a human
+ * actor figure. Both behave identically in the sequence (they own a lifeline
+ * and exchange messages); only the glyph differs (see ADR-013).
+ */
+export type ParticipantType = "participant" | "actor";
+
+/** A participant declaration, e.g. `participant User` or `actor User`. */
 export interface ParticipantNode {
   type: "participant";
+  /** Which glyph represents this lifeline. */
+  participantType: ParticipantType;
   /** The identifier used by messages to reference this participant. */
   id: ParticipantId;
   /** The display label (defaults to `id` when omitted). */
@@ -44,19 +55,28 @@ export interface ParticipantNode {
   range: SourceRange;
 }
 
-/** The direction of a message arrow. */
-export type MessageKind = "sync" | "response";
+/** The line style of a message arrow. */
+export type LineStyle = "solid" | "dashed";
 
-/** A message between two participants, e.g. `User -> API: Login`. */
+/**
+ * The ending drawn at a message's head. `none` is a bare line; `arrow` is a
+ * filled triangular head; `open` is an open (async) head; `cross` marks a
+ * failed/dropped delivery; `bidirectional` puts a head at both ends.
+ */
+export type ArrowStyle = "none" | "arrow" | "open" | "cross" | "bidirectional";
+
+/** A message between two participants, e.g. `User ->> API: Login`. */
 export interface MessageNode {
   type: "message";
-  /** Arrow style. `sync` is a solid line with a filled head; `response` is dashed. */
-  kind: MessageKind;
+  /** Solid or dashed stroke. */
+  lineStyle: LineStyle;
+  /** Ending drawn at the head (and, for bidirectional, the tail). */
+  arrowStyle: ArrowStyle;
   /** The participant the message originates from. */
   from: ParticipantId;
   /** The participant the message is addressed to. */
   to: ParticipantId;
-  /** The label shown above the arrow (may be empty). */
+  /** The label shown with the arrow (may be empty). */
   label: string;
   /** Source span covering the whole message. */
   range: SourceRange;
@@ -78,9 +98,6 @@ export interface AliasNode {
   /** Source span covering the whole alias declaration. */
   range: SourceRange;
 }
-
-/** Any top-level statement in a diagram body. */
-export type Statement = MessageNode | ActivationNode;
 
 /** Whether an activation statement opens or closes a bar. */
 export type ActivationAction = "activate" | "deactivate";
@@ -107,30 +124,129 @@ export interface ActivationNode {
 }
 
 /**
- * Where a note is anchored relative to a participant's lifeline.
+ * A `loop` fragment, e.g. `loop retry up to 3 times ... end`.
+ *
+ * Fragments are statements that own nested statements rather than being
+ * flattened into messages, so the layout engine can draw a frame around the
+ * region and the renderer can label it (see ADR-014).
+ */
+export interface LoopNode {
+  type: "loop";
+  /** The loop's description, shown in the frame's tab. May be empty. */
+  label: string;
+  /** Statements executed inside the loop. */
+  statements: Statement[];
+  /** Source span covering the whole fragment, from `loop` through `end`. */
+  range: SourceRange;
+}
+
+/** One `else` branch of an {@link AltNode}. */
+export interface AltBranch {
+  /** The branch's guard text. Empty for the leading `alt` branch when omitted. */
+  condition: string;
+  statements: Statement[];
+  range: SourceRange;
+}
+
+/** An `alt`/`else` alternative fragment. */
+export interface AltNode {
+  type: "alt";
+  /** The leading branch plus one per `else`. Always at least one. */
+  branches: AltBranch[];
+  range: SourceRange;
+}
+
+/** An `opt` (optional) fragment: a single guarded block. */
+export interface OptNode {
+  type: "opt";
+  label: string;
+  statements: Statement[];
+  range: SourceRange;
+}
+
+/** One `and` branch of a {@link ParNode}. */
+export interface ParBranch {
+  label: string;
+  statements: Statement[];
+  range: SourceRange;
+}
+
+/** A `par`/`and` parallel fragment. */
+export interface ParNode {
+  type: "par";
+  branches: ParBranch[];
+  range: SourceRange;
+}
+
+/** One `option` branch of a {@link CriticalNode}. */
+export interface CriticalBranch {
+  label: string;
+  statements: Statement[];
+  range: SourceRange;
+}
+
+/** A `critical`/`option` fragment: a critical region with alternative handling. */
+export interface CriticalNode {
+  type: "critical";
+  branches: CriticalBranch[];
+  range: SourceRange;
+}
+
+/** A `break` fragment: an interruption flow out of the enclosing fragment. */
+export interface BreakNode {
+  type: "break";
+  label: string;
+  statements: Statement[];
+  range: SourceRange;
+}
+
+/** Any statement that can appear in a diagram or inside a fragment. */
+export type Statement =
+  | MessageNode
+  | ActivationNode
+  | LoopNode
+  | AltNode
+  | OptNode
+  | ParNode
+  | CriticalNode
+  | BreakNode;
+
+/**
+ * Where a note is anchored.
  *
  * - `left` / `right`: the note sits to the left / right of the referenced
- *   participant's lifeline (requires a `participant`).
- * - `over`: the note is centered over the referenced participant, or, when no
- *   participant is given, over the whole diagram.
+ *   participant's lifeline (one participant).
+ * - `over`: the note is centered over one participant, spans several
+ *   (`note over A,B`), or, with no participant, spans the whole diagram.
+ * - `on`: the note is attached to a message, named by its step number
+ *   (`note on 3 : text`) — the number the diagram prints in a circle.
  */
-export type NotePlacement = "left" | "right" | "over";
+export type NotePlacement = "left" | "right" | "over" | "on";
 
 /**
  * A note, e.g. `note left of User : Confidential`.
  *
- * A note is a callout attached to a participant (or, for `over`, spanning the
- * diagram). It is not a message: it carries no arrow and never participates in
- * semantic endpoint validation. `participant` is `undefined` for a diagram-wide
- * `note over` (no target) note.
+ * A note is a callout attached to participants, to a single message, or to the
+ * diagram as a whole. It is not a message: it carries no arrow and never
+ * participates in semantic endpoint validation. `text` may contain newlines for
+ * a multiline note.
  */
 export interface NoteNode {
   type: "note";
-  /** How the note is anchored to its target lifeline. */
+  /** How the note is anchored to its target. */
   placement: NotePlacement;
-  /** The referenced participant, or `undefined` for a diagram-wide note. */
-  participant?: ParticipantId;
-  /** The note's text body (may be empty). */
+  /**
+   * Referenced participants, in source order: exactly one for `left` / `right`,
+   * one or more for `over` (empty means a diagram-wide `over` note), and empty
+   * for `on` (which targets a message instead).
+   */
+  participants: ParticipantId[];
+  /**
+   * For `placement: "on"`, the 1-based step number of the message the note is
+   * attached to — the same number the renderer prints in the circled badge.
+   */
+  messageNumber?: number;
+  /** The note's text body (may contain `\n`; never empty). */
   text: string;
   /** Source span covering the whole note declaration. */
   range: SourceRange;
@@ -151,4 +267,36 @@ export interface SequenceDiagram {
   statements: Statement[];
   /** Callout notes attached to participants or spanning the diagram. */
   notes: NoteNode[];
+}
+
+/** Walk every statement in a list, including those nested in fragments. */
+export function* walkStatements(statements: Statement[]): Generator<Statement> {
+  for (const statement of statements) {
+    yield statement;
+    switch (statement.type) {
+      case "loop":
+      case "opt":
+      case "break":
+        yield* walkStatements(statement.statements);
+        break;
+      case "alt":
+        for (const branch of statement.branches) {
+          yield* walkStatements(branch.statements);
+        }
+        break;
+      case "par":
+        for (const branch of statement.branches) {
+          yield* walkStatements(branch.statements);
+        }
+        break;
+      case "critical":
+        for (const branch of statement.branches) {
+          yield* walkStatements(branch.statements);
+        }
+        break;
+      default:
+        // A leaf statement (message or activation) has nothing to descend into.
+        break;
+    }
+  }
 }

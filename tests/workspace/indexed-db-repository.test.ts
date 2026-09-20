@@ -1,94 +1,32 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import {
+  PROJECT_METADATA_FORMAT,
+  PROJECT_METADATA_VERSION,
+  createEmptyMetadata,
+  type ProjectMetadata,
+} from "../../src/domain/workspace/metadata";
 import type { DiagramFile } from "../../src/domain/workspace/types";
 import { testWorkspaceIdFactory } from "../../src/domain/workspace/workspace-ids";
 import { isOk } from "../../src/shared/result/result";
-import type {
-  IdbDatabase,
-  IdbFactory,
-  IdbObjectStore,
-  IdbTransaction,
-} from "../../src/workspace/idb-adapter";
+import type { IdbFactory } from "../../src/workspace/idb-adapter";
 import { createIndexedDbRepository } from "../../src/workspace/indexed-db";
 import type { WorkspaceRepository } from "../../src/workspace/WorkspaceRepository";
+import { FakeFactory } from "./fake-idb";
 
-/**
- * An in-memory {@link IdbFactory} backed by plain Maps. It mirrors the pieces of
- * IndexedDB the repository uses: per-store async key/value access, insertion
- * order for {@link IdbObjectStore.getAll}, and `open` returning a stable database
- * per name so data survives across the repository's per-operation connections.
- */
-class FakeObjectStore implements IdbObjectStore {
-  private values = new Map<string, unknown>();
-  private order: string[] = [];
-
-  async get(key: string): Promise<unknown> {
-    return this.values.has(key) ? this.values.get(key) : undefined;
-  }
-
-  async getAll(): Promise<unknown[]> {
-    return this.order.map((key) => this.values.get(key));
-  }
-
-  async put(value: { id: string }): Promise<string> {
-    if (!this.values.has(value.id)) {
-      this.order.push(value.id);
-    }
-    this.values.set(value.id, value);
-    return value.id;
-  }
-
-  async delete(key: string): Promise<void> {
-    this.values.delete(key);
-    this.order = this.order.filter((existing) => existing !== key);
-  }
-}
-
-class FakeDatabase implements IdbDatabase {
-  private stores = new Map<string, FakeObjectStore>();
-
-  transaction(storeNames: string[]): IdbTransaction {
-    // Each named store is independent, so a transaction over several names (as
-    // deleteProject and saveDiagramFile do) touches distinct backing maps. The
-    // objectStore handle resolves to the backing store for the requested name,
-    // so a write to one store never falls through to another.
-    const backing = new Map<string, FakeObjectStore>();
-    for (const name of storeNames) {
-      backing.set(name, this.storeFor(name));
-    }
-    return {
-      objectStore: (name) => backing.get(name) ?? new FakeObjectStore(),
-      done: Promise.resolve(),
-      abort: () => {
-        /* nothing to abort in memory */
+/** A minimal, well-formed metadata document with one recorded diagram. */
+function sampleMetadata(): ProjectMetadata {
+  return {
+    format: PROJECT_METADATA_FORMAT,
+    version: PROJECT_METADATA_VERSION,
+    resources: [
+      {
+        id: "diagram-welcome",
+        path: "welcome.seq",
+        type: "sequence-diagram",
+        title: "Welcome",
       },
-    };
-  }
-
-  private storeFor(name: string): FakeObjectStore {
-    let store = this.stores.get(name);
-    if (!store) {
-      store = new FakeObjectStore();
-      this.stores.set(name, store);
-    }
-    return store;
-  }
-
-  close(): void {
-    /* nothing to close in memory */
-  }
-}
-
-class FakeFactory implements IdbFactory {
-  private databases = new Map<string, FakeDatabase>();
-
-  async open(name: string): Promise<IdbDatabase> {
-    let db = this.databases.get(name);
-    if (!db) {
-      db = new FakeDatabase();
-      this.databases.set(name, db);
-    }
-    return db;
-  }
+    ],
+  };
 }
 
 describe("IndexedDB workspace repository", () => {
@@ -340,5 +278,77 @@ describe("IndexedDB workspace repository", () => {
     if (!isOk(result)) {
       expect(result.error.message).toContain("boom");
     }
+  });
+
+  it("round-trips a project's metadata document", async () => {
+    const created = await repo.createProject("Onboarding");
+    if (!isOk(created)) throw created.error;
+    const projectId = created.value.id;
+    const metadata = sampleMetadata();
+
+    const written = await repo.writeProjectMetadata(projectId, metadata);
+    expect(isOk(written)).toBe(true);
+
+    const read = await repo.readProjectMetadata(projectId);
+    expect(isOk(read)).toBe(true);
+    if (isOk(read)) {
+      expect(read.value).toEqual(metadata);
+    }
+  });
+
+  it("reads null when a project has no metadata yet", async () => {
+    const created = await repo.createProject("Onboarding");
+    if (!isOk(created)) throw created.error;
+
+    const read = await repo.readProjectMetadata(created.value.id);
+    expect(isOk(read)).toBe(true);
+    if (isOk(read)) {
+      expect(read.value).toBeNull();
+    }
+  });
+
+  it("returns an error when writing metadata for an unknown project", async () => {
+    const written = await repo.writeProjectMetadata(
+      "does-not-exist",
+      createEmptyMetadata(),
+    );
+    expect(isOk(written)).toBe(false);
+    if (!isOk(written)) {
+      expect(written.error.message).toContain("does-not-exist");
+    }
+  });
+
+  it("drops a project's metadata when the project is deleted", async () => {
+    const created = await repo.createProject("Onboarding");
+    if (!isOk(created)) throw created.error;
+    const projectId = created.value.id;
+    await repo.writeProjectMetadata(projectId, createEmptyMetadata());
+
+    const deleted = await repo.deleteProject(projectId);
+    expect(isOk(deleted)).toBe(true);
+
+    const read = await repo.readProjectMetadata(projectId);
+    if (!isOk(read)) throw read.error;
+    expect(read.value).toBeNull();
+  });
+
+  it("keeps a project's metadata through an unrelated diagram save", async () => {
+    const created = await repo.createProject("Onboarding");
+    if (!isOk(created)) throw created.error;
+    const projectId = created.value.id;
+    await repo.writeProjectMetadata(projectId, sampleMetadata());
+
+    // Saving a diagram rewrites the project record to link the file; the
+    // sidecar must survive that rewrite.
+    await repo.saveDiagramFile(projectId, {
+      id: ids.newDiagramFileId(),
+      name: "Welcome",
+      source: "title Welcome\nA -> B: hi",
+      projectId,
+    });
+
+    const read = await repo.readProjectMetadata(projectId);
+    if (!isOk(read)) throw read.error;
+    expect(read.value).toEqual(sampleMetadata());
   });
 });

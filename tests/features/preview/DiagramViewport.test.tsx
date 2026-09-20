@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
-import DiagramViewport from "../../../src/features/preview/DiagramViewport";
+import DiagramViewport, {
+  noteIndexFromTarget,
+  participantDragName,
+} from "../../../src/features/preview/DiagramViewport";
 
 const SVG =
   '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300"><text>Hi</text></svg>';
@@ -112,5 +115,87 @@ describe("DiagramViewport", () => {
     expect(screen.getByLabelText("Zoom out")).toBeInTheDocument();
     expect(screen.getByLabelText("Fit diagram to view")).toBeInTheDocument();
     expect(screen.getByLabelText("Reset zoom to 100%")).toBeInTheDocument();
+  });
+
+  describe("note bullets", () => {
+    // A bullet inside the injected markup, as the renderer emits it.
+    const SVG_WITH_NOTE =
+      '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300">' +
+      '<g data-note-index="0" role="button" tabindex="0" aria-label="Note: hi">' +
+      '<circle cx="10" cy="10" r="6"/></g></svg>';
+
+    it("reports a bullet activation by index", () => {
+      const onNoteToggle = vi.fn();
+      render(
+        <DiagramViewport
+          svg={SVG_WITH_NOTE}
+          size={SIZE}
+          onNoteToggle={onNoteToggle}
+        />,
+      );
+      fireEvent.click(document.querySelector('[data-note-index="0"]')!);
+      expect(onNoteToggle).toHaveBeenCalledWith(0);
+    });
+
+    it("finds the index from a bullet or any of its children", () => {
+      render(<DiagramViewport svg={SVG_WITH_NOTE} size={SIZE} />);
+      const bullet = document.querySelector('[data-note-index="0"]')!;
+      const circle = bullet.querySelector("circle")!;
+      expect(noteIndexFromTarget(bullet)).toBe(0);
+      // Clicks land on the drawn circle, inside the bullet group.
+      expect(noteIndexFromTarget(circle)).toBe(0);
+    });
+
+    it("returns null for targets outside a bullet", () => {
+      render(<DiagramViewport svg={SVG_WITH_NOTE} size={SIZE} />);
+      expect(
+        noteIndexFromTarget(screen.getByTestId("viewport-pane")),
+      ).toBeNull();
+      expect(noteIndexFromTarget(null)).toBeNull();
+    });
+
+    it("ignores clicks that are not on a bullet", () => {
+      const onNoteToggle = vi.fn();
+      render(
+        <DiagramViewport
+          svg={SVG_WITH_NOTE}
+          size={SIZE}
+          onNoteToggle={onNoteToggle}
+        />,
+      );
+      fireEvent.click(screen.getByTestId("viewport-pane"));
+      expect(onNoteToggle).not.toHaveBeenCalled();
+    });
+  });
+});
+
+describe("DiagramViewport — dragging a participant", () => {
+  // A participant group as the renderer emits it.
+  const SVG_WITH_PARTICIPANT =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300">' +
+    '<g data-participant-id="API" data-participant-label="API" draggable="true">' +
+    '<rect x="0" y="0" width="20" height="20"/></g></svg>';
+
+  beforeEach(() => stubPaneSize(800, 600));
+  afterEach(() => vi.restoreAllMocks());
+
+  it("recognizes a participant group as a drag source", () => {
+    render(<DiagramViewport svg={SVG_WITH_PARTICIPANT} size={SIZE} />);
+    expect(
+      participantDragName(
+        document.querySelector('[data-participant-id="API"]'),
+      ),
+    ).toBe("API");
+    expect(participantDragName(screen.getByTestId("viewport-pane"))).toBeNull();
+  });
+
+  it("puts the participant name on the drag payload as plain text", () => {
+    render(<DiagramViewport svg={SVG_WITH_PARTICIPANT} size={SIZE} />);
+    const setData = vi.fn();
+    fireEvent.dragStart(
+      document.querySelector('[data-participant-id="API"]')!,
+      { dataTransfer: { setData, effectAllowed: "" } },
+    );
+    expect(setData).toHaveBeenCalledWith("text/plain", "API");
   });
 });

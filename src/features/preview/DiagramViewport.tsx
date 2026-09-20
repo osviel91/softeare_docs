@@ -17,6 +17,8 @@ import {
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
+  type DragEvent as ReactDragEvent,
+  type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import {
@@ -43,6 +45,25 @@ export interface DiagramViewportProps {
   resetKey?: string;
   /** Test id for the element holding the SVG markup. */
   svgTestId?: string;
+  /**
+   * Called with a note index when the user activates that note's bullet. The
+   * bullets live inside the injected SVG, so activation is handled by delegation
+   * on the content element rather than by React children.
+   */
+  onNoteToggle?: (noteIndex: number) => void;
+  /**
+   * Called with a node's stable id when the user clicks the element that
+   * represents it. The ids come from the renderer (`data-node-id`), which derives
+   * them from the AST, so the shell can map a click back to a source range
+   * without matching any text.
+   */
+  onNodeSelect?: (nodeId: string) => void;
+  /**
+   * The node to highlight — the statement the editor's caret is on. Highlighting
+   * is a class toggle on the injected markup rather than a re-render, so it never
+   * disturbs the diagram or the pan/zoom transform.
+   */
+  activeNodeId?: string | null;
 }
 
 /** Pixels to pan per arrow key press. */
@@ -58,20 +79,52 @@ function measure(element: HTMLElement | null): Size {
   };
 }
 
+/** The note index carried by the closest bullet ancestor of `target`, if any. */
+export function noteIndexFromTarget(target: EventTarget | null): number | null {
+  if (!(target instanceof Element)) return null;
+  const bullet = target.closest("[data-note-index]");
+  if (!bullet) return null;
+  const index = Number(bullet.getAttribute("data-note-index"));
+  return Number.isInteger(index) ? index : null;
+}
+
+/** The stable node id of the closest rendered element that carries one. */
+export function nodeIdFromTarget(target: EventTarget | null): string | null {
+  if (!(target instanceof Element)) return null;
+  const node = target.closest("[data-node-id]");
+  return node?.getAttribute("data-node-id") ?? null;
+}
+
+/** The participant name carried by the closest draggable group, if any. */
+export function participantDragName(target: EventTarget | null): string | null {
+  if (!(target instanceof Element)) return null;
+  const group = target.closest("[data-participant-id]");
+  return group?.getAttribute("data-participant-id") ?? null;
+}
+
 export default function DiagramViewport({
   svg,
   size,
   keyboardStep = KEYBOARD_PAN_STEP,
   resetKey = "",
   svgTestId = "viewport-content",
+  onNoteToggle,
+  onNodeSelect,
+  activeNodeId = null,
 }: DiagramViewportProps) {
   const paneRef = useRef<HTMLDivElement | null>(null);
+  // The element holding the injected SVG, so the active-node highlight can be a
+  // class toggle rather than a re-render.
+  const contentRef = useRef<HTMLDivElement | null>(null);
   const [paneSize, setPaneSize] = useState<Size>(() => measure(null));
   const [transform, setTransform] =
     useState<ViewportTransform>(IDENTITY_TRANSFORM);
   const [isPanning, setIsPanning] = useState(false);
   // Drag origin lives in a ref: it changes on every pointer move and must not
   // cause a re-render of its own.
+  // Whether the pointer moved during the current press, so a pan is not read as
+  // a click on whatever happened to be under it.
+  const movedSincePointerDown = useRef(false);
   const dragRef = useRef<{ pointerId: number; x: number; y: number } | null>(
     null,
   );
@@ -128,6 +181,11 @@ export default function DiagramViewport({
 
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return; // left button / touch / pen only
+    // A note bullet is a control, not a drag surface. Capturing the pointer here
+    // would retarget the follow-up click at the pane, so the delegated toggle
+    // would never see it — and a press on a bullet should not pan anyway.
+    if (onNoteToggle && noteIndexFromTarget(event.target) !== null) return;
+    movedSincePointerDown.current = false;
     dragRef.current = {
       pointerId: event.pointerId,
       x: event.clientX,
@@ -142,6 +200,9 @@ export default function DiagramViewport({
     if (!drag || drag.pointerId !== event.pointerId) return;
     const dx = event.clientX - drag.x;
     const dy = event.clientY - drag.y;
+    // Past a couple of pixels this is a pan, not a click on what is underneath.
+    if (Math.abs(dx) > 2 || Math.abs(dy) > 2)
+      movedSincePointerDown.current = true;
     drag.x = event.clientX;
     drag.y = event.clientY;
     setTransform((current) => panBy(current, dx, dy));
@@ -174,6 +235,64 @@ export default function DiagramViewport({
     setTransform((current) => zoomAtCenter(current, ZOOM_STEP, paneSize));
   const zoomOut = () =>
     setTransform((current) => zoomAtCenter(current, 1 / ZOOM_STEP, paneSize));
+
+  // Note bullets are part of the injected SVG, so activation is delegated: find
+  // the nearest element carrying `data-note-index` and report it. This keeps the
+  // viewport agnostic about what a note is.
+  const onContentClick = (event: ReactMouseEvent<HTMLDivElement>) => {
+    const index = noteIndexFromTarget(event.target);
+    if (index !== null) {
+      onNoteToggle?.(index);
+      return;
+    }
+    // A pan ends with a click on the content element, so a selection only counts
+    // when the pointer stayed put.
+    if (!onNodeSelect || movedSincePointerDown.current) return;
+    const nodeId = nodeIdFromTarget(event.target);
+    if (nodeId !== null) onNodeSelect(nodeId);
+  };
+
+  // Highlight the active node by toggling a class on the injected SVG. Doing it
+  // imperatively keeps the highlight out of the layout/render pipeline, so it can
+  // never change the drawing or the transform.
+  useEffect(() => {
+    const content = contentRef.current;
+    if (!content) return;
+    for (const element of content.querySelectorAll(".svg-node--active")) {
+      element.classList.remove("svg-node--active");
+    }
+    if (!activeNodeId) return;
+    const target = content.querySelector(
+      `[data-node-id="${CSS.escape(activeNodeId)}"]`,
+    );
+    target?.classList.add("svg-node--active");
+  }, [activeNodeId, svg]);
+
+  const onContentKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (!onNoteToggle) return;
+    if (event.key !== "Enter" && event.key !== " ") return;
+    const index = noteIndexFromTarget(event.target);
+    if (index === null) return;
+    // Keep the page from scrolling on Space, which is the reason to reject the
+    // browser default rather than relying on the pane's arrow-key handler.
+    event.preventDefault();
+    onNoteToggle(index);
+  };
+
+  /**
+   * Start dragging a participant name.
+   *
+   * The participant groups live inside the injected SVG and carry
+   * `data-participant-id`; this puts that name on the drag payload as plain text,
+   * which is what the editor's drop handler reads to insert it. The id (not the
+   * display label) is the token the DSL understands.
+   */
+  const onContentDragStart = (event: ReactDragEvent<HTMLDivElement>) => {
+    const name = participantDragName(event.target);
+    if (name === null || !event.dataTransfer) return;
+    event.dataTransfer.setData("text/plain", name);
+    event.dataTransfer.effectAllowed = "copy";
+  };
 
   // Minimap geometry: the whole diagram scaled into a fixed preview box.
   const minimap = useMemo(() => {
@@ -234,6 +353,7 @@ export default function DiagramViewport({
         onPointerCancel={endDrag}
       >
         <div
+          ref={contentRef}
           className="viewport__content"
           data-testid={svgTestId}
           style={{
@@ -243,6 +363,9 @@ export default function DiagramViewport({
           }}
           // The SVG comes from this project's renderer, which escapes all text.
           dangerouslySetInnerHTML={{ __html: svg }}
+          onClick={onContentClick}
+          onKeyDown={onContentKeyDown}
+          onDragStart={onContentDragStart}
         />
       </div>
 

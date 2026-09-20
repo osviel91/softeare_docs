@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type {
   DiagramFile,
+  NoteFile,
   Project,
   WorkspaceSnapshot,
 } from "../../src/domain/workspace/types";
@@ -13,6 +14,7 @@ const project: Project = {
   id: "proj-1",
   name: "Onboarding",
   datasetIds: ["diag-1", "diag-2"],
+  noteIds: ["note-1"],
 };
 const diagramA: DiagramFile = {
   id: "diag-1",
@@ -26,9 +28,16 @@ const diagramB: DiagramFile = {
   source: "title Signup\nA -> B: join",
   projectId: "proj-1",
 };
+const note: NoteFile = {
+  id: "note-1",
+  name: "readme.md",
+  markdown: "# Onboarding\n\nStart with [[Welcome]].",
+  projectId: "proj-1",
+};
 const snapshot: WorkspaceSnapshot = {
   projects: [project],
   diagrams: [diagramA, diagramB],
+  notes: [note],
 };
 
 describe("serialize", () => {
@@ -36,11 +45,13 @@ describe("serialize", () => {
     const json = exportWorkspaceToJSON(snapshot);
     expect(json).toContain('"projects"');
     expect(json).toContain('"diagrams"');
+    expect(json).toContain('"notes"');
     // Two-space indentation is part of the human-readable contract.
     expect(json).toContain('\n  "projects"');
     const parsed = JSON.parse(json);
     expect(parsed.projects).toHaveLength(1);
     expect(parsed.diagrams).toHaveLength(2);
+    expect(parsed.notes).toHaveLength(1);
   });
 
   it("round-trips a well-formed snapshot through export then import", () => {
@@ -48,6 +59,32 @@ describe("serialize", () => {
     expect(parsed.ok).toBe(true);
     if (!parsed.ok) return;
     expect(parsed.value).toEqual(snapshot);
+  });
+
+  it("accepts a document written before notes existed", () => {
+    // No `notes` key and no `noteIds`: it still imports, with empty lists.
+    const legacy = JSON.stringify({
+      projects: [{ id: "p", name: "Old", datasetIds: [] }],
+      diagrams: [],
+    });
+    const parsed = importWorkspaceFromJSON(legacy);
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.value.notes).toEqual([]);
+    expect(parsed.value.projects[0].noteIds).toEqual([]);
+  });
+
+  it("rejects a malformed note with its index", () => {
+    const json = JSON.stringify({
+      projects: [],
+      diagrams: [],
+      notes: [{ id: "n", name: "x.md" }],
+    });
+    const result = importWorkspaceFromJSON(json);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.message).toContain("notes[0]");
+    }
   });
 
   it("returns copies so mutating the snapshot does not mutate the import", () => {

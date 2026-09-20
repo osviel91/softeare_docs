@@ -1,8 +1,30 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import {
+  PROJECT_METADATA_FORMAT,
+  PROJECT_METADATA_VERSION,
+  createEmptyMetadata,
+  type ProjectMetadata,
+} from "../../src/domain/workspace/metadata";
 import type { DiagramFile } from "../../src/domain/workspace/types";
 import { isOk } from "../../src/shared/result/result";
 import { createInMemoryWorkspaceRepository } from "../../src/workspace/in-memory";
 import type { WorkspaceRepository } from "../../src/workspace/WorkspaceRepository";
+
+/** A minimal, well-formed metadata document with one recorded diagram. */
+function sampleMetadata(): ProjectMetadata {
+  return {
+    format: PROJECT_METADATA_FORMAT,
+    version: PROJECT_METADATA_VERSION,
+    resources: [
+      {
+        id: "diagram-welcome",
+        path: "welcome.seq",
+        type: "sequence-diagram",
+        title: "Welcome",
+      },
+    ],
+  };
+}
 
 describe("In-memory workspace repository", () => {
   let repo: WorkspaceRepository;
@@ -77,5 +99,76 @@ describe("In-memory workspace repository", () => {
         if (isOk(fetched)) expect(fetched.value).toBeNull();
       }
     }
+  });
+
+  it("round-trips a project's metadata document", async () => {
+    const created = await repo.createProject("Onboarding");
+    if (!isOk(created)) throw created.error;
+    const projectId = created.value.id;
+    const metadata = sampleMetadata();
+
+    const written = await repo.writeProjectMetadata(projectId, metadata);
+    expect(isOk(written)).toBe(true);
+
+    const read = await repo.readProjectMetadata(projectId);
+    expect(isOk(read)).toBe(true);
+    if (isOk(read)) {
+      expect(read.value).toEqual(metadata);
+    }
+  });
+
+  it("reads null when a project has no metadata yet", async () => {
+    const created = await repo.createProject("Onboarding");
+    if (!isOk(created)) throw created.error;
+
+    const read = await repo.readProjectMetadata(created.value.id);
+    expect(isOk(read)).toBe(true);
+    if (isOk(read)) {
+      expect(read.value).toBeNull();
+    }
+  });
+
+  it("returns an error when writing metadata for an unknown project", async () => {
+    const written = await repo.writeProjectMetadata(
+      "does-not-exist",
+      createEmptyMetadata(),
+    );
+    expect(isOk(written)).toBe(false);
+    if (!isOk(written)) {
+      expect(written.error.message).toContain("does-not-exist");
+    }
+  });
+
+  it("drops a project's metadata when the project is deleted", async () => {
+    const created = await repo.createProject("Onboarding");
+    if (!isOk(created)) throw created.error;
+    const projectId = created.value.id;
+    await repo.writeProjectMetadata(projectId, createEmptyMetadata());
+
+    const deleted = await repo.deleteProject(projectId);
+    expect(isOk(deleted)).toBe(true);
+
+    const read = await repo.readProjectMetadata(projectId);
+    if (!isOk(read)) throw read.error;
+    expect(read.value).toBeNull();
+  });
+
+  it("does not hand out its stored metadata by reference", async () => {
+    const created = await repo.createProject("Onboarding");
+    if (!isOk(created)) throw created.error;
+    const projectId = created.value.id;
+    await repo.writeProjectMetadata(projectId, createEmptyMetadata());
+
+    const read = await repo.readProjectMetadata(projectId);
+    if (!isOk(read) || !read.value) throw new Error("metadata missing");
+    read.value.resources.push({
+      id: "diagram-leaked",
+      path: "leaked.seq",
+      type: "sequence-diagram",
+    });
+
+    const again = await repo.readProjectMetadata(projectId);
+    if (!isOk(again)) throw again.error;
+    expect(again.value?.resources).toEqual([]);
   });
 });

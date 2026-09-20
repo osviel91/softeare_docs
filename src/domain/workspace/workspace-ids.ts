@@ -13,6 +13,9 @@ export type ProjectId = string;
 /** A stable id for a {@link DiagramFile}. */
 export type DiagramFileId = string;
 
+/** A stable id for a {@link NoteFile}. */
+export type NoteFileId = string;
+
 /** Generate a fresh, workspace-unique project id. */
 export function newProjectId(): ProjectId {
   return `proj-${defaultIdFactory()}`;
@@ -23,15 +26,27 @@ export function newDiagramFileId(): DiagramFileId {
   return `diag-${defaultIdFactory()}`;
 }
 
+/** Generate a fresh, workspace-unique note file id. */
+export function newNoteId(): NoteFileId {
+  return `note-${defaultIdFactory()}`;
+}
+
+/** Generate a fresh, unique version-history entry id. */
+export function newVersionId(): string {
+  return `ver-${defaultIdFactory()}`;
+}
+
 /**
  * Deterministic id generators for tests. Produce `proj-0`, `diag-0`, ... so
- * project and diagram ids are reproducible across runs.
+ * project, diagram, and note ids are reproducible across runs.
  */
 export function testWorkspaceIdFactory(prefix = "id") {
   let projectCounter = 0;
   let diagramCounter = 0;
+  let noteCounter = 0;
   return {
     newProjectId: () => `${prefix}-proj-${projectCounter++}`,
     newDiagramFileId: () => `${prefix}-diag-${diagramCounter++}`,
+    newNoteId: () => `${prefix}-note-${noteCounter++}`,
   };
 }

@@ -37,13 +37,42 @@ describe("parse — valid input", () => {
     expect(diagram.statements).toHaveLength(4);
   });
 
-  it("classifies sync and response messages", () => {
+  it("maps every arrow spelling onto line and arrow style", () => {
     const { ast } = parse(
-      "participant A\nparticipant B\nA -> B: hi\nB --> A: bye",
+      [
+        "participant A",
+        "participant B",
+        "A -> B: a",
+        "A --> B: b",
+        "A ->> B: c",
+        "A -->> B: d",
+        "A -x B: e",
+        "A --x B: f",
+        "A -) B: g",
+        "A --) B: h",
+        "A <<->> B: i",
+        "A <<-->> B: j",
+      ].join("\n"),
     );
     const statements = (ast as unknown as SequenceDiagram).statements;
-    expect(statements[0]).toMatchObject({ kind: "sync", label: "hi" });
-    expect(statements[1]).toMatchObject({ kind: "response", label: "bye" });
+    expect(statements.map((s) => s.type)).toEqual(
+      Array.from({ length: 10 }, () => "message"),
+    );
+    const styles = statements.map((s) =>
+      s.type === "message" ? [s.lineStyle, s.arrowStyle] : ["?", "?"],
+    );
+    expect(styles).toEqual([
+      ["solid", "arrow"],
+      ["dashed", "arrow"],
+      ["solid", "arrow"],
+      ["dashed", "arrow"],
+      ["solid", "cross"],
+      ["dashed", "cross"],
+      ["solid", "open"],
+      ["dashed", "open"],
+      ["solid", "bidirectional"],
+      ["dashed", "bidirectional"],
+    ]);
   });
 
   it("captures message endpoints and empty labels", () => {
@@ -67,13 +96,77 @@ describe("parse — valid input", () => {
     expect((ast as unknown as SequenceDiagram).participants).toHaveLength(2);
   });
 
-  it("treats a quoted participant label as unsupported in Phase 1", () => {
-    // Quoted labels / aliases are a later DSL phase; here the stray string is
-    // surfaced as an unexpected token rather than parsed silently.
-    const { diagnostics } = parse('participant api "Authentication API"');
-    expect(
-      diagnostics.some((d) => d.code === DiagnosticCode.UnsupportedSyntax),
-    ).toBe(true);
+  it("parses an actor declaration, distinct from a participant", () => {
+    const { ast, diagnostics } = parse("actor User\nparticipant API");
+    expect(diagnostics).toEqual([]);
+    const diagram = ast as unknown as SequenceDiagram;
+    expect(diagram.participants.map((p) => p.participantType)).toEqual([
+      "actor",
+      "participant",
+    ]);
+  });
+
+  it("parses a quoted label with 'as'", () => {
+    const { ast, diagnostics } = parse(
+      'participant api as "Authentication API"\nactor user as "End User"',
+    );
+    expect(diagnostics).toEqual([]);
+    const diagram = ast as unknown as SequenceDiagram;
+    expect(diagram.participants[0]).toMatchObject({
+      id: "api",
+      label: "Authentication API",
+      participantType: "participant",
+    });
+    expect(diagram.participants[1]).toMatchObject({
+      id: "user",
+      label: "End User",
+      participantType: "actor",
+    });
+  });
+
+  it("accepts an unquoted 'as' label", () => {
+    const { ast, diagnostics } = parse("participant db as Database");
+    expect(diagnostics).toEqual([]);
+    const diagram = ast as unknown as SequenceDiagram;
+    expect(diagram.participants[0]).toMatchObject({
+      id: "db",
+      label: "Database",
+    });
+  });
+});
+
+describe("parse — titles", () => {
+  it("accepts a title on any line, not just the first", () => {
+    const { ast, diagnostics } = parse(
+      "participant A\nparticipant B\ntitle Added Later\nA -> B: hi",
+    );
+    expect(diagnostics).toEqual([]);
+    expect((ast as unknown as SequenceDiagram).title?.value).toBe(
+      "Added Later",
+    );
+  });
+
+  it("accepts a title after messages, since it is metadata", () => {
+    const { ast, diagnostics } = parse("participant A\nA -> A: hi\ntitle Late");
+    expect(diagnostics).toEqual([]);
+    expect((ast as unknown as SequenceDiagram).title?.value).toBe("Late");
+  });
+
+  it("reads a quoted title as a single value", () => {
+    const { ast } = parse('title "Authentication Flow"');
+    expect((ast as unknown as SequenceDiagram).title?.value).toBe(
+      "Authentication Flow",
+    );
+  });
+
+  it("keeps the first title and reports a repeated one", () => {
+    const { ast, diagnostics } = parse(
+      "title First\nparticipant A\ntitle Second",
+    );
+    expect((ast as unknown as SequenceDiagram).title?.value).toBe("First");
+    expect(diagnostics.map((d) => d.code)).toContain(
+      DiagnosticCode.DuplicateTitle,
+    );
   });
 });
 
@@ -124,7 +217,7 @@ describe("parse — malformed input", () => {
   it("flags a participant name missing", () => {
     const { diagnostics } = parse("participant\nA -> B: hi");
     expect(
-      diagnostics.some((d) => d.code === DiagnosticCode.MalformedMessage),
+      diagnostics.some((d) => d.code === DiagnosticCode.MalformedParticipant),
     ).toBe(true);
   });
 });
@@ -226,7 +319,7 @@ describe("parse — notes", () => {
     expect(diagram.notes[0]).toMatchObject({
       type: "note",
       placement: "left",
-      participant: "User",
+      participants: ["User"],
       text: "secret",
     });
   });
@@ -236,7 +329,7 @@ describe("parse — notes", () => {
     const diagram = ast as unknown as SequenceDiagram;
     expect(diagram.notes[0]).toMatchObject({
       placement: "right",
-      participant: "API",
+      participants: ["API"],
       text: "hi",
     });
   });
@@ -246,7 +339,7 @@ describe("parse — notes", () => {
     const diagram = ast as unknown as SequenceDiagram;
     expect(diagram.notes[0]).toMatchObject({
       placement: "over",
-      participant: "User",
+      participants: ["User"],
       text: "span",
     });
   });
@@ -258,7 +351,91 @@ describe("parse — notes", () => {
       placement: "over",
       text: "shared",
     });
-    expect(diagram.notes[0].participant).toBeUndefined();
+    expect(diagram.notes[0].participants).toEqual([]);
+  });
+
+  it("parses a spanning over note over comma-separated participants", () => {
+    const { ast, diagnostics } = parse(
+      "note over API,DB : Transaction boundary",
+    );
+    expect(diagnostics).toEqual([]);
+    const diagram = ast as unknown as SequenceDiagram;
+    expect(diagram.notes[0]).toMatchObject({
+      placement: "over",
+      participants: ["API", "DB"],
+      text: "Transaction boundary",
+    });
+  });
+
+  it("parses a multiline note body until 'end note'", () => {
+    const { ast, diagnostics } = parse(
+      [
+        "note right of API:",
+        "Validate JWT",
+        "Check expiration",
+        "Load permissions",
+        "end note",
+      ].join("\n"),
+    );
+    expect(diagnostics).toEqual([]);
+    const diagram = ast as unknown as SequenceDiagram;
+    expect(diagram.notes[0]?.text).toBe(
+      "Validate JWT\nCheck expiration\nLoad permissions",
+    );
+    expect(diagram.notes[0]?.participants).toEqual(["API"]);
+  });
+
+  it("flags a multiline note that is never closed", () => {
+    const { diagnostics } = parse("note right of API:\nfirst line");
+    expect(
+      diagnostics.some((d) => d.code === DiagnosticCode.MalformedNote),
+    ).toBe(true);
+  });
+
+  it("parses a note attached to a message by its step number", () => {
+    const { ast, diagnostics } = parse(
+      "participant User\nparticipant API\nUser ->> API: Login\nnote on 1 : Retried once",
+    );
+    expect(diagnostics).toEqual([]);
+    const diagram = ast as unknown as SequenceDiagram;
+    expect(diagram.notes[0]).toMatchObject({
+      placement: "on",
+      messageNumber: 1,
+      participants: [],
+      text: "Retried once",
+    });
+  });
+
+  it("allows a multiline note on a message", () => {
+    const { ast, diagnostics } = parse(
+      [
+        "participant A",
+        "participant B",
+        "A ->> B: Go",
+        "note on 1:",
+        "first",
+        "second",
+        "end note",
+      ].join("\n"),
+    );
+    expect(diagnostics).toEqual([]);
+    const diagram = ast as unknown as SequenceDiagram;
+    expect(diagram.notes[0]?.messageNumber).toBe(1);
+    expect(diagram.notes[0]?.text).toBe("first\nsecond");
+  });
+
+  it("flags a note on a missing or non-numeric message number", () => {
+    const missing = parse("note on : text");
+    expect(
+      missing.diagnostics.some((d) => d.code === DiagnosticCode.MalformedNote),
+    ).toBe(true);
+
+    const notANumber = parse("note on first : text");
+    expect(
+      notANumber.diagnostics.some(
+        (d) => d.code === DiagnosticCode.MalformedNote,
+      ),
+    ).toBe(true);
   });
 
   it("accepts a bare id for left/right without 'of'", () => {
@@ -266,7 +443,7 @@ describe("parse — notes", () => {
     const diagram = ast as unknown as SequenceDiagram;
     expect(diagram.notes[0]).toMatchObject({
       placement: "left",
-      participant: "User",
+      participants: ["User"],
       text: "bare",
     });
   });
@@ -355,5 +532,159 @@ describe("parse — activations", () => {
   it("never throws on a malformed activation line", () => {
     expect(() => parse("activate\n")).not.toThrow();
     expect(() => parse("deactivate\n")).not.toThrow();
+  });
+
+  it("normalizes an inline '+' into an activation of the receiver", () => {
+    const { ast, diagnostics } = parse(
+      "participant A\nparticipant B\nA ->>+ B: go",
+    );
+    expect(diagnostics).toEqual([]);
+    const statements = (ast as unknown as SequenceDiagram).statements;
+    expect(statements.map((s) => s.type)).toEqual(["activation", "message"]);
+    expect(statements[0]).toMatchObject({
+      type: "activation",
+      action: "activate",
+      participant: "B",
+    });
+  });
+
+  it("normalizes an inline '-' into a deactivation of the sender", () => {
+    const { ast, diagnostics } = parse(
+      "participant A\nparticipant B\nB -->>- A: done",
+    );
+    expect(diagnostics).toEqual([]);
+    const statements = (ast as unknown as SequenceDiagram).statements;
+    expect(statements[0]).toMatchObject({
+      type: "activation",
+      action: "deactivate",
+      participant: "B",
+    });
+  });
+});
+
+describe("parse — control-flow fragments", () => {
+  it("parses a loop with nested statements, closed by end", () => {
+    const { ast, diagnostics } = parse(
+      [
+        "participant C",
+        "participant S",
+        "loop retry up to 3 times",
+        "  C ->> S: Request",
+        "  S -->> C: Failure",
+        "end",
+      ].join("\n"),
+    );
+    expect(diagnostics).toEqual([]);
+    const statements = (ast as unknown as SequenceDiagram).statements;
+    expect(statements).toHaveLength(1);
+    const loop = statements[0];
+    expect(loop).toMatchObject({ type: "loop", label: "retry up to 3 times" });
+    expect(loop.type === "loop" && loop.statements).toHaveLength(2);
+  });
+
+  it("parses alt/else branches with their conditions", () => {
+    const { ast, diagnostics } = parse(
+      [
+        "participant A",
+        "participant B",
+        "alt user exists",
+        "  A ->> B: Load",
+        "else user missing",
+        "  B -->> A: 404",
+        "end",
+      ].join("\n"),
+    );
+    expect(diagnostics).toEqual([]);
+    const alt = (ast as unknown as SequenceDiagram).statements[0];
+    expect(alt.type).toBe("alt");
+    if (alt.type === "alt") {
+      expect(alt.branches.map((b) => b.condition)).toEqual([
+        "user exists",
+        "user missing",
+      ]);
+      expect(alt.branches.map((b) => b.statements.length)).toEqual([1, 1]);
+    }
+  });
+
+  it("parses opt, par/and, critical/option and break", () => {
+    const { ast, diagnostics } = parse(
+      [
+        "participant A",
+        "participant B",
+        "opt extra",
+        "  A ->> B: x",
+        "end",
+        "par first",
+        "  A ->> B: one",
+        "and second",
+        "  B -->> A: two",
+        "end",
+        "critical must succeed",
+        "  A ->> B: critical",
+        "option on failure",
+        "  B -->> A: error",
+        "end",
+        "break aborted",
+        "  A ->> B: stop",
+        "end",
+      ].join("\n"),
+    );
+    expect(diagnostics).toEqual([]);
+    const kinds = (ast as unknown as SequenceDiagram).statements.map(
+      (s) => s.type,
+    );
+    expect(kinds).toEqual(["opt", "par", "critical", "break"]);
+  });
+
+  it("nests fragments", () => {
+    const { ast, diagnostics } = parse(
+      [
+        "participant A",
+        "participant B",
+        "loop outer",
+        "  opt inner",
+        "    A ->> B: deep",
+        "  end",
+        "end",
+      ].join("\n"),
+    );
+    expect(diagnostics).toEqual([]);
+    const outer = (ast as unknown as SequenceDiagram).statements[0];
+    expect(outer.type).toBe("loop");
+    if (outer.type === "loop") {
+      expect(outer.statements[0]?.type).toBe("opt");
+    }
+  });
+
+  it("flags a fragment that is never closed", () => {
+    const { diagnostics } = parse("participant A\nloop forever\nA ->> A: x");
+    expect(
+      diagnostics.some((d) => d.code === DiagnosticCode.UnclosedFragment),
+    ).toBe(true);
+  });
+
+  it("flags a stray end with no open fragment", () => {
+    const { diagnostics } = parse("participant A\nend");
+    expect(
+      diagnostics.some(
+        (d) => d.code === DiagnosticCode.UnexpectedFragmentKeyword,
+      ),
+    ).toBe(true);
+  });
+
+  it("keeps parsing after a stray fragment separator", () => {
+    const { ast, diagnostics } = parse("participant A\nelse oops\nA ->> A: x");
+    expect(
+      diagnostics.some(
+        (d) => d.code === DiagnosticCode.UnexpectedFragmentKeyword,
+      ),
+    ).toBe(true);
+    expect((ast as unknown as SequenceDiagram).statements).toHaveLength(1);
+  });
+
+  it("never throws on malformed fragments", () => {
+    expect(() => parse("loop")).not.toThrow();
+    expect(() => parse("alt\nelse\nend")).not.toThrow();
+    expect(() => parse("critical\noption\nend")).not.toThrow();
   });
 });

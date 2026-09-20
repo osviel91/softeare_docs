@@ -1,37 +1,56 @@
 /**
  * IndexedDB implementation of {@link WorkspaceRepository} (Phase 4).
  *
- * The database holds two object stores, both keyed by `id`:
+ * The database holds three object stores, all keyed by `id`:
  * - `projects` — every {@link Project}.
  * - `diagrams` — every {@link DiagramFile}, each carrying its `projectId`.
+ * - `notes` — every {@link NoteFile}, each carrying its `projectId`.
  *
- * Diagram-to-project membership is derived client-side from `Project.datasetIds`
+ * Membership is derived client-side from `Project.datasetIds` / `Project.noteIds`
  * and the stored `projectId`, so no secondary indexes or cursors are needed.
- * Deleting a project removes its diagrams, guaranteeing no orphans.
+ * Deleting a project removes its diagrams and notes, guaranteeing no orphans.
  *
  * The real `indexedDB` global (callback-based) is bridged to the promise-based
  * {@link IdbFactory} in this module; everything else depends only on that
  * interface, which is what makes the whole layer testable in jsdom.
  */
+import type { ProjectMetadata } from "../domain/workspace/metadata";
 import type {
   DiagramFile,
+  NoteFile,
   Project,
   WorkspaceSnapshot,
 } from "../domain/workspace/types";
 import {
   newDiagramFileId,
+  newNoteId,
   newProjectId,
 } from "../domain/workspace/workspace-ids";
+import { EMPTY_NOTE_MARKDOWN, uniqueNoteName } from "../domain/workspace/note";
+import { uniqueCopyName } from "../domain/workspace/copy-name";
+import { uniqueDiagramName } from "../domain/workspace/diagram";
 import { err, ok, type Result } from "../shared/result/result";
 import type { IdbDatabase, IdbFactory, IdbObjectStore } from "./idb-adapter";
 import { openToResult, requestToResult, txDone } from "./idb-promises";
 import type { WorkspaceRepository } from "./WorkspaceRepository";
 
 const DB_NAME = "sequencediagrams-db";
-const DB_VERSION = 1;
+/** Version 2 adds the `notes` store; existing databases upgrade in place. */
+const DB_VERSION = 2;
 
 const STORE_PROJECTS = "projects";
 const STORE_DIAGRAMS = "diagrams";
+const STORE_NOTES = "notes";
+
+/**
+ * A stored project record: the domain {@link Project} plus the optional sidecar
+ * fields the schema has grown.
+ *
+ * IndexedDB object stores are schemaless, so a new field needs no version bump
+ * and an older record simply lacks it. Readers must therefore treat every added
+ * field as optional and normalize it away.
+ */
+type StoredProject = Project & { metadata?: ProjectMetadata };
 
 /**
  * Create the object stores on first creation or version bump. Kept in this
@@ -45,10 +64,13 @@ export function createSchema(db: IDBDatabase): void {
   if (!db.objectStoreNames.contains(STORE_DIAGRAMS)) {
     db.createObjectStore(STORE_DIAGRAMS, { keyPath: "id" });
   }
+  if (!db.objectStoreNames.contains(STORE_NOTES)) {
+    db.createObjectStore(STORE_NOTES, { keyPath: "id" });
+  }
 }
 
 /** Adapt a real object store to the promise-based {@link IdbObjectStore}. */
-function adaptStore(store: IDBObjectStore): IdbObjectStore {
+export function adaptStore(store: IDBObjectStore): IdbObjectStore {
   return {
     get: (key) => requestToResult<unknown>(store.get(key)),
     getAll: () => requestToResult<unknown[]>(store.getAll()),
@@ -61,7 +83,7 @@ function adaptStore(store: IDBObjectStore): IdbObjectStore {
  * Adapt a real database to {@link IdbDatabase}. The real transaction exposes no
  * `done` promise, so this wraps one (via {@link txDone}) plus the store handles.
  */
-function adaptDatabase(db: IDBDatabase): IdbDatabase {
+export function adaptDatabase(db: IDBDatabase): IdbDatabase {
   return {
     transaction(storeNames, mode) {
       const tx = db.transaction(storeNames, mode);
@@ -92,6 +114,19 @@ class RealIndexedDbFactory implements IdbFactory {
 /** Turn any unexpected error into a plain, serializable Error. */
 function toRepoError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error));
+}
+
+/**
+ * Normalize a stored project, treating a missing note list as empty. The spread
+ * carries every optional sidecar field (including `metadata`) through untouched,
+ * so normalization never drops data a later read needs.
+ */
+function normalizeProject(project: StoredProject): StoredProject {
+  return {
+    ...project,
+    datasetIds: project.datasetIds ?? [],
+    noteIds: project.noteIds ?? [],
+  };
 }
 
 /**
@@ -140,6 +175,65 @@ export function createIndexedDbRepository(
     }
   }
 
+  /** Read and normalize a project inside an open transaction. */
+  async function readProject(
+    stores: Record<string, IdbObjectStore>,
+    projectId: string,
+  ): Promise<StoredProject | null> {
+    const project = (await stores[STORE_PROJECTS].get(projectId)) as
+      StoredProject | undefined;
+    return project ? normalizeProject(project) : null;
+  }
+
+  /** Append an id to one of a project's ordered lists inside a transaction. */
+  async function link(
+    stores: Record<string, IdbObjectStore>,
+    projectId: string,
+    field: "datasetIds" | "noteIds",
+    id: string,
+  ): Promise<void> {
+    const project = await readProject(stores, projectId);
+    if (!project) return;
+    const current = project[field] ?? [];
+    if (!current.includes(id)) {
+      await stores[STORE_PROJECTS].put({
+        ...project,
+        [field]: [...current, id],
+      } as { id: string });
+    }
+  }
+
+  /** Remove an id from one of a project's ordered lists inside a transaction. */
+  async function unlink(
+    stores: Record<string, IdbObjectStore>,
+    projectId: string,
+    field: "datasetIds" | "noteIds",
+    id: string,
+  ): Promise<void> {
+    const project = await readProject(stores, projectId);
+    if (!project) return;
+    const current = project[field] ?? [];
+    await stores[STORE_PROJECTS].put({
+      ...project,
+      [field]: current.filter((entry) => entry !== id),
+    } as { id: string });
+  }
+
+  /** List the files of one store that belong to a project, in stored order. */
+  async function listForProject<T extends { id: string; projectId: string }>(
+    stores: Record<string, IdbObjectStore>,
+    storeName: string,
+    project: Project,
+    field: "datasetIds" | "noteIds",
+  ): Promise<T[]> {
+    const all = (await stores[storeName].getAll()) as T[];
+    const byId = new Map(all.map((entry) => [entry.id, entry]));
+    // Preserve display order; skip any files that were deleted out of band.
+    return (project[field] ?? [])
+      .map((id) => byId.get(id))
+      .filter((entry): entry is T => entry !== undefined);
+  }
+
   return {
     async listProjects(): Promise<Result<Project[], Error>> {
       try {
@@ -147,7 +241,9 @@ export function createIndexedDbRepository(
           [STORE_PROJECTS],
           "readonly",
           async (stores) =>
-            (await stores[STORE_PROJECTS].getAll()) as Project[],
+            ((await stores[STORE_PROJECTS].getAll()) as StoredProject[]).map(
+              normalizeProject,
+            ),
         );
         return ok(projects);
       } catch (error) {
@@ -157,13 +253,12 @@ export function createIndexedDbRepository(
 
     async getProject(id): Promise<Result<Project | null, Error>> {
       try {
-        const project = await withTx<Project | undefined>(
+        const project = await withTx<Project | null>(
           [STORE_PROJECTS],
           "readonly",
-          async (stores) =>
-            (await stores[STORE_PROJECTS].get(id)) as Project | undefined,
+          async (stores) => readProject(stores, id),
         );
-        return ok(project ?? null);
+        return ok(project);
       } catch (error) {
         return err(toRepoError(error));
       }
@@ -172,7 +267,12 @@ export function createIndexedDbRepository(
     async createProject(name): Promise<Result<Project, Error>> {
       try {
         // Names are validated upstream, so this is trusted display text.
-        const project: Project = { id: newProjectId(), name, datasetIds: [] };
+        const project: Project = {
+          id: newProjectId(),
+          name,
+          datasetIds: [],
+          noteIds: [],
+        };
         await withTx<void>([STORE_PROJECTS], "readwrite", async (stores) => {
           await stores[STORE_PROJECTS].put(project);
         });
@@ -185,14 +285,16 @@ export function createIndexedDbRepository(
     async deleteProject(id): Promise<Result<void, Error>> {
       try {
         await withTx<void>(
-          [STORE_PROJECTS, STORE_DIAGRAMS],
+          [STORE_PROJECTS, STORE_DIAGRAMS, STORE_NOTES],
           "readwrite",
           async (stores) => {
-            const project = (await stores[STORE_PROJECTS].get(id)) as
-              Project | undefined;
+            const project = await readProject(stores, id);
             if (project) {
               for (const diagramId of project.datasetIds) {
                 await stores[STORE_DIAGRAMS].delete(diagramId);
+              }
+              for (const noteId of project.noteIds ?? []) {
+                await stores[STORE_NOTES].delete(noteId);
               }
             }
             await stores[STORE_PROJECTS].delete(id);
@@ -204,29 +306,60 @@ export function createIndexedDbRepository(
       }
     },
 
-    async listDiagramFiles(projectId): Promise<Result<DiagramFile[], Error>> {
+    async readProjectMetadata(
+      projectId,
+    ): Promise<Result<ProjectMetadata | null, Error>> {
       try {
-        const project = await withTx<Project | undefined>(
+        const metadata = await withTx<ProjectMetadata | null>(
           [STORE_PROJECTS],
           "readonly",
-          async (stores) =>
-            (await stores[STORE_PROJECTS].get(projectId)) as
-              Project | undefined,
+          async (stores) => {
+            const project = await readProject(stores, projectId);
+            // A record written before metadata existed simply has no field, and
+            // reads back as "no metadata" — the migration signal, not an error.
+            return project?.metadata ?? null;
+          },
         );
-        if (!project) return ok([]);
-        const all = await withTx<DiagramFile[]>(
-          [STORE_DIAGRAMS],
+        return ok(metadata);
+      } catch (error) {
+        return err(toRepoError(error));
+      }
+    },
+
+    async writeProjectMetadata(
+      projectId,
+      metadata,
+    ): Promise<Result<void, Error>> {
+      try {
+        await withTx<void>([STORE_PROJECTS], "readwrite", async (stores) => {
+          const project = await readProject(stores, projectId);
+          if (!project) throw new Error(`Unknown project: ${projectId}`);
+          const next: StoredProject = { ...project, metadata };
+          await stores[STORE_PROJECTS].put(next);
+        });
+        return ok(undefined);
+      } catch (error) {
+        return err(toRepoError(error));
+      }
+    },
+
+    async listDiagramFiles(projectId): Promise<Result<DiagramFile[], Error>> {
+      try {
+        const files = await withTx<DiagramFile[]>(
+          [STORE_PROJECTS, STORE_DIAGRAMS],
           "readonly",
-          async (stores) =>
-            (await stores[STORE_DIAGRAMS].getAll()) as DiagramFile[],
+          async (stores) => {
+            const project = await readProject(stores, projectId);
+            if (!project) return [];
+            return listForProject<DiagramFile>(
+              stores,
+              STORE_DIAGRAMS,
+              project,
+              "datasetIds",
+            );
+          },
         );
-        const byId = new Map(all.map((d) => [d.id, d]));
-        // Preserve display order; skip any files that were deleted out of band.
-        return ok(
-          project.datasetIds
-            .map((did) => byId.get(did))
-            .filter(Boolean) as DiagramFile[],
-        );
+        return ok(files);
       } catch (error) {
         return err(toRepoError(error));
       }
@@ -263,12 +396,7 @@ export function createIndexedDbRepository(
           "readwrite",
           async (stores) => {
             await stores[STORE_DIAGRAMS].put(stored);
-            const project = (await stores[STORE_PROJECTS].get(projectId)) as
-              Project | undefined;
-            if (project && !project.datasetIds.includes(diagram.id)) {
-              project.datasetIds = [...project.datasetIds, diagram.id];
-              await stores[STORE_PROJECTS].put(project);
-            }
+            await link(stores, projectId, "datasetIds", diagram.id);
           },
         );
         return ok(stored);
@@ -281,25 +409,71 @@ export function createIndexedDbRepository(
       try {
         // Create the file inside a transaction that also links it to the
         // project, so the append and the write commit together (all or nothing).
-        const diagram: DiagramFile = {
-          id: newDiagramFileId(),
-          name: "Untitled",
-          source: "",
-          projectId,
-        };
-        await withTx<void>(
+        const diagram = await withTx<DiagramFile>(
           [STORE_PROJECTS, STORE_DIAGRAMS],
           "readwrite",
           async (stores) => {
-            const project = (await stores[STORE_PROJECTS].get(projectId)) as
-              Project | undefined;
+            const project = await readProject(stores, projectId);
             if (!project) throw new Error(`Unknown project: ${projectId}`);
-            await stores[STORE_DIAGRAMS].put(diagram);
-            project.datasetIds = [...project.datasetIds, diagram.id];
-            await stores[STORE_PROJECTS].put(project);
+            const siblings = await listForProject<DiagramFile>(
+              stores,
+              STORE_DIAGRAMS,
+              project,
+              "datasetIds",
+            );
+            const created: DiagramFile = {
+              id: newDiagramFileId(),
+              name: uniqueDiagramName(siblings.map((entry) => entry.name)),
+              source: "",
+              projectId,
+            };
+            await stores[STORE_DIAGRAMS].put(created);
+            await link(stores, projectId, "datasetIds", created.id);
+            return created;
           },
         );
         return ok(diagram);
+      } catch (error) {
+        return err(toRepoError(error));
+      }
+    },
+
+    async duplicateDiagramFile(
+      projectId,
+      diagramId,
+    ): Promise<Result<DiagramFile, Error>> {
+      try {
+        const copy = await withTx<DiagramFile>(
+          [STORE_PROJECTS, STORE_DIAGRAMS],
+          "readwrite",
+          async (stores) => {
+            const project = await readProject(stores, projectId);
+            if (!project) throw new Error(`Unknown project: ${projectId}`);
+            const source = (await stores[STORE_DIAGRAMS].get(diagramId)) as
+              DiagramFile | undefined;
+            if (!source || source.projectId !== projectId) {
+              throw new Error(`Unknown diagram: ${diagramId}`);
+            }
+            const siblings = await listForProject<DiagramFile>(
+              stores,
+              STORE_DIAGRAMS,
+              project,
+              "datasetIds",
+            );
+            const created: DiagramFile = {
+              ...source,
+              id: newDiagramFileId(),
+              name: uniqueCopyName(
+                source.name,
+                siblings.map((entry) => entry.name),
+              ),
+            };
+            await stores[STORE_DIAGRAMS].put(created);
+            await link(stores, projectId, "datasetIds", created.id);
+            return created;
+          },
+        );
+        return ok(copy);
       } catch (error) {
         return err(toRepoError(error));
       }
@@ -315,14 +489,7 @@ export function createIndexedDbRepository(
           "readwrite",
           async (stores) => {
             await stores[STORE_DIAGRAMS].delete(diagramId);
-            const project = (await stores[STORE_PROJECTS].get(projectId)) as
-              Project | undefined;
-            if (project) {
-              project.datasetIds = project.datasetIds.filter(
-                (did) => did !== diagramId,
-              );
-              await stores[STORE_PROJECTS].put(project);
-            }
+            await unlink(stores, projectId, "datasetIds", diagramId);
           },
         );
         return ok(undefined);
@@ -331,14 +498,236 @@ export function createIndexedDbRepository(
       }
     },
 
+    async renameDiagramFile(
+      projectId,
+      diagramId,
+      newName,
+    ): Promise<Result<DiagramFile, Error>> {
+      try {
+        const name = newName.trim();
+        if (name === "") return err(new Error("A diagram name is required"));
+        const renamed = await withTx<DiagramFile>(
+          [STORE_PROJECTS, STORE_DIAGRAMS],
+          "readwrite",
+          async (stores) => {
+            const project = await readProject(stores, projectId);
+            if (!project) throw new Error(`Unknown project: ${projectId}`);
+            const diagram = (await stores[STORE_DIAGRAMS].get(diagramId)) as
+              DiagramFile | undefined;
+            if (!diagram || diagram.projectId !== projectId) {
+              throw new Error(`Unknown diagram: ${diagramId}`);
+            }
+            const siblings = await listForProject<DiagramFile>(
+              stores,
+              STORE_DIAGRAMS,
+              project,
+              "datasetIds",
+            );
+            if (siblings.some((d) => d.id !== diagramId && d.name === name)) {
+              throw new Error(`A diagram named "${name}" already exists`);
+            }
+            const next: DiagramFile = { ...diagram, name };
+            await stores[STORE_DIAGRAMS].put(next);
+            return next;
+          },
+        );
+        return ok(renamed);
+      } catch (error) {
+        return err(toRepoError(error));
+      }
+    },
+
+    async listNoteFiles(projectId): Promise<Result<NoteFile[], Error>> {
+      try {
+        const files = await withTx<NoteFile[]>(
+          [STORE_PROJECTS, STORE_NOTES],
+          "readonly",
+          async (stores) => {
+            const project = await readProject(stores, projectId);
+            if (!project) return [];
+            return listForProject<NoteFile>(
+              stores,
+              STORE_NOTES,
+              project,
+              "noteIds",
+            );
+          },
+        );
+        return ok(files);
+      } catch (error) {
+        return err(toRepoError(error));
+      }
+    },
+
+    async getNoteFile(
+      projectId,
+      noteId,
+    ): Promise<Result<NoteFile | null, Error>> {
+      try {
+        const note = await withTx<NoteFile | undefined>(
+          [STORE_NOTES],
+          "readonly",
+          async (stores) =>
+            (await stores[STORE_NOTES].get(noteId)) as NoteFile | undefined,
+        );
+        if (!note || note.projectId !== projectId) return ok(null);
+        return ok(note);
+      } catch (error) {
+        return err(toRepoError(error));
+      }
+    },
+
+    async saveNoteFile(projectId, note): Promise<Result<NoteFile, Error>> {
+      try {
+        const stored: NoteFile = { ...note, projectId };
+        await withTx<void>(
+          [STORE_PROJECTS, STORE_NOTES],
+          "readwrite",
+          async (stores) => {
+            await stores[STORE_NOTES].put(stored);
+            await link(stores, projectId, "noteIds", note.id);
+          },
+        );
+        return ok(stored);
+      } catch (error) {
+        return err(toRepoError(error));
+      }
+    },
+
+    async createEmptyNote(projectId): Promise<Result<NoteFile, Error>> {
+      try {
+        const note = await withTx<NoteFile>(
+          [STORE_PROJECTS, STORE_NOTES],
+          "readwrite",
+          async (stores) => {
+            const project = await readProject(stores, projectId);
+            if (!project) throw new Error(`Unknown project: ${projectId}`);
+            const siblings = await listForProject<NoteFile>(
+              stores,
+              STORE_NOTES,
+              project,
+              "noteIds",
+            );
+            const created: NoteFile = {
+              id: newNoteId(),
+              name: uniqueNoteName(siblings.map((entry) => entry.name)),
+              markdown: EMPTY_NOTE_MARKDOWN,
+              projectId,
+            };
+            await stores[STORE_NOTES].put(created);
+            await link(stores, projectId, "noteIds", created.id);
+            return created;
+          },
+        );
+        return ok(note);
+      } catch (error) {
+        return err(toRepoError(error));
+      }
+    },
+
+    async duplicateNoteFile(
+      projectId,
+      noteId,
+    ): Promise<Result<NoteFile, Error>> {
+      try {
+        const copy = await withTx<NoteFile>(
+          [STORE_PROJECTS, STORE_NOTES],
+          "readwrite",
+          async (stores) => {
+            const project = await readProject(stores, projectId);
+            if (!project) throw new Error(`Unknown project: ${projectId}`);
+            const source = (await stores[STORE_NOTES].get(noteId)) as
+              NoteFile | undefined;
+            if (!source || source.projectId !== projectId) {
+              throw new Error(`Unknown note: ${noteId}`);
+            }
+            const siblings = await listForProject<NoteFile>(
+              stores,
+              STORE_NOTES,
+              project,
+              "noteIds",
+            );
+            const created: NoteFile = {
+              ...source,
+              id: newNoteId(),
+              name: uniqueCopyName(
+                source.name,
+                siblings.map((entry) => entry.name),
+              ),
+            };
+            await stores[STORE_NOTES].put(created);
+            await link(stores, projectId, "noteIds", created.id);
+            return created;
+          },
+        );
+        return ok(copy);
+      } catch (error) {
+        return err(toRepoError(error));
+      }
+    },
+
+    async deleteNoteFile(projectId, noteId): Promise<Result<void, Error>> {
+      try {
+        await withTx<void>(
+          [STORE_PROJECTS, STORE_NOTES],
+          "readwrite",
+          async (stores) => {
+            await stores[STORE_NOTES].delete(noteId);
+            await unlink(stores, projectId, "noteIds", noteId);
+          },
+        );
+        return ok(undefined);
+      } catch (error) {
+        return err(toRepoError(error));
+      }
+    },
+
+    async renameNoteFile(
+      projectId,
+      noteId,
+      newName,
+    ): Promise<Result<NoteFile, Error>> {
+      try {
+        const name = newName.trim();
+        if (name === "") return err(new Error("A note name is required"));
+        const renamed = await withTx<NoteFile>(
+          [STORE_PROJECTS, STORE_NOTES],
+          "readwrite",
+          async (stores) => {
+            const project = await readProject(stores, projectId);
+            if (!project) throw new Error(`Unknown project: ${projectId}`);
+            const note = (await stores[STORE_NOTES].get(noteId)) as
+              NoteFile | undefined;
+            if (!note || note.projectId !== projectId) {
+              throw new Error(`Unknown note: ${noteId}`);
+            }
+            const siblings = await listForProject<NoteFile>(
+              stores,
+              STORE_NOTES,
+              project,
+              "noteIds",
+            );
+            if (siblings.some((n) => n.id !== noteId && n.name === name)) {
+              throw new Error(`A note named "${name}" already exists`);
+            }
+            const next: NoteFile = { ...note, name };
+            await stores[STORE_NOTES].put(next);
+            return next;
+          },
+        );
+        return ok(renamed);
+      } catch (error) {
+        return err(toRepoError(error));
+      }
+    },
+
     async listAll(): Promise<Result<WorkspaceSnapshot, Error>> {
       try {
-        const [projects, diagrams] = await Promise.all([
-          withTx<Project[]>(
-            [STORE_PROJECTS],
-            "readonly",
-            async (stores) =>
-              (await stores[STORE_PROJECTS].getAll()) as Project[],
+        const [projects, diagrams, notes] = await Promise.all([
+          withTx<Project[]>([STORE_PROJECTS], "readonly", async (stores) =>
+            ((await stores[STORE_PROJECTS].getAll()) as StoredProject[]).map(
+              normalizeProject,
+            ),
           ),
           withTx<DiagramFile[]>(
             [STORE_DIAGRAMS],
@@ -346,8 +735,14 @@ export function createIndexedDbRepository(
             async (stores) =>
               (await stores[STORE_DIAGRAMS].getAll()) as DiagramFile[],
           ),
+          withTx<NoteFile[]>(
+            [STORE_NOTES],
+            "readonly",
+            async (stores) =>
+              (await stores[STORE_NOTES].getAll()) as NoteFile[],
+          ),
         ]);
-        return ok({ projects, diagrams });
+        return ok({ projects, diagrams, notes });
       } catch (error) {
         return err(toRepoError(error));
       }

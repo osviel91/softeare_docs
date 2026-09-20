@@ -15,28 +15,69 @@ describe("lexer", () => {
     });
   });
 
-  it("distinguishes sync and response arrows", () => {
-    const content = (tokens: { type: TokenType }[]) =>
-      tokens.filter((t) => t.type !== TokenType.Eol).map((t) => t.type);
+  it("tokenizes every arrow form as a single arrow token", () => {
+    const arrow = (source: string): string | undefined =>
+      lex(source).tokens.find((t) => t.type === TokenType.Arrow)?.value;
 
-    expect(content(lex("User -> API").tokens)).toEqual([
-      TokenType.Identifier,
-      TokenType.SyncArrow,
-      TokenType.Identifier,
-    ]);
-
-    expect(content(lex("API --> User").tokens)).toEqual([
-      TokenType.Identifier,
-      TokenType.ResponseArrow,
-      TokenType.Identifier,
-    ]);
+    expect(arrow("A -> B")).toBe("->");
+    expect(arrow("A --> B")).toBe("-->");
+    expect(arrow("A ->> B")).toBe("->>");
+    expect(arrow("A -->> B")).toBe("-->>");
+    expect(arrow("A -x B")).toBe("-x");
+    expect(arrow("A --x B")).toBe("--x");
+    expect(arrow("A -) B")).toBe("-)");
+    expect(arrow("A --) B")).toBe("--)");
+    expect(arrow("A <<->> B")).toBe("<<->>");
+    expect(arrow("A <<-->> B")).toBe("<<-->>");
   });
 
   it("does not confuse '-->' with '-' then '->'", () => {
     const tokens = lex("A --> B").tokens;
-    const arrow = tokens.find((t) => t.type === TokenType.ResponseArrow);
-    expect(arrow?.value).toBe("-->");
-    expect(tokens.some((t) => t.type === TokenType.SyncArrow)).toBe(false);
+    const arrows = tokens.filter((t) => t.type === TokenType.Arrow);
+    expect(arrows).toHaveLength(1);
+    expect(arrows[0]?.value).toBe("-->");
+  });
+
+  it("tokenizes an inline activation suffix as plus or minus", () => {
+    const types = (source: string) =>
+      lex(source)
+        .tokens.filter((t) => t.type !== TokenType.Eol)
+        .map((t) => t.type);
+    expect(types("A ->>+ B")).toEqual([
+      TokenType.Identifier,
+      TokenType.Arrow,
+      TokenType.Plus,
+      TokenType.Identifier,
+    ]);
+    expect(types("A -->>- B")).toEqual([
+      TokenType.Identifier,
+      TokenType.Arrow,
+      TokenType.Minus,
+      TokenType.Identifier,
+    ]);
+  });
+
+  it("recognizes fragment keywords", () => {
+    const kinds = (word: string): TokenType => lex(`${word} x`).tokens[0]!.type;
+    expect(kinds("loop")).toBe(TokenType.Loop);
+    expect(kinds("alt")).toBe(TokenType.Alt);
+    expect(kinds("else")).toBe(TokenType.Else);
+    expect(kinds("opt")).toBe(TokenType.Opt);
+    expect(kinds("par")).toBe(TokenType.Par);
+    expect(kinds("and")).toBe(TokenType.And);
+    expect(kinds("critical")).toBe(TokenType.Critical);
+    expect(kinds("option")).toBe(TokenType.Option);
+    expect(kinds("break")).toBe(TokenType.Break);
+    expect(kinds("end")).toBe(TokenType.End);
+    expect(kinds("actor")).toBe(TokenType.Actor);
+  });
+
+  it("keeps a comment out of the raw line text the Eol token carries", () => {
+    const tokens = lex("A -> B: hi // ignored").tokens;
+    const eol = tokens[tokens.length - 1]!;
+    // The raw line is preserved, but the parser's reader stops before `//`.
+    expect(eol.type).toBe(TokenType.Eol);
+    expect(eol.start.column).toBe("A -> B: hi ".length);
   });
 
   it("tokenizes a colon-separated label", () => {
@@ -135,6 +176,30 @@ describe("lexer", () => {
       TokenType.Colon,
       TokenType.Identifier,
     ]);
+  });
+
+  it("tokenizes a message number as one number token", () => {
+    const tokens = lex("note on 12 : detail").tokens;
+    const types = tokens
+      .filter((t) => t.type !== TokenType.Eol)
+      .map((t) => t.type);
+    expect(types).toEqual([
+      TokenType.Note,
+      TokenType.Identifier,
+      TokenType.Number,
+      TokenType.Colon,
+      TokenType.Identifier,
+    ]);
+    expect(tokens.find((t) => t.type === TokenType.Number)?.value).toBe("12");
+  });
+
+  it("keeps digits inside an identifier part of that identifier", () => {
+    const tokens = lex("participant api2").tokens;
+    expect(tokens.some((t) => t.type === TokenType.Number)).toBe(false);
+    expect(tokens[1]).toMatchObject({
+      type: TokenType.Identifier,
+      value: "api2",
+    });
   });
 });
 

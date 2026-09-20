@@ -32,10 +32,21 @@ describe("DslReference", () => {
     const keywordTokens: Partial<Record<string, TokenType>> = {
       title: TokenType.Title,
       participant: TokenType.Participant,
+      actor: TokenType.Actor,
       alias: TokenType.Alias,
       note: TokenType.Note,
       activate: TokenType.Activate,
       deactivate: TokenType.Deactivate,
+      loop: TokenType.Loop,
+      alt: TokenType.Alt,
+      else: TokenType.Else,
+      opt: TokenType.Opt,
+      par: TokenType.Par,
+      and: TokenType.And,
+      critical: TokenType.Critical,
+      option: TokenType.Option,
+      break: TokenType.Break,
+      end: TokenType.End,
     };
 
     for (const construct of DSL_CONSTRUCTS) {

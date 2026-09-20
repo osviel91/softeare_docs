@@ -1,4 +1,10 @@
 import { describe, expect, it } from "vitest";
+import {
+  PROJECT_METADATA_FORMAT,
+  PROJECT_METADATA_VERSION,
+  createEmptyMetadata,
+  type ProjectMetadata,
+} from "../../src/domain/workspace/metadata";
 import type { DiagramFile } from "../../src/domain/workspace/types";
 import { isOk } from "../../src/shared/result/result";
 import type {
@@ -327,6 +333,38 @@ describe("File System workspace repository", () => {
     }
   });
 
+  it("creates uniquely named empty diagrams", async () => {
+    const first = await repo.createEmptyDiagram("onboarding");
+    const second = await repo.createEmptyDiagram("onboarding");
+    if (!isOk(first) || !isOk(second)) throw new Error("create failed");
+    expect(first.value.name).toBe("Untitled");
+    expect(second.value.name).toBe("Untitled 2");
+    expect(second.value.id).toBe("onboarding/Untitled 2");
+  });
+
+  it("duplicates a diagram under a free copy name, keeping its source", async () => {
+    const copy = await repo.duplicateDiagramFile(
+      "onboarding",
+      "onboarding/welcome.seq",
+    );
+    if (!isOk(copy)) throw copy.error;
+    expect(copy.value.name).toBe("welcome copy.seq");
+    expect(copy.value.id).toBe("onboarding/welcome copy.seq");
+    expect(copy.value.source).toContain("title Welcome");
+
+    // The original is untouched and the copy exists on disk.
+    const dir = root.children.get("onboarding") as unknown as FakeDirectory;
+    expect(dir.children.has("welcome.seq")).toBe(true);
+    expect(dir.children.has("welcome copy.seq")).toBe(true);
+
+    const again = await repo.duplicateDiagramFile(
+      "onboarding",
+      "onboarding/welcome.seq",
+    );
+    if (!isOk(again)) throw again.error;
+    expect(again.value.name).toBe("welcome copy 2.seq");
+  });
+
   it("captures the whole workspace as a snapshot", async () => {
     const snapshot = await repo.listAll();
     expect(isOk(snapshot)).toBe(true);
@@ -345,5 +383,309 @@ describe("File System workspace repository", () => {
     if (isOk(result)) {
       expect(result.value).toBeNull();
     }
+  });
+});
+
+describe("File System workspace repository — notes", () => {
+  let repo: WorkspaceRepository;
+  let root: FakeDirectory;
+
+  beforeEach(() => {
+    root = buildTree("Workspace", {
+      "onboarding/welcome.seq": "title Welcome\nA -> B: hi",
+      "onboarding/readme.md": "# Onboarding\n\nStart with [[Welcome]].",
+    });
+    repo = createFileSystemWorkspaceRepository(
+      root as unknown as FsDirectoryHandle,
+    );
+  });
+
+  /** The Onboarding directory inside the fake tree. */
+  function onboarding(): FakeDirectory {
+    return root.children.get("onboarding") as unknown as FakeDirectory;
+  }
+
+  it("treats markdown files as notes, not diagrams", async () => {
+    const diagrams = await repo.listDiagramFiles("onboarding");
+    if (!isOk(diagrams)) throw diagrams.error;
+    expect(diagrams.value.map((entry) => entry.name)).toEqual(["welcome.seq"]);
+
+    const notes = await repo.listNoteFiles("onboarding");
+    if (!isOk(notes)) throw notes.error;
+    expect(notes.value.map((entry) => entry.name)).toEqual(["readme.md"]);
+    expect(notes.value[0].markdown).toContain("[[Welcome]]");
+    expect(notes.value[0].id).toBe("onboarding/readme.md");
+  });
+
+  it("reads one note by its path", async () => {
+    const note = await repo.getNoteFile("onboarding", "onboarding/readme.md");
+    if (!isOk(note)) throw note.error;
+    expect(note.value?.markdown).toContain("# Onboarding");
+  });
+
+  it("does not return a note that lives outside the project", async () => {
+    const note = await repo.getNoteFile("team", "onboarding/readme.md");
+    if (!isOk(note)) throw note.error;
+    expect(note.value).toBeNull();
+  });
+
+  it("writes a note and appends the markdown extension when missing", async () => {
+    const saved = await repo.saveNoteFile("onboarding", {
+      id: "",
+      name: "design",
+      markdown: "# Design\n",
+      projectId: "onboarding",
+    });
+    if (!isOk(saved)) throw saved.error;
+    expect(saved.value.name).toBe("design.md");
+    expect(saved.value.id).toBe("onboarding/design.md");
+    expect(onboarding().children.has("design.md")).toBe(true);
+
+    const reloaded = await repo.getNoteFile(
+      "onboarding",
+      "onboarding/design.md",
+    );
+    if (!isOk(reloaded)) throw reloaded.error;
+    expect(reloaded.value?.markdown).toBe("# Design\n");
+  });
+
+  it("creates uniquely named empty notes", async () => {
+    const first = await repo.createEmptyNote("onboarding");
+    const second = await repo.createEmptyNote("onboarding");
+    if (!isOk(first) || !isOk(second)) throw new Error("create failed");
+    expect(first.value.name).toBe("Untitled.md");
+    expect(second.value.name).toBe("Untitled 2.md");
+    expect(second.value.markdown).toBe("# Untitled\n");
+  });
+
+  it("duplicates a note under a free copy name, keeping its markdown", async () => {
+    const copy = await repo.duplicateNoteFile(
+      "onboarding",
+      "onboarding/readme.md",
+    );
+    if (!isOk(copy)) throw copy.error;
+    expect(copy.value.name).toBe("readme copy.md");
+    expect(copy.value.id).toBe("onboarding/readme copy.md");
+    expect(copy.value.markdown).toContain("# Onboarding");
+    expect(onboarding().children.has("readme copy.md")).toBe(true);
+
+    const again = await repo.duplicateNoteFile(
+      "onboarding",
+      "onboarding/readme.md",
+    );
+    if (!isOk(again)) throw again.error;
+    expect(again.value.name).toBe("readme copy 2.md");
+    expect(again.value.markdown).toContain("[[Welcome]]");
+  });
+
+  it("deletes a note file", async () => {
+    const deleted = await repo.deleteNoteFile(
+      "onboarding",
+      "onboarding/readme.md",
+    );
+    expect(isOk(deleted)).toBe(true);
+    expect(onboarding().children.has("readme.md")).toBe(false);
+  });
+
+  it("renames a note by moving its content to the new path", async () => {
+    const renamed = await repo.renameNoteFile(
+      "onboarding",
+      "onboarding/readme.md",
+      "guide",
+    );
+    if (!isOk(renamed)) throw renamed.error;
+    // The path *is* the id on disk, so the id changes with the name.
+    expect(renamed.value.id).toBe("onboarding/guide.md");
+    expect(renamed.value.name).toBe("guide.md");
+    expect(onboarding().children.has("readme.md")).toBe(false);
+    expect(onboarding().children.has("guide.md")).toBe(true);
+
+    const reloaded = await repo.getNoteFile(
+      "onboarding",
+      "onboarding/guide.md",
+    );
+    if (!isOk(reloaded)) throw reloaded.error;
+    expect(reloaded.value?.markdown).toContain("[[Welcome]]");
+  });
+
+  it("refuses a note rename onto an existing file", async () => {
+    await repo.saveNoteFile("onboarding", {
+      id: "",
+      name: "guide.md",
+      markdown: "# Guide\n",
+      projectId: "onboarding",
+    });
+
+    const renamed = await repo.renameNoteFile(
+      "onboarding",
+      "onboarding/readme.md",
+      "guide",
+    );
+    expect(isOk(renamed)).toBe(false);
+    // The original survives a refused rename.
+    expect(onboarding().children.has("readme.md")).toBe(true);
+  });
+
+  it("renames a diagram by moving its content to the new path", async () => {
+    const renamed = await repo.renameDiagramFile(
+      "onboarding",
+      "onboarding/welcome.seq",
+      "start.seq",
+    );
+    if (!isOk(renamed)) throw renamed.error;
+    expect(renamed.value.id).toBe("onboarding/start.seq");
+    expect(onboarding().children.has("welcome.seq")).toBe(false);
+
+    const reloaded = await repo.getDiagramFile(
+      "onboarding",
+      "onboarding/start.seq",
+    );
+    if (!isOk(reloaded)) throw reloaded.error;
+    expect(reloaded.value?.source).toBe("title Welcome\nA -> B: hi");
+  });
+
+  it("refuses a diagram rename onto an existing file", async () => {
+    const renamed = await repo.renameDiagramFile(
+      "onboarding",
+      "onboarding/welcome.seq",
+      "readme.md",
+    );
+    expect(isOk(renamed)).toBe(false);
+  });
+
+  it("renaming a diagram to the same name is a no-op", async () => {
+    const renamed = await repo.renameDiagramFile(
+      "onboarding",
+      "onboarding/welcome.seq",
+      "welcome.seq",
+    );
+    if (!isOk(renamed)) throw renamed.error;
+    expect(renamed.value.id).toBe("onboarding/welcome.seq");
+  });
+
+  it("includes notes in the workspace snapshot", async () => {
+    const snapshot = await repo.listAll();
+    if (!isOk(snapshot)) throw snapshot.error;
+    expect(snapshot.value.notes?.map((entry) => entry.id)).toEqual([
+      "onboarding/readme.md",
+    ]);
+  });
+});
+
+describe("File System workspace repository — project metadata", () => {
+  let repo: WorkspaceRepository;
+  let root: FakeDirectory;
+
+  beforeEach(() => {
+    root = buildTree("Workspace", {
+      "onboarding/welcome.seq": "title Welcome\nA -> B: hi",
+    });
+    repo = createFileSystemWorkspaceRepository(
+      root as unknown as FsDirectoryHandle,
+    );
+  });
+
+  /** The Onboarding directory inside the fake tree. */
+  function onboarding(): FakeDirectory {
+    return root.children.get("onboarding") as unknown as FakeDirectory;
+  }
+
+  /** A minimal, well-formed metadata document with one recorded diagram. */
+  function sampleMetadata(): ProjectMetadata {
+    return {
+      format: PROJECT_METADATA_FORMAT,
+      version: PROJECT_METADATA_VERSION,
+      resources: [
+        {
+          id: "diagram-welcome",
+          path: "welcome.seq",
+          type: "sequence-diagram",
+          title: "Welcome",
+        },
+      ],
+    };
+  }
+
+  it("round-trips metadata through project.json", async () => {
+    const metadata = sampleMetadata();
+    const written = await repo.writeProjectMetadata("onboarding", metadata);
+    expect(isOk(written)).toBe(true);
+
+    // The sidecar is materialized on disk beside the project's files.
+    expect(onboarding().children.has("project.json")).toBe(true);
+
+    const read = await repo.readProjectMetadata("onboarding");
+    expect(isOk(read)).toBe(true);
+    if (isOk(read)) {
+      expect(read.value).toEqual(metadata);
+    }
+  });
+
+  it("creates a missing project directory when writing metadata", async () => {
+    const written = await repo.writeProjectMetadata(
+      "fresh",
+      createEmptyMetadata(),
+    );
+    expect(isOk(written)).toBe(true);
+
+    const listed = await repo.listProjects();
+    if (isOk(listed)) {
+      expect(listed.value.map((project) => project.id)).toContain("fresh");
+    }
+  });
+
+  it("reads null when a project has no metadata file", async () => {
+    const read = await repo.readProjectMetadata("onboarding");
+    expect(isOk(read)).toBe(true);
+    if (isOk(read)) {
+      expect(read.value).toBeNull();
+    }
+  });
+
+  it("reads null when the project directory is absent", async () => {
+    const read = await repo.readProjectMetadata("does-not-exist");
+    expect(isOk(read)).toBe(true);
+    if (isOk(read)) {
+      expect(read.value).toBeNull();
+    }
+  });
+
+  it("reads null for a metadata file that is not valid JSON", async () => {
+    onboarding().children.set(
+      "project.json",
+      new FakeFile("project.json", "{ this is not json"),
+    );
+
+    const read = await repo.readProjectMetadata("onboarding");
+    expect(isOk(read)).toBe(true);
+    if (isOk(read)) {
+      expect(read.value).toBeNull();
+    }
+  });
+
+  it("reads null for JSON that is not a project metadata document", async () => {
+    onboarding().children.set(
+      "project.json",
+      new FakeFile(
+        "project.json",
+        JSON.stringify({ format: "something-else" }),
+      ),
+    );
+
+    const read = await repo.readProjectMetadata("onboarding");
+    expect(isOk(read)).toBe(true);
+    if (isOk(read)) {
+      expect(read.value).toBeNull();
+    }
+  });
+
+  it("never lists project.json as a diagram, but lists a real diagram beside it", async () => {
+    await repo.writeProjectMetadata("onboarding", sampleMetadata());
+
+    const listed = await repo.listDiagramFiles("onboarding");
+    if (!isOk(listed)) throw listed.error;
+    const names = listed.value.map((entry) => entry.name);
+    expect(names).not.toContain("project.json");
+    expect(names).toContain("welcome.seq");
   });
 });

@@ -20,16 +20,20 @@ export function useWorkspaceRepository(): WorkspaceRepository {
 /**
  * Build the default workspace repository.
  *
- * Attempts IndexedDB first; if the global is unavailable, falls back to an
- * in-memory repository so the app still works (non-persistently).
+ * Uses IndexedDB when the global exists, and falls back to an in-memory
+ * repository otherwise (jsdom, or a browser with storage disabled) so the app
+ * still renders. The availability check comes first because constructing the
+ * IndexedDB repository never throws — only opening the database does — so a
+ * `try`/`catch` around construction alone would silently pick a repository that
+ * fails on every operation.
  */
 export function createDefaultRepository(): WorkspaceRepository {
+  if (typeof indexedDB === "undefined") {
+    return createInMemoryWorkspaceRepository();
+  }
   try {
     return createIndexedDbRepository();
-  } catch (error) {
-    if (typeof indexedDB === "undefined") {
-      return createInMemoryWorkspaceRepository();
-    }
-    throw error;
+  } catch {
+    return createInMemoryWorkspaceRepository();
   }
 }

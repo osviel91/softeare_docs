@@ -9,15 +9,35 @@ function mockContext(
 ) {
   const createEmptyDiagram =
     overrides.createEmptyDiagram ?? vi.fn(async () => null);
+  const createEmptyNote = overrides.createEmptyNote ?? vi.fn(async () => null);
   const openDiagram = overrides.openDiagram ?? vi.fn();
   const closeActiveTab = overrides.closeActiveTab ?? vi.fn();
+  const openSearch = overrides.openSearch ?? vi.fn();
+  const openQuickOpen = overrides.openQuickOpen ?? vi.fn();
+  const showView = overrides.showView ?? vi.fn();
+  const findReferences = overrides.findReferences ?? vi.fn();
+  const renameSymbol = overrides.renameSymbol ?? vi.fn();
+  const exportDiagram = overrides.exportDiagram ?? vi.fn();
+  const exportSite = overrides.exportSite ?? vi.fn();
+  const exportProject = overrides.exportProject ?? vi.fn();
+  const importProject = overrides.importProject ?? vi.fn();
   const openFolder = overrides.openFolder ?? vi.fn();
 
   const context = {
     createEmptyDiagram,
+    createEmptyNote,
     selectedProjectId: null,
     openDiagram,
     closeActiveTab,
+    openSearch,
+    openQuickOpen,
+    showView,
+    findReferences,
+    renameSymbol,
+    exportDiagram,
+    exportSite,
+    exportProject,
+    importProject,
     openFolder,
     folderOpen: false,
     folderSupported: true,
@@ -27,8 +47,16 @@ function mockContext(
   return {
     context,
     createEmptyDiagram,
+    createEmptyNote,
     openDiagram,
     closeActiveTab,
+    openSearch,
+    openQuickOpen,
+    showView,
+    findReferences,
+    renameSymbol,
+    exportProject,
+    importProject,
     openFolder,
   };
 }
@@ -118,5 +146,17 @@ describe("useCommands", () => {
     const { result } = renderHook(() => useCommands(context));
     await result.current.run("close-tab");
     expect(closeActiveTab).toHaveBeenCalledTimes(1);
+  });
+
+  it("offers Search Project and runs it through the provided callback", async () => {
+    const openSearch = vi.fn();
+    const { context } = mockContext({ openSearch });
+    const { result } = renderHook(() => useCommands(context));
+
+    expect(result.current.commands.map((c) => c.id)).toContain(
+      "search-project",
+    );
+    await result.current.run("search-project");
+    expect(openSearch).toHaveBeenCalledTimes(1);
   });
 });

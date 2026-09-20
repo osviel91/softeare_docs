@@ -200,6 +200,85 @@ describe("layoutDiagram — message rows and canvas size", () => {
   });
 });
 
+describe("layoutDiagram — alias resolution", () => {
+  /**
+   * An alias is a second name for a declared participant. The validator accepts
+   * it anywhere a participant id is allowed, so layout must resolve it to the
+   * same lifeline; otherwise the arrow tail falls back to the margin and the
+   * message renders detached from every participant.
+   */
+  const ALIASED: SequenceDiagram = diagram({
+    participants: [
+      {
+        type: "participant",
+        id: "User",
+        label: "User",
+        range: { start: { line: 0, column: 0 }, end: { line: 0, column: 12 } },
+      },
+      {
+        type: "participant",
+        id: "API",
+        label: "API",
+        range: { start: { line: 1, column: 0 }, end: { line: 1, column: 11 } },
+      },
+    ],
+    aliases: [
+      {
+        type: "alias",
+        alias: "U",
+        target: "User",
+        range: { start: { line: 2, column: 0 }, end: { line: 2, column: 9 } },
+      },
+    ],
+    statements: [
+      {
+        type: "message",
+        kind: "sync",
+        from: "U",
+        to: "API",
+        label: "Login",
+        range: { start: { line: 3, column: 0 }, end: { line: 3, column: 9 } },
+      },
+    ],
+  });
+
+  it("attaches an aliased sender's arrow to the target lifeline", () => {
+    const layout = layoutDiagram(ALIASED);
+    const user = layout.participants.find((p) => p.id === "User")!;
+    const api = layout.participants.find((p) => p.id === "API")!;
+    expect(layout.messages[0].startX).toBe(user.x);
+    expect(layout.messages[0].endX).toBe(api.x);
+  });
+
+  it("never falls back to the margin for a resolvable alias", () => {
+    const layout = layoutDiagram(ALIASED);
+    expect(layout.messages[0].startX).not.toBe(MARGIN_X);
+  });
+
+  it("skips an alias whose target was never declared", () => {
+    // The validator reports this; layout must stay total and not throw.
+    const broken = diagram({
+      participants: [
+        {
+          type: "participant",
+          id: "A",
+          label: "A",
+          range: { start: { line: 0, column: 0 }, end: { line: 0, column: 3 } },
+        },
+      ],
+      aliases: [
+        {
+          type: "alias",
+          alias: "X",
+          target: "Missing",
+          range: { start: { line: 1, column: 0 }, end: { line: 1, column: 5 } },
+        },
+      ],
+    });
+    expect(() => layoutDiagram(broken)).not.toThrow();
+  });
+});
+
 /** Build a note node anchored to a participant (or diagram-wide when omitted). */
 function note(
   placement: NoteNode["placement"],

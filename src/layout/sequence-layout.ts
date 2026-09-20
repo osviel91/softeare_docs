@@ -154,6 +154,16 @@ export function layoutDiagram(diagram: SequenceDiagram): DiagramLayout {
     byId.set(p.id, index);
   });
 
+  // Aliases are resolved here too: the validator accepts a shorthand anywhere a
+  // participant id is allowed, so layout must map the shorthand to the same
+  // lifeline. Without this the lookup misses and the arrow is drawn detached at
+  // the left margin. An alias whose target was never declared is a semantic
+  // error reported by the validator; skip it here.
+  for (const alias of diagram.aliases) {
+    const targetIndex = byId.get(alias.target);
+    if (targetIndex !== undefined) byId.set(alias.alias, targetIndex);
+  }
+
   const n = diagram.participants.length;
   const participants: ParticipantLayout[] = diagram.participants.map(
     (p, index) => ({

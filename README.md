@@ -278,11 +278,11 @@ change is: merge to `master`, let the workflow finish, then **Update the stack**
 in Portainer. There is no backend, database, or volume to migrate — the app is a
 static bundle and all state lives in the browser.
 
-A package published to GHCR is private by default, so the first pull needs
-either the package made public (GitHub → the package → _Package settings_ →
-_Change visibility_) or a Portainer registry entry (**Registries → Add registry
-→ Custom**: `ghcr.io`, your GitHub username, and a PAT carrying
-`read:packages`).
+The package is public for this repository, so a stack pulls it with no
+credentials configured. Should it ever be switched to private — or a fork
+publish its own — give Portainer a registry entry first (**Registries → Add
+registry → Custom**: `ghcr.io`, your GitHub username, and a PAT carrying
+`read:packages`), otherwise the deploy fails to pull the image.
 
 To try a change before pushing it, `docker-compose.yml` builds the same image
 from the working tree: `docker compose up --build -d`, then

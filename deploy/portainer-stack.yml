@@ -38,8 +38,7 @@ services:
         max-size: "10m"
         max-file: "3"
 
-    # The image is private by default when GHCR first publishes it. Either make
-    # the package public (GitHub -> Packages -> the package -> Package settings
-    # -> Change visibility -> Public) or register credentials in Portainer
-    # (Registries -> Add registry -> Custom: ghcr.io, your GitHub username, and a
-    # PAT with `read:packages`). Nothing else needs configuring to pull.
+    # The package is public for this repository, so no credentials are needed to
+    # pull it. Should it ever go private (or a fork publish its own), register
+    # them in Portainer first — Registries -> Add registry -> Custom, with
+    # ghcr.io, your GitHub username, and a PAT carrying `read:packages`.

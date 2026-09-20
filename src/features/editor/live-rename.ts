@@ -1,25 +1,28 @@
 /**
- * Live rename: renaming a participant declaration rewrites its usages as you type.
+ * Live rename: renaming a declaration rewrites its usages as you type.
  *
- * A diagram collapses the moment a `participant` line and its messages disagree,
- * so retyping a lifeline's name at the top would blank the preview until every
- * message was fixed by hand. This module propagates the edit instead: when the
+ * A document collapses the moment a declaration and its references disagree — a
+ * lifeline renamed without its messages, an event renamed without the edges that
+ * carry it — so retyping a name at the top would blank the preview until every
+ * reference was fixed by hand. This module propagates the edit instead: when the
  * change lands inside a declaration's identifier, every usage of the old name is
  * rewritten to the new one.
  *
+ * It is language-agnostic: it works on the mentions either language's collector
+ * produces, and only cares that a declaration is marked `context: "declaration"`.
  * It is deliberately conservative and span-based, never a text search:
  *
  * - only a declaration's own identifier triggers it;
  * - only usages the analyser identified, and only in this document, change;
- * - a rename that would merge two lifelines (the new name is already taken) is
- *   refused, so the user resolves the clash rather than losing a lifeline;
+ * - a rename that would merge two declarations (the new name is already taken)
+ *   is refused, so the user resolves the clash rather than losing one;
  * - an edit that runs through a usage leaves that usage alone rather than
  *   guessing.
  *
  * The caller keeps ownership of the buffer: this returns the new text and the
  * caret offset that goes with it, and applies nothing itself.
  */
-import type { ParticipantMention } from "../../domain/diagram/participant-mentions";
+import type { SourceMention } from "../../domain/source-mention";
 import { rangeToOffsets } from "../../language/source-position";
 
 export interface LiveRenameRequest {
@@ -30,7 +33,7 @@ export interface LiveRenameRequest {
   /** The caret offset within `next`. */
   caret: number;
   /** Mentions located in `previous`, from the last parse. */
-  mentions: readonly ParticipantMention[];
+  mentions: readonly SourceMention[];
 }
 
 export interface LiveRenameResult {

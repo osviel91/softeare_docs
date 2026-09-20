@@ -21,13 +21,13 @@ import { useEditorReveal } from "./use-reveal";
 import { positionToOffset } from "../../language/source-position";
 import type { CompletionItem } from "../../domain/project/completion";
 import type { HoverInfo } from "../../domain/project/hover";
-import type { ParticipantMention } from "../../domain/diagram/participant-mentions";
+import type { SourceMention } from "../../domain/source-mention";
 import { SEQUENCE_SNIPPETS, type EditorSnippet } from "./snippets";
-import { participantSegments } from "./participant-highlight";
+import { highlightSegments } from "./highlight";
 import { applyLiveRename } from "./live-rename";
 
 /** A shared empty list, so a missing prop does not churn memo dependencies. */
-const NO_MENTIONS: readonly ParticipantMention[] = [];
+const NO_MENTIONS: readonly SourceMention[] = [];
 
 /**
  * What the editor needs to *show* about a problem.
@@ -81,12 +81,14 @@ export interface EditorProps {
    */
   lineBadges?: ReadonlyMap<number, number>;
   /**
-   * Every participant mention in `value`, with its exact span. The editor bolds
-   * them in the highlight layer, and uses a declaration's span to rename that
-   * lifeline's usages live while its identifier is retyped. The shell computes
-   * these from the parse; the editor never reads the AST itself.
+   * Every name in `value` the shell could locate, with its exact span — a
+   * participant in a sequence diagram, an event/broker/channel/service in an
+   * event flow. The editor bolds them in the highlight layer, and uses a
+   * declaration's span to rename its usages live while its identifier is
+   * retyped. The shell computes these from the parse; the editor never reads the
+   * AST itself.
    */
-  participantMentions?: readonly ParticipantMention[];
+  mentions?: readonly SourceMention[];
 }
 
 export default function Editor({
@@ -99,7 +101,7 @@ export default function Editor({
   onCaretChange,
   snippets = SEQUENCE_SNIPPETS,
   lineBadges,
-  participantMentions,
+  mentions,
 }: EditorProps) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const gutterRef = useRef<HTMLDivElement | null>(null);
@@ -114,10 +116,10 @@ export default function Editor({
   useEditorReveal(textareaRef, reveal, value);
 
   const lineCount = useMemo(() => value.split("\n").length, [value]);
-  // The highlight layer's markup: the same text, with participant names marked.
+  // The highlight layer's markup: the same text, with the names marked.
   const segments = useMemo(
-    () => participantSegments(value, participantMentions ?? NO_MENTIONS),
-    [value, participantMentions],
+    () => highlightSegments(value, mentions ?? NO_MENTIONS),
+    [value, mentions],
   );
   // A diagram that numbers its messages reserves a badge column; a document
   // that numbers nothing keeps the plain, narrower gutter.
@@ -377,7 +379,7 @@ export default function Editor({
             aria-hidden="true"
           >
             {segments.map((segment, index) =>
-              segment.participant ? (
+              segment.highlighted ? (
                 <strong key={index}>{segment.text}</strong>
               ) : (
                 <span key={index}>{segment.text}</span>
@@ -402,7 +404,7 @@ export default function Editor({
                 previous: value,
                 next,
                 caret: event.target.selectionStart ?? next.length,
-                mentions: participantMentions ?? NO_MENTIONS,
+                mentions: mentions ?? NO_MENTIONS,
               });
               if (rename.renamed) pendingCaret.current = rename.caret;
               onChange(rename.source);

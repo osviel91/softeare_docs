@@ -1226,6 +1226,42 @@ async function runChecks(browser) {
     ).includes("1 event"),
   );
 
+  console.log("\nEvent-flow highlighting:");
+  const flowEditor = page.locator('[data-testid="dsl-textarea"]');
+  const boldEventNames = await page
+    .locator('[data-testid="editor-highlight"] strong')
+    .allTextContents();
+  check(
+    "event, broker, channel and service names are bolded",
+    ["OrderCreated", "orders", "OrderService", "BillingService"].every((name) =>
+      boldEventNames.includes(name),
+    ),
+    boldEventNames.join(", "),
+  );
+  check(
+    "event-flow highlight mirrors the source",
+    (await page.locator('[data-testid="editor-highlight"]').textContent()) ===
+      (await flowEditor.inputValue()),
+  );
+  // Retyping an event's name carries the edges that reference it, so the flow
+  // never collapses into "unknown event" mid-edit.
+  await flowEditor.evaluate((el) => {
+    el.focus();
+    const at =
+      el.value.indexOf("event OrderCreated") + "event OrderCreated".length;
+    el.setSelectionRange(at, at);
+  });
+  await page.keyboard.type("V2");
+  const renamedFlow = await flowEditor.inputValue();
+  check(
+    "renaming an event rewrites its edges",
+    renamedFlow.includes("OrderService publishes OrderCreatedV2 to orders") &&
+      renamedFlow.includes(
+        "BillingService consumes OrderCreatedV2 from orders",
+      ),
+    renamedFlow,
+  );
+
   console.log("\nEvent-driven diagnostics:");
   // A design mistake an event-driven review exists to catch.
   await page

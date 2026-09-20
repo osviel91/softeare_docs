@@ -1,28 +1,29 @@
 /**
- * Split DSL source into plain and participant-highlighted segments.
+ * Split DSL source into plain and name-highlighted segments.
  *
  * A `<textarea>` cannot style part of its own text, so the editor draws a
  * highlight layer behind it and makes the textarea's glyphs transparent. That
- * layer needs the source cut into pieces that are either ordinary text or a
- * participant/actor name; this module does exactly that, and nothing else, so it
- * can be tested without a browser.
+ * layer needs the source cut into pieces that are either ordinary text or a name
+ * worth bolding — a participant in a sequence diagram, an event, broker, channel
+ * or service in an event flow. This module does exactly that, and nothing else,
+ * so it can be tested without a browser.
  *
  * Overlapping mentions are merged rather than duplicated, and a mention outside
  * the text (a stale range) is dropped instead of throwing.
  */
-import type { ParticipantMention } from "../../domain/diagram/participant-mentions";
+import type { SourceMention } from "../../domain/source-mention";
 import { rangeToOffsets } from "../../language/source-position";
 
 /** One run of source text, highlighted or not. */
 export interface HighlightSegment {
   text: string;
-  participant: boolean;
+  highlighted: boolean;
 }
 
-/** Cut `source` into segments, marking every participant mention's span. */
-export function participantSegments(
+/** Cut `source` into segments, marking every mention's span. */
+export function highlightSegments(
   source: string,
-  mentions: readonly ParticipantMention[],
+  mentions: readonly SourceMention[],
 ): HighlightSegment[] {
   if (source === "") return [];
 
@@ -34,13 +35,13 @@ export function participantSegments(
     .sort((a, b) => a.start - b.start || a.end - b.end);
 
   const segments: HighlightSegment[] = [];
-  const push = (text: string, participant: boolean): void => {
+  const push = (text: string, highlighted: boolean): void => {
     if (text === "") return;
     const last = segments[segments.length - 1];
     // Merge abutting runs of the same kind, so a name split by an overlapping
     // mention is still one element.
-    if (last && last.participant === participant) last.text += text;
-    else segments.push({ text, participant });
+    if (last && last.highlighted === highlighted) last.text += text;
+    else segments.push({ text, highlighted });
   };
 
   let cursor = 0;

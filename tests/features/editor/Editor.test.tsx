@@ -549,13 +549,7 @@ describe("Editor — participant highlighting and live rename", () => {
     const [value, setValue] = useState(initial);
     const { ast } = analyze(value);
     const mentions = ast ? collectParticipantMentions(ast, value) : [];
-    return (
-      <Editor
-        value={value}
-        onChange={setValue}
-        participantMentions={mentions}
-      />
-    );
+    return <Editor value={value} onChange={setValue} mentions={mentions} />;
   }
 
   const boldNames = (): string[] =>

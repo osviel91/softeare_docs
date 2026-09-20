@@ -305,4 +305,44 @@ describe("App — event flows", () => {
       "1 message",
     );
   });
+
+  it("bolds event-flow names and follows a declaration rename", async () => {
+    render(<App />);
+    await createProject();
+    await newEventFlow();
+    fireEvent.change(screen.getByTestId("dsl-textarea"), {
+      target: { value: FLOW },
+    });
+
+    const textarea = screen.getByTestId("dsl-textarea") as HTMLTextAreaElement;
+    await waitFor(() => {
+      expect(textarea.value).toBe(FLOW);
+    });
+
+    const highlight = screen.getByTestId("editor-highlight");
+    const bolded = [...highlight.querySelectorAll("strong")].map(
+      (element) => element.textContent,
+    );
+    // Declarations and the edges that name them are all bold.
+    expect(bolded).toContain("OrderCreated");
+    expect(bolded).toContain("BillingService");
+    expect(bolded).toContain("orders");
+    expect(bolded).toContain("Kafka");
+
+    // Retyping the event's name carries the edges with it.
+    fireEvent.change(textarea, {
+      target: { value: FLOW.replace("event OrderCreated", "event OrderPaid") },
+    });
+
+    expect(textarea.value).toContain("event OrderPaid");
+    expect(textarea.value).toContain(
+      "OrderService publishes OrderPaid to orders",
+    );
+    expect(textarea.value).toContain(
+      "BillingService consumes OrderPaid from orders",
+    );
+    expect(textarea.value).not.toMatch(/\bOrderCreated\b/);
+    // The flow still renders rather than collapsing on an unknown event.
+    expect(screen.getByTestId("preview-svg")).toBeInTheDocument();
+  });
 });

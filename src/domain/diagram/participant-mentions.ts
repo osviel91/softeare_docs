@@ -15,8 +15,9 @@
  * which is where the DSL puts a label or a note body — so `Payment` never matches
  * inside `PaymentService` and prose in a label is never mistaken for an endpoint.
  */
-import type { SequenceDiagram, SourceRange } from "./ast";
+import type { SequenceDiagram } from "./ast";
 import { walkStatements } from "./ast";
+import type { SourceMention } from "../source-mention";
 
 /** Where a participant's name is written. */
 export type ParticipantMentionContext =
@@ -29,9 +30,7 @@ export type ParticipantUsageContext = Exclude<
 >;
 
 /** One occurrence of a participant's name, with the exact span it occupies. */
-export interface ParticipantMention {
-  name: string;
-  range: SourceRange;
+export interface ParticipantMention extends SourceMention {
   context: ParticipantMentionContext;
 }
 

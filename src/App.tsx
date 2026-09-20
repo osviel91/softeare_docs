@@ -25,6 +25,10 @@ import { useWorkspace } from "./features/explorer/use-workspace";
 import { useWorkspaceRepository } from "./features/explorer/workspace-factory";
 import { useTabs } from "./features/tabs/use-tabs";
 import { useDiagram } from "./features/preview/use-diagram";
+import { useCommandPalette } from "./features/commands/use-command-palette";
+import { useCommands } from "./features/commands/use-commands";
+import CommandPalette from "./features/commands/CommandPalette";
+import type { Command } from "./features/commands/command";
 import {
   openFileSystemRepository,
   supportsFileSystemAccess,
@@ -58,6 +62,7 @@ export default function App() {
   const activeRepo: WorkspaceRepository =
     openedFolder?.repository ?? defaultRepo;
 
+  const workspace = useWorkspace(activeRepo);
   const {
     projects,
     diagrams,
@@ -69,10 +74,13 @@ export default function App() {
     loadDiagram,
     createProject,
     deleteProject,
-  } = useWorkspace(activeRepo);
+  } = workspace;
 
   // Tabs own the editor source (and auto-save it), so the editor/preview derive
-  // from the active tab rather than from the workspace hook.
+  // from the active tab rather than from the workspace hook. The full hook is
+  // passed to the command registry, which needs openDiagram/closeTab too; the
+  // array is destructured for the TabBar.
+  const tabsHook = useTabs(activeRepo, selectedDiagram);
   const {
     tabs,
     activeTabId,
@@ -80,14 +88,45 @@ export default function App() {
     activateTab,
     closeTab,
     updateActiveSource,
-  } = useTabs(activeRepo, selectedDiagram);
+  } = tabsHook;
 
   const { diagnostics } = useDiagram(source);
+
+  // Command palette: open state/shortcut, and the registry built from current
+  // workspace + tab state. `runCommand` runs the selected command through the
+  // registry (single choke point) and dismisses the palette.
+  const { isOpen, open, close } = useCommandPalette();
+  const registry = useCommands({
+    createEmptyDiagram: workspace.createEmptyDiagram,
+    selectedProjectId,
+    openDiagram: tabsHook.openDiagram,
+    closeActiveTab: tabsHook.closeActiveTab,
+    openFolder,
+    folderOpen: openedFolder !== null,
+    folderSupported: supportsFileSystemAccess(),
+  });
+
+  const runCommand = useCallback(
+    (command: Command) => {
+      registry.run(command.id);
+      close();
+    },
+    [registry, close],
+  );
 
   return (
     <div className="app" data-testid="app-shell">
       <header className="app__toolbar">
         <span className="app__brand">{PRODUCT_NAME}</span>
+        <button
+          type="button"
+          className="app__command-button"
+          data-testid="command-palette-button"
+          aria-label="Open command palette"
+          onClick={open}
+        >
+          Commands…
+        </button>
       </header>
       <main className="app__workspace">
         <section
@@ -142,6 +181,14 @@ export default function App() {
       <footer className="app__statusbar">
         <span>{PRODUCT_NAME}</span>
       </footer>
+
+      {isOpen && (
+        <CommandPalette
+          registry={registry}
+          onRun={runCommand}
+          onClose={close}
+        />
+      )}
     </div>
   );
 }

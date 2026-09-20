@@ -59,6 +59,14 @@ export interface WorkspaceRepository {
     diagram: DiagramFile,
   ): Promise<Result<DiagramFile, Error>>;
 
+  /**
+   * Create an empty diagram (fresh id, empty source) inside a project and return
+   * the stored copy. The new file is appended to the project's datasetIds so it
+   * shows up in the explorer immediately. Returns an error when the project does
+   * not exist, since there is nowhere to place the diagram.
+   */
+  createEmptyDiagram(projectId: ProjectId): Promise<Result<DiagramFile, Error>>;
+
   /** Remove a diagram file from a project. */
   deleteDiagramFile(
     projectId: ProjectId,

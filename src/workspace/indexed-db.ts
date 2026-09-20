@@ -18,7 +18,7 @@ import type {
   Project,
   WorkspaceSnapshot,
 } from "../domain/workspace/types";
-import { newProjectId } from "../domain/workspace/workspace-ids";
+import { newDiagramFileId, newProjectId } from "../domain/workspace/workspace-ids";
 import { err, ok, type Result } from "../shared/result/result";
 import type { IdbDatabase, IdbFactory, IdbObjectStore } from "./idb-adapter";
 import { openToResult, requestToResult, txDone } from "./idb-promises";
@@ -269,6 +269,36 @@ export function createIndexedDbRepository(
           },
         );
         return ok(stored);
+      } catch (error) {
+        return err(toRepoError(error));
+      }
+    },
+
+    async createEmptyDiagram(
+      projectId,
+    ): Promise<Result<DiagramFile, Error>> {
+      try {
+        // Create the file inside a transaction that also links it to the
+        // project, so the append and the write commit together (all or nothing).
+        const diagram: DiagramFile = {
+          id: newDiagramFileId(),
+          name: "Untitled",
+          source: "",
+          projectId,
+        };
+        await withTx<void>(
+          [STORE_PROJECTS, STORE_DIAGRAMS],
+          "readwrite",
+          async (stores) => {
+            const project = (await stores[STORE_PROJECTS].get(projectId)) as
+              Project | undefined;
+            if (!project) throw new Error(`Unknown project: ${projectId}`);
+            await stores[STORE_DIAGRAMS].put(diagram);
+            project.datasetIds = [...project.datasetIds, diagram.id];
+            await stores[STORE_PROJECTS].put(project);
+          },
+        );
+        return ok(diagram);
       } catch (error) {
         return err(toRepoError(error));
       }

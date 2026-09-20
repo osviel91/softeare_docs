@@ -278,6 +278,37 @@ describe("IndexedDB workspace repository", () => {
     }
   });
 
+  it("creates an empty diagram in a project with a fresh id", async () => {
+    const created = await repo.createProject("Onboarding");
+    if (!isOk(created)) throw created.error;
+    const projectId = created.value.id;
+
+    const result = await repo.createEmptyDiagram(projectId);
+    expect(isOk(result)).toBe(true);
+    let createdId: string | undefined;
+    if (isOk(result)) {
+      expect(result.value.name).toBe("Untitled");
+      expect(result.value.source).toBe("");
+      expect(result.value.projectId).toBe(projectId);
+      expect(result.value.id.startsWith("diag-")).toBe(true);
+      createdId = result.value.id;
+    }
+
+    const listed = await repo.listDiagramFiles(projectId);
+    if (isOk(listed)) {
+      expect(listed.value).toHaveLength(1);
+      expect(listed.value[0].id).toBe(createdId);
+    }
+  });
+
+  it("returns an error for an unknown project", async () => {
+    const result = await repo.createEmptyDiagram("does-not-exist");
+    expect(isOk(result)).toBe(false);
+    if (!isOk(result)) {
+      expect(result.error.message).toContain("does-not-exist");
+    }
+  });
+
   it("captures the whole workspace as a snapshot", async () => {
     const created = await repo.createProject("Onboarding");
     if (!isOk(created)) throw created.error;

@@ -303,6 +303,27 @@ describe("File System workspace repository", () => {
     }
   });
 
+  it("creates an empty diagram file named Untitled in a project", async () => {
+    const result = await repo.createEmptyDiagram("onboarding");
+    expect(isOk(result)).toBe(true);
+    if (isOk(result)) {
+      expect(result.value.name).toBe("Untitled");
+      expect(result.value.source).toBe("");
+      expect(result.value.id).toBe("onboarding/Untitled");
+    }
+
+    // The file is materialized on disk and readable back.
+    const loaded = await repo.getDiagramFile("onboarding", "onboarding/Untitled");
+    if (isOk(loaded)) {
+      expect(loaded.value?.source).toBe("");
+    }
+
+    const listed = await repo.listDiagramFiles("onboarding");
+    if (isOk(listed)) {
+      expect(listed.value.map((d) => d.name)).toContain("Untitled");
+    }
+  });
+
   it("captures the whole workspace as a snapshot", async () => {
     const snapshot = await repo.listAll();
     expect(isOk(snapshot)).toBe(true);

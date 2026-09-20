@@ -282,6 +282,30 @@ export function createFileSystemWorkspaceRepository(
     }
   }
 
+  /**
+   * Create an empty diagram on disk inside a project directory. The new file is
+   * named "Untitled" and written with an empty source; it reuses {@link
+   * saveDiagramFile} so the file is materialized on disk in one step.
+   */
+  async function createEmptyDiagram(
+    projectId: string,
+  ): Promise<Result<DiagramFile, Error>> {
+    try {
+      const dirPath = normalize(projectId);
+      if (dirPath === "")
+        return err(new Error("Diagram must belong to a project"));
+      const diagram: DiagramFile = {
+        id: joinRel(dirPath, "Untitled"),
+        name: "Untitled",
+        source: "",
+        projectId: dirPath,
+      };
+      return await saveDiagramFile(dirPath, diagram);
+    } catch (error) {
+      return err(toRepoError(error));
+    }
+  }
+
   /** Remove a single diagram file from a project. */
   async function deleteDiagramFile(
     projectId: string,
@@ -325,6 +349,7 @@ export function createFileSystemWorkspaceRepository(
     listDiagramFiles,
     getDiagramFile,
     saveDiagramFile,
+    createEmptyDiagram,
     deleteDiagramFile,
     listAll,
   };

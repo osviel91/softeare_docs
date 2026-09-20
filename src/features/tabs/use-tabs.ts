@@ -35,10 +35,17 @@ export interface TabsHook {
   /** The editor/preview source. First-class so editing works before any tab is
    * open; each open tab's buffer mirrors it so switching preserves edits. */
   source: string;
+  /**
+   * Open (or activate) a tab for a diagram and show its source. Called by the
+   * "New diagram" command, which creates a file before it exists in any tab.
+   */
+  openDiagram(diagram: DiagramFile): void;
   /** Activate a tab without loading its project; called by the tab bar. */
   activateTab(diagramId: string): void;
   /** Close a tab; called by a tab's close button. */
   closeTab(diagramId: string): void;
+  /** Close the active tab (no-op when none is open). */
+  closeActiveTab: () => void;
   /** Called by the editor with new source for the active tab (auto-saves). */
   updateActiveSource(source: string): void;
 }
@@ -95,6 +102,22 @@ export function useTabs(
     setTabSet((current) => closeTabInSet(current, diagramId));
   }, []);
 
+  // Close the active tab. Guarded on `activeTabId` so it is a no-op when no tab
+  // is open; `closeTab` is stable, so this method is too.
+  const closeActiveTab = useCallback(() => {
+    if (activeTabId) closeTab(activeTabId);
+  }, [activeTabId, closeTab]);
+
+  // Open (or activate) a tab for a diagram and mirror its source into the
+  // editor. Idempotent: opening an already-open tab just activates it, so the
+  // "New diagram" command can call this unconditionally. Marking the buffer as
+  // saved avoids a redundant write on the first auto-save pass.
+  const openDiagram = useCallback((diagram: DiagramFile) => {
+    setTabSet((current) => openTabInSet(current, diagram));
+    setSource(diagram.source);
+    savedSourceRef.current = diagram.source;
+  }, []);
+
   const updateActiveSource = useCallback((nextSource: string) => {
     setSource(nextSource);
     setTabSet((current) =>
@@ -122,8 +145,10 @@ export function useTabs(
     tabs: tabSet.tabs,
     activeTabId,
     source,
+    openDiagram,
     activateTab,
     closeTab,
+    closeActiveTab,
     updateActiveSource,
   };
 }

@@ -54,6 +54,12 @@ export interface WorkspaceHook {
   createProject(name: string): Promise<void>;
   /** Delete a project (and its diagrams). Clears the editor. */
   deleteProject(id: string): Promise<void>;
+  /**
+   * Create an empty diagram in a project, add it to the explorer's list, select
+   * it, and return it (or `null` on failure). The "New diagram" command drives
+   * this, then opens the returned file into a tab.
+   */
+  createEmptyDiagram(projectId: string): Promise<DiagramFile | null>;
 }
 
 /** The mutable pieces of {@link WorkspaceHook}, passed as a single object. */
@@ -221,6 +227,31 @@ export function useWorkspace(repo: WorkspaceRepository): WorkspaceHook {
     [repo, selectedProjectId],
   );
 
+  const createEmptyDiagram = useCallback(
+    async (projectId: string): Promise<DiagramFile | null> => {
+      const result: Result<DiagramFile, Error> =
+        await repo.createEmptyDiagram(projectId);
+      if (!isOk(result)) {
+        setError(result.error);
+        return null;
+      }
+      const diagram = result.value;
+      // Add it to the explorer's list for this project (when it is the selected
+      // one) and select it, so the new file appears and is ready to edit. The
+      // caller then opens its tab.
+      setDiagrams((current: DiagramFile[]) =>
+        current.some((item) => item.id === diagram.id)
+          ? current
+          : [...current, diagram],
+      );
+      setters.setSelectedProjectId(projectId);
+      setters.setSelectedDiagramId(diagram.id);
+      setters.setSource(diagram.source);
+      return diagram;
+    },
+    [repo, setters],
+  );
+
   return {
     projects,
     diagrams,
@@ -234,5 +265,6 @@ export function useWorkspace(repo: WorkspaceRepository): WorkspaceHook {
     saveCurrentDiagram,
     createProject,
     deleteProject,
+    createEmptyDiagram,
   };
 }

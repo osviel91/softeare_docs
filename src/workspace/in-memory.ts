@@ -15,6 +15,7 @@ import type {
   Project,
   WorkspaceSnapshot,
 } from "../domain/workspace/types";
+import { newDiagramFileId } from "../domain/workspace/workspace-ids";
 import type { ProjectId } from "../domain/workspace/workspace-ids";
 import { err, ok, type Result } from "../shared/result/result";
 import type { WorkspaceRepository } from "./WorkspaceRepository";
@@ -115,6 +116,32 @@ export function createInMemoryWorkspaceRepository(): WorkspaceRepository {
           });
         }
         return ok(stored);
+      } catch (error) {
+        return err(error instanceof Error ? error : new Error(String(error)));
+      }
+    },
+
+    async createEmptyDiagram(
+      projectId: ProjectId,
+    ): Promise<Result<DiagramFile, Error>> {
+      try {
+        const project = projects.get(projectId);
+        if (!project) return err(new Error(`Unknown project: ${projectId}`));
+        // A fresh id keeps the file unique; "Untitled" is a placeholder name the
+        // user can later distinguish once a rename feature exists.
+        const id = newDiagramFileId();
+        const diagram: DiagramFile = {
+          id,
+          name: "Untitled",
+          source: "",
+          projectId,
+        };
+        diagrams.set(id, diagram);
+        projects.set(projectId, {
+          ...project,
+          datasetIds: [...project.datasetIds, id],
+        });
+        return ok(diagram);
       } catch (error) {
         return err(error instanceof Error ? error : new Error(String(error)));
       }

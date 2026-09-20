@@ -399,6 +399,10 @@ body {
   flex: 1 1 auto;
   min-height: 0;
   background: var(--bg-inset);
+  /* The gutter and the textarea must share one line grid: if their line heights
+     differ, every line number drifts a little further from the line it labels. */
+  --editor-font-size: 13px;
+  --editor-line-height: calc(var(--editor-font-size) * 1.6);
 }
 
 .editor__gutter {
@@ -408,7 +412,7 @@ body {
   text-align: right;
   font-family: var(--font-mono);
   font-size: 12.5px;
-  line-height: 1.6;
+  line-height: var(--editor-line-height);
   color: var(--text-faint);
   background: var(--bg-inset);
   border-right: 1px solid var(--border);
@@ -416,8 +420,54 @@ body {
 }
 
 .editor__line-number {
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+  height: var(--editor-line-height);
   min-width: 1.6em;
+}
+
+/*
+ * With step numbers present, each row becomes two fixed columns: a badge column
+ * whose badges share one left edge, and a right-aligned number column. The badge
+ * column is reserved on lines without a step too, so the line numbers never move
+ * as messages are typed. The columns are fixed rather than `auto` because a
+ * `max-content` number column would grow with a two-digit line number and drag
+ * every badge out of line.
+ */
+.editor__line-number--steps {
+  display: grid;
+  grid-template-columns: 20px 2em;
+  align-items: center;
+  justify-content: end;
+  column-gap: 5px;
+  min-width: 0;
+}
+
+/* The diagram's circled step number, matching the badge the canvas draws. */
+.editor__step {
+  grid-column: 1;
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 3px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1;
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.editor__line-no {
+  grid-column: 2;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 .editor__textarea {
@@ -430,8 +480,8 @@ body {
   color: var(--text);
   border: none;
   font-family: var(--font-mono);
-  font-size: 13px;
-  line-height: 1.6;
+  font-size: var(--editor-font-size);
+  line-height: var(--editor-line-height);
   tab-size: 2;
   outline: none;
 }

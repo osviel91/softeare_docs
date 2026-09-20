@@ -119,6 +119,8 @@ import {
   isResourceSymbolKind,
 } from "./domain/project/project-index";
 import { nodeIdAtOffset, nodeRangeById } from "./domain/diagram/node-id";
+import { messageStepNumbers } from "./domain/diagram/step-numbers";
+import { isValid } from "./language/validator/validator";
 import { offsetToPosition, rangeToOffsets } from "./language/source-position";
 import { analyze } from "./language/analyze";
 import { renderDiagramDocument } from "./features/preview/diagram-to-svg";
@@ -715,6 +717,18 @@ export default function App() {
     [isEventFlow, source],
   );
   const eventFlow = eventFlowAnalysis?.flow ?? null;
+
+  // The circled step numbers the canvas prints, keyed by source line, so the
+  // editor gutter can show the same number beside the message that wrote it.
+  // The preview draws nothing for a semantically invalid or absent diagram, so
+  // the gutter claims no numbers either; an event flow numbers nothing this way.
+  const lineBadges = useMemo(
+    () =>
+      isEventFlow || ast === null || !isValid(ast)
+        ? new Map<number, number>()
+        : messageStepNumbers(ast),
+    [isEventFlow, ast],
+  );
 
   const editorDiagnostics = useMemo(() => {
     if (!isEventFlow) {
@@ -1759,6 +1773,7 @@ export default function App() {
                 describe={describe}
                 onCaretChange={onCaretChange}
                 snippets={isEventFlow ? EVENT_FLOW_SNIPPETS : SEQUENCE_SNIPPETS}
+                lineBadges={lineBadges}
               />
             </>
           )}

@@ -103,6 +103,57 @@ describe("Editor — line numbers", () => {
   });
 });
 
+describe("Editor — step-number badges", () => {
+  it("shows a circled number beside the line it is given for", () => {
+    render(
+      <Editor
+        value={"a\nb\nc"}
+        onChange={vi.fn()}
+        lineBadges={
+          new Map([
+            [1, 1],
+            [2, 2],
+          ])
+        }
+      />,
+    );
+    const badges = screen.getAllByTestId("editor-step");
+    expect(badges).toHaveLength(2);
+    expect(badges.map((badge) => badge.textContent)).toEqual(["1", "2"]);
+    expect(badges.map((badge) => badge.dataset.step)).toEqual(["1", "2"]);
+  });
+
+  it("shows no badges when the language numbers nothing", () => {
+    render(<Editor value={"a\nb"} onChange={vi.fn()} />);
+    expect(screen.queryAllByTestId("editor-step")).toEqual([]);
+  });
+
+  it("reserves the badge column on every line once there are step numbers", () => {
+    // Every row takes the two-column layout, badge or not, so a line number
+    // never moves as messages are typed.
+    const { unmount } = render(
+      <Editor
+        value={"a\nb"}
+        onChange={vi.fn()}
+        lineBadges={new Map([[0, 1]])}
+      />,
+    );
+    expect(
+      screen
+        .getByTestId("editor-gutter")
+        .querySelectorAll(".editor__line-number--steps"),
+    ).toHaveLength(2);
+    unmount();
+
+    render(<Editor value={"a\nb"} onChange={vi.fn()} />);
+    expect(
+      screen
+        .getByTestId("editor-gutter")
+        .querySelectorAll(".editor__line-number--steps"),
+    ).toHaveLength(0);
+  });
+});
+
 describe("Editor — snippets", () => {
   /** Open the snippet menu and choose the snippet whose label contains `label`. */
   function insertSnippet(label: string): void {

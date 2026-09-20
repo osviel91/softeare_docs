@@ -80,7 +80,10 @@ one place rather than per component.
   inserts a construct at the caret, starting it on its own line unless it is
   already at one. The menu follows the open document's language, so an event flow
   offers `event`, `broker` and `publish … to …` rather than `participant` and
-  sequence arrows, which would be syntax errors there.
+  sequence arrows, which would be syntax errors there. The gutter also prints the
+  diagram's circled step number beside each message line, so a number on the
+  canvas — the one `note on 3` refers to — can be located in the source at a
+  glance (`src/domain/diagram/step-numbers.ts`).
 - **Auto-update.** With the switch on, the canvas re-renders as you type. Switched
   off, the canvas keeps the last rendered diagram and a **Render** button appears,
   so a large diagram does not re-lay out on every keystroke.

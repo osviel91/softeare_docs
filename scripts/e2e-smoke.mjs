@@ -220,6 +220,49 @@ async function runChecks(browser) {
     `found ${stepNumbers}`,
   );
 
+  // The gutter must line up with the textarea and keep the step badges in one
+  // column. jsdom has no layout, so only a real browser can catch a line-height
+  // mismatch (which drifts every number off its line) or a badge column that
+  // shifts with the width of the line number beside it.
+  console.log("\nEditor gutter:");
+  const gutter = await page.evaluate(() => {
+    const rows = [...document.querySelectorAll(".editor__line-number")];
+    const textarea = document.querySelector(".editor__textarea");
+    const badges = [...document.querySelectorAll(".editor__step")];
+    return {
+      rowLineHeight: getComputedStyle(rows[0]).lineHeight,
+      textareaLineHeight: getComputedStyle(textarea).lineHeight,
+      tops: rows.map((row) => row.getBoundingClientRect().top),
+      badgeLefts: badges.map((badge) => badge.getBoundingClientRect().left),
+    };
+  });
+  check(
+    "gutter rows use the textarea's line height",
+    gutter.rowLineHeight === gutter.textareaLineHeight,
+    `${gutter.rowLineHeight} vs ${gutter.textareaLineHeight}`,
+  );
+  const lineHeight = Number.parseFloat(gutter.textareaLineHeight);
+  const firstTop = gutter.tops[0] ?? 0;
+  const maxDrift = Math.max(
+    ...gutter.tops.map((top, index) =>
+      Math.abs(top - (firstTop + index * lineHeight)),
+    ),
+  );
+  check(
+    "line numbers do not drift from their lines",
+    maxDrift < 0.5,
+    `max drift ${maxDrift.toFixed(2)}px`,
+  );
+  const badgeSpread =
+    gutter.badgeLefts.length === 0
+      ? 0
+      : Math.max(...gutter.badgeLefts) - Math.min(...gutter.badgeLefts);
+  check(
+    "step badges share one left-aligned column",
+    gutter.badgeLefts.length === 4 && badgeSpread < 0.5,
+    `${gutter.badgeLefts.length} badges, spread ${badgeSpread.toFixed(2)}px`,
+  );
+
   console.log("\nLive editing updates the preview:");
   await page.locator('[data-testid="dsl-textarea"]').fill(REPLACEMENT_SOURCE);
   const editedText = await waitForText(

@@ -67,6 +67,13 @@ export interface EditorProps {
    * document; the sequence list is the default.
    */
   snippets?: EditorSnippet[];
+  /**
+   * The diagram's circled step numbers, keyed by 0-based source line. The
+   * gutter draws one as a badge beside the line number, so a number printed on
+   * the canvas (`note on 3` refers to the same one) can be found in the source
+   * at a glance. Absent for a language that numbers nothing.
+   */
+  lineBadges?: ReadonlyMap<number, number>;
 }
 
 export default function Editor({
@@ -78,6 +85,7 @@ export default function Editor({
   describe,
   onCaretChange,
   snippets = SEQUENCE_SNIPPETS,
+  lineBadges,
 }: EditorProps) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const gutterRef = useRef<HTMLDivElement | null>(null);
@@ -91,6 +99,9 @@ export default function Editor({
   useEditorReveal(textareaRef, reveal, value);
 
   const lineCount = useMemo(() => value.split("\n").length, [value]);
+  // A diagram that numbers its messages reserves a badge column; a document
+  // that numbers nothing keeps the plain, narrower gutter.
+  const showSteps = (lineBadges?.size ?? 0) > 0;
 
   // --- Semantic completion and hover -------------------------------------
   // Both are props rather than state because the *facts* come from the project
@@ -275,11 +286,28 @@ export default function Editor({
           data-testid="editor-gutter"
           aria-hidden="true"
         >
-          {Array.from({ length: lineCount }, (_, index) => (
-            <span key={index} className="editor__line-number">
-              {index + 1}
-            </span>
-          ))}
+          {Array.from({ length: lineCount }, (_, index) => {
+            const step = lineBadges?.get(index);
+            return (
+              <span
+                key={index}
+                className={`editor__line-number${
+                  showSteps ? " editor__line-number--steps" : ""
+                }`}
+              >
+                {step === undefined ? null : (
+                  <span
+                    className="editor__step"
+                    data-testid="editor-step"
+                    data-step={step}
+                  >
+                    {step}
+                  </span>
+                )}
+                <span className="editor__line-no">{index + 1}</span>
+              </span>
+            );
+          })}
         </div>
         <textarea
           ref={textareaRef}

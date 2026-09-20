@@ -26,6 +26,26 @@ describe("App shell", () => {
     expect(svg.textContent).toContain("User");
   });
 
+  it("shows the diagram's step numbers beside the matching source lines", () => {
+    render(<App />);
+    // The sample diagram has four messages, numbered 1..4 in source order.
+    const badges = screen.getAllByTestId("editor-step");
+    expect(badges.map((badge) => badge.textContent)).toEqual([
+      "1",
+      "2",
+      "3",
+      "4",
+    ]);
+    // The canvas prints the same numbers, so a line and its arrow can be
+    // matched by the number alone.
+    const printed = [
+      ...screen
+        .getByTestId("preview-svg")
+        .querySelectorAll("[data-sequence-number]"),
+    ].map((node) => node.getAttribute("data-sequence-number"));
+    expect(printed).toEqual(["1", "2", "3", "4"]);
+  });
+
   it("updates the preview when the editor text changes", () => {
     render(<App />);
     fireEvent.change(screen.getByTestId("dsl-textarea"), {
@@ -43,5 +63,7 @@ describe("App shell", () => {
     });
     expect(screen.getByTestId("preview-empty")).toBeInTheDocument();
     expect(screen.queryByTestId("preview-svg")).toBeNull();
+    // Numbers the canvas no longer draws are not claimed in the gutter either.
+    expect(screen.queryAllByTestId("editor-step")).toEqual([]);
   });
 });

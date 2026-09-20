@@ -10,7 +10,11 @@
  */
 import { useCallback, useMemo } from "react";
 import type { DiagramFile } from "../../domain/workspace/types";
-import { createCommandRegistry, type Command, type CommandRegistry } from "./command";
+import {
+  createCommandRegistry,
+  type Command,
+  type CommandRegistry,
+} from "./command";
 
 /** The app state the command registry is built from. */
 export interface CommandContext {
@@ -59,10 +63,18 @@ export function useCommands({
     // implies support, so guard both branches on it. When a folder is open,
     // offer to close it; otherwise offer to open one.
     if (folderSupported && !folderOpen) {
-      list.push({ id: "open-folder", label: "Open Folder…", execute: openFolder });
+      list.push({
+        id: "open-folder",
+        label: "Open Folder…",
+        execute: openFolder,
+      });
     }
     if (folderSupported && folderOpen) {
-      list.push({ id: "close-folder", label: "Close Folder", execute: openFolder });
+      list.push({
+        id: "close-folder",
+        label: "Close Folder",
+        execute: openFolder,
+      });
     }
 
     return list;

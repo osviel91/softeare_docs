@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import CommandPalette from "../../../src/features/commands/CommandPalette";
-import { createCommandRegistry, type Command } from "../../../src/features/commands/command";
+import {
+  createCommandRegistry,
+  type Command,
+} from "../../../src/features/commands/command";
 
 const commands: Command[] = [
   { id: "new-diagram", label: "New Diagram", execute: vi.fn() },

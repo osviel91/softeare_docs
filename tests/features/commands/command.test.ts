@@ -1,8 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
-import { createCommandRegistry, type Command } from "../../../src/features/commands/command";
+import {
+  createCommandRegistry,
+  type Command,
+} from "../../../src/features/commands/command";
 
 /** A command whose `execute` records calls, so tests can assert on it. */
-function command(id: string, label: string, executed?: ReturnType<typeof vi.fn>): Command {
+function command(
+  id: string,
+  label: string,
+  executed?: ReturnType<typeof vi.fn>,
+): Command {
   return { id, label, execute: executed ?? vi.fn() };
 }
 
@@ -15,7 +22,10 @@ describe("createCommandRegistry", () => {
   });
 
   it("returns every command for an empty or blank query", () => {
-    const registry = createCommandRegistry([command("a", "New Diagram"), command("b", "Close Tab")]);
+    const registry = createCommandRegistry([
+      command("a", "New Diagram"),
+      command("b", "Close Tab"),
+    ]);
     expect(registry.filter("")).toEqual([
       expect.objectContaining({ id: "a" }),
       expect.objectContaining({ id: "b" }),
@@ -41,14 +51,18 @@ describe("createCommandRegistry", () => {
 
   it("runs a registered command and reports success", () => {
     const executed = vi.fn();
-    const registry = createCommandRegistry([command("a", "New Diagram", executed)]);
+    const registry = createCommandRegistry([
+      command("a", "New Diagram", executed),
+    ]);
     expect(registry.run("a")).toBe(true);
     expect(executed).toHaveBeenCalledTimes(1);
   });
 
   it("runs nothing and reports failure for an unknown id", () => {
     const executed = vi.fn();
-    const registry = createCommandRegistry([command("a", "New Diagram", executed)]);
+    const registry = createCommandRegistry([
+      command("a", "New Diagram", executed),
+    ]);
     expect(registry.run("missing")).toBe(false);
     expect(executed).not.toHaveBeenCalled();
   });

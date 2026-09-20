@@ -4,8 +4,11 @@ import type { DiagramFile } from "../../../src/domain/workspace/types";
 import { useCommands } from "../../../src/features/commands/use-commands";
 
 /** A minimal, fully-mocked command context so the registry logic is tested in isolation. */
-function mockContext(overrides: Partial<Parameters<typeof useCommands>[0]> = {}) {
-  const createEmptyDiagram = overrides.createEmptyDiagram ?? vi.fn(async () => null);
+function mockContext(
+  overrides: Partial<Parameters<typeof useCommands>[0]> = {},
+) {
+  const createEmptyDiagram =
+    overrides.createEmptyDiagram ?? vi.fn(async () => null);
   const openDiagram = overrides.openDiagram ?? vi.fn();
   const closeActiveTab = overrides.closeActiveTab ?? vi.fn();
   const openFolder = overrides.openFolder ?? vi.fn();
@@ -21,7 +24,13 @@ function mockContext(overrides: Partial<Parameters<typeof useCommands>[0]> = {})
     ...overrides,
   };
 
-  return { context, createEmptyDiagram, openDiagram, closeActiveTab, openFolder };
+  return {
+    context,
+    createEmptyDiagram,
+    openDiagram,
+    closeActiveTab,
+    openFolder,
+  };
 }
 
 describe("useCommands", () => {
@@ -74,14 +83,18 @@ describe("useCommands", () => {
 
   it("offers Open Folder when supported and closed, Close Folder when open", async () => {
     const closed = renderHook(() =>
-      useCommands(mockContext({ folderSupported: true, folderOpen: false }).context),
+      useCommands(
+        mockContext({ folderSupported: true, folderOpen: false }).context,
+      ),
     );
     const closedIds = closed.result.current.commands.map((c) => c.id);
     expect(closedIds).toContain("open-folder");
     expect(closedIds).not.toContain("close-folder");
 
     const opened = renderHook(() =>
-      useCommands(mockContext({ folderSupported: true, folderOpen: true }).context),
+      useCommands(
+        mockContext({ folderSupported: true, folderOpen: true }).context,
+      ),
     );
     const openedIds = opened.result.current.commands.map((c) => c.id);
     expect(openedIds).toContain("close-folder");
@@ -89,7 +102,10 @@ describe("useCommands", () => {
   });
 
   it("hides folder commands when the File System Access API is unsupported", async () => {
-    const { context } = mockContext({ folderSupported: false, folderOpen: true });
+    const { context } = mockContext({
+      folderSupported: false,
+      folderOpen: true,
+    });
     const { result } = renderHook(() => useCommands(context));
     const ids = result.current.commands.map((c) => c.id);
     expect(ids).not.toContain("open-folder");

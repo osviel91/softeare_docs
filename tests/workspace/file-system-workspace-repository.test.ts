@@ -313,7 +313,10 @@ describe("File System workspace repository", () => {
     }
 
     // The file is materialized on disk and readable back.
-    const loaded = await repo.getDiagramFile("onboarding", "onboarding/Untitled");
+    const loaded = await repo.getDiagramFile(
+      "onboarding",
+      "onboarding/Untitled",
+    );
     if (isOk(loaded)) {
       expect(loaded.value?.source).toBe("");
     }

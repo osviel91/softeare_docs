@@ -52,8 +52,9 @@ export default function CommandPalette({
         break;
       case "ArrowUp":
         event.preventDefault();
-        setSelectedIndex((index) =>
-          (index - 1 + commands.length) % Math.max(1, commands.length),
+        setSelectedIndex(
+          (index) =>
+            (index - 1 + commands.length) % Math.max(1, commands.length),
         );
         break;
       case "Enter":
@@ -105,7 +106,11 @@ export default function CommandPalette({
         />
         <ul className="palette__list" role="listbox" aria-label="Commands">
           {commands.length === 0 ? (
-            <li className="palette__empty" data-testid="palette-empty" role="option">
+            <li
+              className="palette__empty"
+              data-testid="palette-empty"
+              role="option"
+            >
               No commands match.
             </li>
           ) : (

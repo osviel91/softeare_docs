@@ -108,7 +108,13 @@ export default function Editor({
   // index, which only the shell has. The editor owns the popup, the caret, and
   // the pointer; it never decides what a name means.
   const [completions, setCompletions] = useState<CompletionItem[]>([]);
-  const [completionIndex, setCompletionIndex] = useState(0);
+  // The highlighted suggestion, or `null` while the popup is open but nothing
+  // has been chosen yet. Enter and the arrow keys must not act on the popup
+  // until the user has actually reached into it.
+  const [completionIndex, setCompletionIndex] = useState<number | null>(null);
+  // The key the popup consumed on keydown, so its matching keyup does not
+  // rebuild the list and wipe out the choice the arrow key just made.
+  const handledKey = useRef<string | null>(null);
   const [hover, setHover] = useState<{
     info: HoverInfo;
     x: number;
@@ -127,8 +133,16 @@ export default function Editor({
     const offset = caretOffset(textarea);
     onCaretChange?.(offset);
     if (!complete) return;
-    setCompletions(complete({ source: value, offset }));
-    setCompletionIndex(0);
+    const items = complete({ source: value, offset });
+    // A statement-start popup with nothing typed is a wall of keywords that
+    // would otherwise swallow Enter (so no blank line is possible) and the
+    // arrow keys. Keep the popup for a word being typed, or for a list that
+    // names things (participants, events) rather than DSL words.
+    const typed = items.some((item) => item.replaceEnd > item.replaceStart);
+    const allKeywords = items.every((item) => item.kind === "keyword");
+    const worthShowing = items.length > 0 && (typed || !allKeywords);
+    setCompletions(worthShowing ? items : []);
+    setCompletionIndex(null);
   };
 
   /** Insert a completion, replacing the word the user was typing. */
@@ -137,6 +151,7 @@ export default function Editor({
     const text = item.insertText ?? item.label;
     pendingCaret.current = item.replaceStart + text.length;
     setCompletions([]);
+    setCompletionIndex(null);
     onChange(
       `${value.slice(0, item.replaceStart)}${text}${value.slice(item.replaceEnd)}`,
     );
@@ -193,25 +208,46 @@ export default function Editor({
     switch (event.key) {
       case "ArrowDown":
         event.preventDefault();
-        setCompletionIndex((index) => (index + 1) % completions.length);
+        handledKey.current = event.key;
+        setCompletionIndex((index) =>
+          index === null ? 0 : (index + 1) % completions.length,
+        );
         break;
       case "ArrowUp":
         event.preventDefault();
-        setCompletionIndex(
-          (index) => (index - 1 + completions.length) % completions.length,
+        handledKey.current = event.key;
+        setCompletionIndex((index) =>
+          index === null
+            ? completions.length - 1
+            : (index - 1 + completions.length) % completions.length,
         );
         break;
-      case "Tab":
+      case "Tab": {
+        // Tab is the accept key; it never moves focus while the popup is open.
+        const chosen = completions[completionIndex ?? 0];
+        if (!chosen) return;
+        event.preventDefault();
+        handledKey.current = event.key;
+        acceptCompletion(chosen);
+        break;
+      }
       case "Enter": {
+        // Enter accepts only once a suggestion has been reached with the arrow
+        // keys. Otherwise it inserts a newline, so a blank line is always
+        // possible and the top suggestion is never inserted by accident.
+        if (completionIndex === null) return;
         const chosen = completions[completionIndex];
         if (!chosen) return;
         event.preventDefault();
+        handledKey.current = event.key;
         acceptCompletion(chosen);
         break;
       }
       case "Escape":
         event.preventDefault();
+        handledKey.current = event.key;
         setCompletions([]);
+        setCompletionIndex(null);
         break;
       default:
         break;
@@ -324,9 +360,20 @@ export default function Editor({
             refreshCompletions(event.currentTarget);
           }}
           onKeyDown={onEditorKeyDown}
-          onKeyUp={(event) => refreshCompletions(event.currentTarget)}
+          onKeyUp={(event) => {
+            // A key the popup consumed must not rebuild the list underneath it,
+            // or the choice an arrow key just made would be reset.
+            if (handledKey.current === event.key) {
+              handledKey.current = null;
+              return;
+            }
+            refreshCompletions(event.currentTarget);
+          }}
           onClick={(event) => refreshCompletions(event.currentTarget)}
-          onBlur={() => setCompletions([])}
+          onBlur={() => {
+            setCompletions([]);
+            setCompletionIndex(null);
+          }}
           onMouseMove={(event) => {
             if (!describe) return;
             const info = describe(

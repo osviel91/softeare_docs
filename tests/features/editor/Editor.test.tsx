@@ -1,11 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
+import { useState } from "react";
 
 import Editor from "../../../src/features/editor/Editor";
 import {
   EVENT_FLOW_SNIPPETS,
   SEQUENCE_SNIPPETS,
 } from "../../../src/features/editor/snippets";
+import {
+  completeAt,
+  type CompletionItem,
+} from "../../../src/domain/project/completion";
 import { analyze } from "../../../src/language/analyze";
 import { analyzeEventFlow } from "../../../src/language/eventflow/parser";
 import {
@@ -404,5 +409,135 @@ describe("Editor — dropping a participant name", () => {
       dataTransfer: { types: [], getData: () => "" },
     });
     expect(onChange).not.toHaveBeenCalled();
+  });
+});
+
+describe("Editor — completion keyboard", () => {
+  /**
+   * A controlled editor whose value actually updates, like the shell's. The
+   * plain `Editor` with a `vi.fn()` onChange would be reset by React on the
+   * next render, which hides the behaviour under test.
+   */
+  function EditorHarness({
+    initial = "",
+    complete,
+    onValue,
+  }: {
+    initial?: string;
+    complete: (request: { source: string; offset: number }) => CompletionItem[];
+    onValue?: (value: string) => void;
+  }) {
+    const [value, setValue] = useState(initial);
+    return (
+      <Editor
+        value={value}
+        onChange={(next) => {
+          setValue(next);
+          onValue?.(next);
+        }}
+        complete={complete}
+      />
+    );
+  }
+
+  /** The real root-keyword completion for a diagram with no project. */
+  const keywords = (request: { source: string; offset: number }) =>
+    completeAt({
+      source: request.source,
+      offset: request.offset,
+      ast: null,
+      symbols: [],
+      resources: [],
+    });
+
+  /** One suggestion replacing a typed three-letter word. */
+  const oneSuggestion = (): CompletionItem[] => [
+    { label: "participant", kind: "keyword", replaceStart: 0, replaceEnd: 3 },
+  ];
+
+  it("does not pop up a wall of keywords on a blank line", () => {
+    render(<EditorHarness complete={keywords} />);
+    const textarea = screen.getByTestId("dsl-textarea");
+    // Anything that makes the editor re-check the caret: a keyup or a click.
+    fireEvent.keyUp(textarea, { key: "ArrowLeft" });
+    expect(screen.queryByTestId("completions")).toBeNull();
+  });
+
+  it("opens once a word is being typed", () => {
+    render(<EditorHarness complete={keywords} />);
+    const textarea = screen.getByTestId("dsl-textarea");
+    fireEvent.change(textarea, { target: { value: "pa" } });
+    fireEvent.keyUp(textarea, { key: "a" });
+    expect(screen.getByTestId("completions")).toBeInTheDocument();
+    const offered = screen
+      .getAllByTestId("completion-item")
+      .map((item) => item.textContent ?? "")
+      .join(" ");
+    expect(offered).toContain("participant");
+  });
+
+  it("does not accept the top suggestion on Enter", () => {
+    const onValue = vi.fn();
+    render(
+      <EditorHarness
+        initial="par"
+        complete={oneSuggestion}
+        onValue={onValue}
+      />,
+    );
+    const textarea = screen.getByTestId("dsl-textarea");
+    fireEvent.keyUp(textarea, { key: "r" });
+    expect(screen.getByTestId("completions")).toBeInTheDocument();
+
+    fireEvent.keyDown(textarea, { key: "Enter" });
+    // Nothing was applied; the textarea keeps the key and inserts a newline
+    // (which jsdom does not simulate), so a blank line stays possible.
+    expect(onValue).not.toHaveBeenCalled();
+  });
+
+  it("accepts the highlighted suggestion on Enter", () => {
+    const onValue = vi.fn();
+    render(
+      <EditorHarness
+        initial="par"
+        complete={oneSuggestion}
+        onValue={onValue}
+      />,
+    );
+    const textarea = screen.getByTestId("dsl-textarea");
+    fireEvent.keyUp(textarea, { key: "r" });
+
+    fireEvent.keyDown(textarea, { key: "ArrowDown" });
+    // The matching keyup must not rebuild the list and undo the choice.
+    fireEvent.keyUp(textarea, { key: "ArrowDown" });
+    fireEvent.keyDown(textarea, { key: "Enter" });
+    expect(onValue).toHaveBeenCalledWith("participant");
+  });
+
+  it("accepts the top suggestion on Tab without arming it first", () => {
+    const onValue = vi.fn();
+    render(
+      <EditorHarness
+        initial="par"
+        complete={oneSuggestion}
+        onValue={onValue}
+      />,
+    );
+    const textarea = screen.getByTestId("dsl-textarea");
+    fireEvent.keyUp(textarea, { key: "r" });
+
+    fireEvent.keyDown(textarea, { key: "Tab" });
+    expect(onValue).toHaveBeenCalledWith("participant");
+  });
+
+  it("closes the popup on Escape", () => {
+    render(<EditorHarness initial="par" complete={oneSuggestion} />);
+    const textarea = screen.getByTestId("dsl-textarea");
+    fireEvent.keyUp(textarea, { key: "r" });
+    expect(screen.getByTestId("completions")).toBeInTheDocument();
+
+    fireEvent.keyDown(textarea, { key: "Escape" });
+    fireEvent.keyUp(textarea, { key: "Escape" });
+    expect(screen.queryByTestId("completions")).toBeNull();
   });
 });

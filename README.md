@@ -359,8 +359,13 @@ files and became a project-aware IDE:
 - **Semantic completion and hover.** Completion is context-aware — after an arrow
   only participants, inside a fragment only the statements that can appear there,
   never inside a label — and draws names from the index, so `Pay` offers
-  `PaymentService`. Hover answers "what is this?" with the declaration site and how
-  many interactions use it.
+  `PaymentService`. The popup never takes a key the user did not give it: Enter
+  inserts a newline unless a suggestion has first been highlighted with ↓/↑ (so a
+  blank line is always possible), `Tab` accepts the highlighted suggestion (the
+  top one if none is highlighted), ↓/↑ walk the list only while it is open, and
+  Escape dismisses it. A blank line opens no popup at all — only a word being
+  typed, or a position that names participants or events, does. Hover answers
+  "what is this?" with the declaration site and how many interactions use it.
 - **Quick open (`Ctrl/Cmd+P`)** over resources, participant symbols and document
   headings, with fuzzy ranking. The command palette moved to `Ctrl/Cmd+Shift+P` so
   the two overlays do not fight over one shortcut.

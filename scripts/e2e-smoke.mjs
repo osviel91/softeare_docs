@@ -263,6 +263,50 @@ async function runChecks(browser) {
     `${gutter.badgeLefts.length} badges, spread ${badgeSpread.toFixed(2)}px`,
   );
 
+  // The suggestion popup must never swallow Enter or the arrow keys. It opens
+  // at a statement start (a wall of keywords), and if it captured Enter the
+  // editor could never add a blank line; if it captured the arrows the caret
+  // could not be moved with the keyboard.
+  console.log("\nCompletion never swallows typing:");
+  const editor = page.locator('[data-testid="dsl-textarea"]');
+  const BLANK_LINE_SOURCE = [
+    "title Blank lines",
+    "participant A",
+    "participant B",
+    "A -> B: hi",
+  ].join("\n");
+  await editor.fill(BLANK_LINE_SOURCE);
+  const linesBefore = (await editor.inputValue()).split("\n").length;
+  const titlesBefore = ((await editor.inputValue()).match(/title/g) ?? [])
+    .length;
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Enter");
+  const afterEnter = await editor.inputValue();
+  const linesAfter = afterEnter.split("\n").length;
+  const titlesAfter = (afterEnter.match(/title/g) ?? []).length;
+  check(
+    "Enter adds blank lines instead of accepting a suggestion",
+    linesAfter === linesBefore + 2 && titlesAfter === titlesBefore,
+    `${linesBefore} -> ${linesAfter} lines, titles ${titlesBefore} -> ${titlesAfter}`,
+  );
+
+  await page.keyboard.press("ArrowUp");
+  const caretAfterArrow = await editor.evaluate((el) => el.selectionStart);
+  check(
+    "arrow keys still move the caret",
+    caretAfterArrow < afterEnter.length,
+    `caret ${caretAfterArrow} of ${afterEnter.length}`,
+  );
+
+  await editor.fill("");
+  await editor.pressSequentially("part");
+  await page.keyboard.press("Tab");
+  check(
+    "Tab still accepts the highlighted suggestion",
+    (await editor.inputValue()) === "participant",
+    await editor.inputValue(),
+  );
+
   console.log("\nLive editing updates the preview:");
   await page.locator('[data-testid="dsl-textarea"]').fill(REPLACEMENT_SOURCE);
   const editedText = await waitForText(

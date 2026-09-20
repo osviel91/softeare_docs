@@ -12,3 +12,8 @@ npm-debug.log*
 *.md
 Dockerfile
 .dockerignore
+# Deployment plumbing: not needed by the bundle, and excluding it stops a
+# workflow- or stack-only edit from invalidating the build cache.
+.github
+deploy
+docker-compose.yml

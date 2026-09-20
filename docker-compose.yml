@@ -1,0 +1,29 @@
+# Local twin of deploy/portainer-stack.yml.
+#
+# This one *builds* the image from the working tree instead of pulling it, so a
+# change can be tried before it is pushed — Portainer deploys the published
+# image, this deploys your checkout.
+#
+#   docker compose up --build -d      # http://localhost:8080/
+#   docker compose down
+#
+# Set WEB_PORT to publish on a different host port.
+services:
+  web:
+    build: .
+    image: sequencediagrams:local
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-8080}:8080"
+    healthcheck:
+      test:
+        ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/ || exit 1"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

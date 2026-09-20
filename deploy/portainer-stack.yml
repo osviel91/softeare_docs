@@ -1,0 +1,45 @@
+# ---------------------------------------------------------------------------
+# Portainer stack: SequenceDiagrams Manager
+#
+# Deploy with Portainer -> Stacks -> Add stack -> Web editor, paste this file,
+# then set the variables below under "Environment variables" and deploy.
+#
+# The image is published by .github/workflows/publish-image.yml on every push to
+# master (tag `latest`) and on every `vX.Y.Z` tag. Redeploying the stack re-pulls
+# it, so shipping a change is: merge to master, then "Update the stack" here.
+#
+# The app is a static bundle served by nginx — there is no backend, no database
+# and no persistent volume. Every piece of state lives in the browser.
+# ---------------------------------------------------------------------------
+services:
+  web:
+    image: ghcr.io/osviel91/softeare_docs:${IMAGE_TAG:-latest}
+    # Without this the node happily reuses the cached `latest`, and a redeploy
+    # after a new build would silently keep serving the old bundle.
+    pull_policy: always
+    restart: unless-stopped
+    ports:
+      # Host port only; the container always listens on 8080 (EXPOSE 8080).
+      - "${WEB_PORT:-8080}:8080"
+    healthcheck:
+      # nginx ships BusyBox wget; fetching the root proves the SPA shell is
+      # actually being served, so Portainer shows the container as healthy.
+      test:
+        ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/ || exit 1"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    logging:
+      # Access logs are the only thing that grows here; cap them so a
+      # long-lived container cannot fill the host's disk.
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    # The image is private by default when GHCR first publishes it. Either make
+    # the package public (GitHub -> Packages -> the package -> Package settings
+    # -> Change visibility -> Public) or register credentials in Portainer
+    # (Registries -> Add registry -> Custom: ghcr.io, your GitHub username, and a
+    # PAT with `read:packages`). Nothing else needs configuring to pull.

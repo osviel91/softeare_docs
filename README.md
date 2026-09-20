@@ -240,6 +240,54 @@ Stop and remove it with `docker rm -f sequencediagrams`. The image is
 reproducible — `node_modules`, `dist`, and the npm cache are excluded via
 `.dockerignore`, and the build installs fresh from `package-lock.json`.
 
+### Publishing an image
+
+[`.github/workflows/publish-image.yml`](./.github/workflows/publish-image.yml)
+builds the image on every push to `master` and publishes it to the GitHub
+Container Registry as `ghcr.io/osviel91/softeare_docs`:
+
+| Ref      | Tags                                    |
+| -------- | --------------------------------------- |
+| `master` | `latest`, `master`, `sha-<short>`       |
+| `v1.2.3` | `1.2.3`, `1.2`, `v1.2.3`, `sha-<short>` |
+
+A push builds `linux/amd64` and `linux/arm64` as one manifest, so a single tag
+works on an x86 server and on an ARM NAS alike. A pull request only builds the
+image to prove it still builds; nothing is published for it.
+
+Three gates stand between a commit and a tag. `lint`, `typecheck` and the unit
+suite must pass, the Chromium smoke test must drive the built bundle, and — once
+the image is pushed — the workflow serves that published image and checks the
+app, its SPA fallback and a hashed bundle asset. The last gate is what makes the
+tag safe to deploy: it exercises the artefact Portainer will pull rather than
+the source tree.
+
+### Deploying with Portainer
+
+[`deploy/portainer-stack.yml`](./deploy/portainer-stack.yml) is a ready-made
+stack: in Portainer open **Stacks → Add stack → Web editor**, paste it, and
+deploy. Two variables are read when the stack is deployed:
+
+| Variable    | Default  | Purpose                                                        |
+| ----------- | -------- | -------------------------------------------------------------- |
+| `WEB_PORT`  | `8080`   | host port to publish the app on                                |
+| `IMAGE_TAG` | `latest` | tag to run; pin `sha-<short>` when a deploy must be repeatable |
+
+The stack pulls on every deploy (`pull_policy: always`), so the flow for a
+change is: merge to `master`, let the workflow finish, then **Update the stack**
+in Portainer. There is no backend, database, or volume to migrate — the app is a
+static bundle and all state lives in the browser.
+
+A package published to GHCR is private by default, so the first pull needs
+either the package made public (GitHub → the package → _Package settings_ →
+_Change visibility_) or a Portainer registry entry (**Registries → Add registry
+→ Custom**: `ghcr.io`, your GitHub username, and a PAT carrying
+`read:packages`).
+
+To try a change before pushing it, `docker-compose.yml` builds the same image
+from the working tree: `docker compose up --build -d`, then
+<http://localhost:8080/>.
+
 ## Repository layout
 
 ```
@@ -260,6 +308,8 @@ src/
                     search (project find-in-files), ui (dialogs, context menu)
 tests/            Browser-independent and workflow tests
 docs/plan/        Mission plans: intent, deliverables, and verification
+deploy/           Portainer stack for the published image
+.github/          CI: the image publish workflow
 ```
 
 The early structure is intentionally small; layers are added as phases demand

@@ -1,0 +1,185 @@
+name: Publish container image
+
+# Builds the production image and publishes it to GitHub Container Registry
+# (GHCR) so a Portainer stack can pull it — see deploy/portainer-stack.yml.
+#
+# Pushing to master publishes `latest`; pushing a `vX.Y.Z` tag publishes that
+# version plus the moving `X.Y` tag. Every build also gets an immutable
+# `sha-<short>` tag, which is what a stack should pin to when a deploy has to be
+# reproducible.
+on:
+  push:
+    branches: [master]
+    tags: ["v*.*.*"]
+  pull_request:
+    branches: [master]
+  # Lets the image be rebuilt from the Actions tab without a commit.
+  workflow_dispatch:
+
+# A newer push to the same ref supersedes a build that is still running.
+concurrency:
+  group: publish-image-${{ github.ref }}
+  cancel-in-progress: true
+
+# Least privilege by default; the publish job opts into `packages: write`.
+permissions:
+  contents: read
+
+env:
+  REGISTRY: ghcr.io
+  # github.repository is already lower-case, which GHCR requires.
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  verify:
+    name: Lint, typecheck and unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # .npmrc points npm's cache at the project-local ./.npm-cache, which is
+      # wrong for a fresh checkout. Redirect it to a stable path so it can be
+      # cached — the same override the Dockerfile makes, for the same reason.
+      - name: Prepare npm cache
+        run: mkdir -p "$RUNNER_TEMP/npm-cache"
+
+      - name: Restore npm cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/npm-cache
+          key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install dependencies
+        run: npm ci --cache "$RUNNER_TEMP/npm-cache"
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
+
+  browser-smoke:
+    name: Browser smoke test
+    runs-on: ubuntu-latest
+    needs: verify
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Prepare npm cache
+        run: mkdir -p "$RUNNER_TEMP/npm-cache"
+
+      - name: Restore npm cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/npm-cache
+          key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install dependencies
+        run: npm ci --cache "$RUNNER_TEMP/npm-cache"
+
+      # The unit suite runs in jsdom, so it cannot prove that the *built* bundle
+      # boots in a real browser. This job closes that gap before an image ships.
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Smoke test the built bundle
+        run: npm run test:e2e
+
+  publish:
+    name: Build and push image
+    runs-on: ubuntu-latest
+    needs: [verify, browser-smoke]
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-qemu-action@v3
+
+      - uses: docker/setup-buildx-action@v3
+
+      # Pull requests build the image but never push it, so a PR cannot publish
+      # a tag; the login is skipped for them too.
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Derive image tags and labels
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=tag
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,format=short
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      # amd64 + arm64: a Portainer host is as likely to be an ARM NAS or a
+      # Raspberry Pi as it is an x86 server, and the image is small enough that
+      # the emulated leg is cheap.
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # The image that was just published is the artefact Portainer will pull,
+      # so serve it once and prove routing and asset permissions actually work.
+      - name: Smoke test the published image
+        if: github.event_name != 'pull_request'
+        run: |
+          set -euo pipefail
+          # Fetch into a scratch dir: the repository root has its own
+          # index.html, and a stray write there would clobber a source file.
+          work="$(mktemp -d)"
+          image="$(printf '%s\n' "${{ steps.meta.outputs.tags }}" | head -n 1)"
+          echo "Smoke-testing $image"
+          trap 'docker rm -f smoke >/dev/null 2>&1 || true' EXIT
+          docker run -d --name smoke -p 8080:8080 "$image"
+
+          ready=""
+          for _ in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8080/ -o "$work/index.html"; then ready=1; break; fi
+            sleep 1
+          done
+          if [ -z "$ready" ]; then
+            echo "::error::the image never served / within 30s"
+            docker logs smoke
+            exit 1
+          fi
+          grep -q 'id="root"' "$work/index.html"
+
+          # The nginx SPA fallback must return the shell for a client-side route.
+          curl -fsS http://127.0.0.1:8080/some/client/route -o "$work/route.html"
+          grep -q 'id="root"' "$work/route.html"
+
+          # A hashed bundle asset must be fetchable, which catches asset-path and
+          # file-permission regressions that a plain "/ returns 200" misses.
+          asset="$(grep -o '/assets/[^"]*\.js' "$work/index.html" | head -n 1)"
+          test -n "$asset"
+          curl -fsS "http://127.0.0.1:8080$asset" -o /dev/null
+          echo "Image serves the app, the SPA fallback and $asset"

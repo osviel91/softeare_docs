@@ -8,7 +8,7 @@ import {
   svgToPdf,
   svgToPng,
 } from "../../../src/features/export/diagram-export";
-import { renderDiagramDocument } from "../../../src/features/preview/diagram-to-svg";
+import { renderDiagramDocument } from "../../../src/renderer/pipeline/diagram-to-svg";
 import { parse as parseSource } from "../../../src/language/parser/parser";
 
 const SOURCE = `title Checkout

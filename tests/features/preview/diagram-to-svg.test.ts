@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   diagramToSvg,
   renderDiagram,
-} from "../../../src/features/preview/diagram-to-svg";
+} from "../../../src/renderer/pipeline/diagram-to-svg";
 import { analyze } from "../../../src/language/analyze";
 
 const VALID = `title Login

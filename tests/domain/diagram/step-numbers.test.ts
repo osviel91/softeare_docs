@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { messageStepNumbers } from "../../../src/domain/diagram/step-numbers";
 import { analyze } from "../../../src/language/analyze";
-import { renderDiagramDocument } from "../../../src/features/preview/diagram-to-svg";
+import { renderDiagramDocument } from "../../../src/renderer/pipeline/diagram-to-svg";
 
 /**
  * The circled step numbers the canvas prints (and `note on N` refers to), keyed

@@ -15,7 +15,7 @@
  * `TypeError` from deep inside the platform.
  */
 import type { SequenceDiagram } from "../../domain/diagram/ast";
-import { renderDiagramDocument } from "../preview/diagram-to-svg";
+import { renderDiagramDocument } from "../../renderer/pipeline/diagram-to-svg";
 
 /** Raster scale used when a caller does not pick one. */
 const DEFAULT_SCALE = 2;

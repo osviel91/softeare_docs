@@ -10,7 +10,7 @@
  */
 import { useMemo } from "react";
 import { analyzeEventFlow } from "../../language/eventflow/parser";
-import { renderEventFlowDocument } from "./eventflow-to-svg";
+import { renderEventFlowDocument } from "../../renderer/pipeline/eventflow-to-svg";
 import DiagramViewport from "./DiagramViewport";
 
 export interface EventFlowPreviewProps {

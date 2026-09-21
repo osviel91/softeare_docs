@@ -80,12 +80,23 @@ export function createServerWorkspaceProvider(
         return null;
       }
       const { storage, root } = location(listing.project.id);
+      // The same policy the catalog enforces decides whether the repository this
+      // provider hands out may write at all. A viewer — or a read-only agent
+      // token — gets a genuinely read-only repository, so a write cannot slip
+      // past authorization by arriving through the shared documentation service
+      // instead of a catalog use case.
+      const writable = await catalog.can(
+        context,
+        listing.project.id,
+        "resource:write",
+      );
       return {
         project: toDomainProject(listing.project),
         repo: createServerWorkspaceRepository({
           projectId: listing.project.id,
           storage,
           resources: projects,
+          writable,
         }),
         root,
       };

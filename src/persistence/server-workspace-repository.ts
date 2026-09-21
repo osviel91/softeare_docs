@@ -39,6 +39,7 @@ import type {
   WorkspaceSnapshot,
 } from "../domain/workspace/types";
 import type { ProjectId } from "../domain/workspace/workspace-ids";
+import { forbidden } from "../application/errors";
 import { err, isOk, ok, type Result } from "../shared/result/result";
 
 /** The identity record's file name inside a project's storage directory. */
@@ -49,6 +50,16 @@ export interface ServerWorkspaceRepositoryOptions {
   projectId: string;
   storage: ProjectStorage;
   resources: ProjectRepository;
+  /**
+   * Whether this caller may change the project's resources.
+   *
+   * Resolved by the provider through the same authorization policy every other
+   * use case uses. It defaults to `false`, so a host that forgets to ask cannot
+   * hand a read-only principal a writable repository: the shared documentation
+   * service is a second door into a project, and it must open only as wide as
+   * the policy allows.
+   */
+  writable?: boolean;
 }
 
 /** Read a required resource record, or a failure naming what is missing. */
@@ -73,11 +84,27 @@ export class ServerWorkspaceRepository implements RevisionedWorkspaceRepository 
   private readonly projectId: string;
   private readonly storage: ProjectStorage;
   private readonly resources: ProjectRepository;
+  private readonly writable: boolean;
 
   constructor(options: ServerWorkspaceRepositoryOptions) {
     this.projectId = options.projectId;
     this.storage = options.storage;
     this.resources = options.resources;
+    this.writable = options.writable ?? false;
+  }
+
+  /**
+   * Refuse a write the caller's credential and role do not carry.
+   *
+   * The provider resolves this once through the authorization policy, so the
+   * answer is the one `catalog.updateResource` would give. This repository is a
+   * second *door* into a project, not a second authorization path: it opens only
+   * as wide as the policy already allowed.
+   */
+  private refuseWrite(): Result<never, Error> {
+    return err(
+      forbidden("This credential may not change resources in this project."),
+    );
   }
 
   // ---- Project lifecycle: owned by the catalog, refused here -----------------
@@ -139,6 +166,7 @@ export class ServerWorkspaceRepository implements RevisionedWorkspaceRepository 
     if (projectId !== this.projectId) {
       return missing(`No project with id ${projectId} in this repository.`);
     }
+    if (!this.writable) return this.refuseWrite();
     const written = await this.storage.write(
       PROJECT_METADATA_FILE,
       serializeProjectMetadata(metadata),
@@ -475,6 +503,7 @@ export class ServerWorkspaceRepository implements RevisionedWorkspaceRepository 
     if (projectId !== this.projectId) {
       return missing(`No project with id ${projectId} in this repository.`);
     }
+    if (!this.writable) return this.refuseWrite();
     const existing = await this.resources.findResourceByPath(
       this.projectId,
       this.storagePathOf(path),
@@ -559,6 +588,7 @@ export class ServerWorkspaceRepository implements RevisionedWorkspaceRepository 
     if (projectId !== this.projectId) {
       return missing(`No project with id ${projectId} in this repository.`);
     }
+    if (!this.writable) return this.refuseWrite();
     const record = await this.resources.findResourceByPath(
       this.projectId,
       this.storagePathOf(path),
@@ -579,6 +609,7 @@ export class ServerWorkspaceRepository implements RevisionedWorkspaceRepository 
     if (projectId !== this.projectId) {
       return missing(`No project with id ${projectId} in this repository.`);
     }
+    if (!this.writable) return this.refuseWrite();
     const target =
       resourceTypeOfName(to) === "markdown-document" && !/\.md$/i.test(to)
         ? `${to}.md`

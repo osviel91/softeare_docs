@@ -204,6 +204,27 @@ describe("authorization by role", () => {
     expect(ownerId).not.toBe(viewerId);
   });
 
+  it("reports only the permissions the credential itself carries", async () => {
+    const { context, project } = await aProject("Scoped access");
+    const agentId = await aUser("Agent");
+    await catalog.setMember(context, project.id, agentId, "EDITOR");
+    // The role grants the write; the credential does not. Both grants must line
+    // up, so the advisory answer must not advertise a capability the token lacks.
+    const readOnly = contextFor(agentId, {
+      authType: "pat",
+      scopes: ["project:read", "resource:read"],
+    });
+
+    const access = await catalog.describeAccess(readOnly, project.id);
+    expect(access.role).toBe("EDITOR");
+    expect(access.permissions).toContain("resource:read");
+    expect(access.permissions).not.toContain("resource:write");
+    expect(await catalog.can(readOnly, project.id, "resource:write")).toBe(
+      false,
+    );
+    expect(await catalog.can(readOnly, project.id, "resource:read")).toBe(true);
+  });
+
   it("lets an editor write resources", async () => {
     const { context, project } = await aProject("Shared write");
     const editorId = await aUser("Editor");
@@ -446,6 +467,12 @@ describe("resources and optimistic concurrency", () => {
       }),
     );
     expect(failure.code).toBe("conflict");
+    // The refused move must leave the document where it was: a `409` that had
+    // already renamed the file would strand it at a path no record names, and
+    // the resource would read as missing.
+    const after = await catalog.readResource(context, project.id, created.id);
+    expect(after.resource.path).toBe("a.seq");
+    expect(after.content).toBe("y");
   });
 
   it("refuses a move onto a path another resource holds", async () => {

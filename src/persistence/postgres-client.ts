@@ -12,6 +12,7 @@
  */
 import { Pool, type PoolClient } from "pg";
 import type { SqlClient, SqlResult, SqlValue } from "./sql-client";
+import { toDriverValue } from "./sql-client";
 
 /** How to reach the database. */
 export interface PostgresOptions {
@@ -21,12 +22,6 @@ export interface PostgresOptions {
   max?: number;
   /** How long to wait for a connection before failing, in milliseconds. */
   connectionTimeoutMillis?: number;
-}
-
-/** Map our parameter type onto what `pg` accepts. */
-function toDriverValue(value: SqlValue): unknown {
-  if (value === undefined) return null;
-  return value;
 }
 
 /** Wrap a pool or a checked-out client as a {@link SqlClient}. */

@@ -24,6 +24,7 @@ import { correlationId } from "./http/node-server";
 import { requireContext, resolveSession } from "./context";
 import { createAuthRoutes, oidcClientFor } from "./auth/routes";
 import type { ProjectRole } from "../../src/domain/access/permissions";
+import { isProjectRole } from "../../src/domain/access/permissions";
 import { invalid } from "../../src/application/errors";
 import type { AppDependencies } from "./app";
 
@@ -118,16 +119,7 @@ export function createRouter(dependencies: AppDependencies): Router {
         ...(typeof body.name === "string" ? { name: body.name } : {}),
         ...(typeof body.slug === "string" ? { slug: body.slug } : {}),
       });
-      return json(200, {
-        project: {
-          id: updated.id,
-          name: updated.name,
-          slug: updated.slug,
-          ownerId: updated.ownerId,
-          createdAt: updated.createdAt.toISOString(),
-          updatedAt: updated.updatedAt.toISOString(),
-        },
-      });
+      return json(200, { project: projectFieldsView(updated) });
     }),
   );
 
@@ -163,19 +155,14 @@ export function createRouter(dependencies: AppDependencies): Router {
         const context = await contextOf(request);
         const body = parseJsonBody(request.body);
         const role = requireBodyString(body, "role");
-        if (role !== "OWNER" && role !== "EDITOR" && role !== "VIEWER") {
+        if (!isProjectRole(role)) {
           return errorResponse(
             422,
             "invalid",
             "The role must be OWNER, EDITOR or VIEWER.",
           );
         }
-        await catalog.setMember(
-          context,
-          params.projectId,
-          params.userId,
-          role as ProjectRole,
-        );
+        await catalog.setMember(context, params.projectId, params.userId, role);
         return json(204, null);
       }),
   );
@@ -252,24 +239,13 @@ export function createRouter(dependencies: AppDependencies): Router {
       guarded(correlationId(request), async () => {
         const context = await contextOf(request);
         const body = parseJsonBody(request.body);
-        const expectedRevision = body.expectedRevision;
-        if (
-          typeof expectedRevision !== "number" ||
-          !Number.isInteger(expectedRevision)
-        ) {
-          return errorResponse(
-            422,
-            "invalid",
-            "expectedRevision is required: send the revision you last read.",
-          );
-        }
         const resource = await catalog.updateResource(
           context,
           params.projectId,
           params.resourceId,
           {
             content: typeof body.content === "string" ? body.content : "",
-            expectedRevision,
+            expectedRevision: requireExpectedRevision(body),
           },
         );
         return json(200, { resource: resourceView(resource) });
@@ -282,20 +258,13 @@ export function createRouter(dependencies: AppDependencies): Router {
       guarded(correlationId(request), async () => {
         const context = await contextOf(request);
         const body = parseJsonBody(request.body);
-        const expectedRevision = body.expectedRevision;
-        if (
-          typeof expectedRevision !== "number" ||
-          !Number.isInteger(expectedRevision)
-        ) {
-          return errorResponse(422, "invalid", "expectedRevision is required.");
-        }
         const resource = await catalog.moveResource(
           context,
           params.projectId,
           params.resourceId,
           {
             path: requireBodyString(body, "path"),
-            expectedRevision,
+            expectedRevision: requireExpectedRevision(body),
           },
         );
         return json(200, { resource: resourceView(resource) });
@@ -333,14 +302,28 @@ function projectView(listing: {
   resourceCount: number;
 }): Record<string, unknown> {
   return {
-    id: listing.project.id,
-    name: listing.project.name,
-    slug: listing.project.slug,
-    ownerId: listing.project.ownerId,
+    ...projectFieldsView(listing.project),
     role: listing.role,
     resourceCount: listing.resourceCount,
-    createdAt: listing.project.createdAt.toISOString(),
-    updatedAt: listing.project.updatedAt.toISOString(),
+  };
+}
+
+/** The fields every project response carries, whether or not it has a role. */
+function projectFieldsView(project: {
+  id: string;
+  name: string;
+  slug: string;
+  ownerId: string;
+  createdAt: Date;
+  updatedAt: Date;
+}): Record<string, unknown> {
+  return {
+    id: project.id,
+    name: project.name,
+    slug: project.slug,
+    ownerId: project.ownerId,
+    createdAt: project.createdAt.toISOString(),
+    updatedAt: project.updatedAt.toISOString(),
   };
 }
 
@@ -369,6 +352,22 @@ function requireBodyString(
   const value = body[name];
   if (typeof value !== "string" || value === "") {
     throw invalid(`The "${name}" field is required.`);
+  }
+  return value;
+}
+
+/**
+ * Read the revision a write says it last saw.
+ *
+ * Required, not optional: a write that does not name a revision is a request to
+ * overwrite whatever is there, and an agent and a browser may both be editing.
+ */
+function requireExpectedRevision(body: Record<string, unknown>): number {
+  const value = body.expectedRevision;
+  if (typeof value !== "number" || !Number.isInteger(value)) {
+    throw invalid(
+      "expectedRevision is required: send the revision you last read.",
+    );
   }
   return value;
 }

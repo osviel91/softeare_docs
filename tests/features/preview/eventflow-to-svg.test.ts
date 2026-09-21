@@ -5,7 +5,7 @@ import {
   eventFlowSourceToSvg,
   renderEventFlow,
   renderEventFlowDocument,
-} from "../../../src/features/preview/eventflow-to-svg";
+} from "../../../src/renderer/pipeline/eventflow-to-svg";
 import { parseEventFlow } from "../../../src/language/eventflow/parser";
 
 const VALID = `title Order Processing

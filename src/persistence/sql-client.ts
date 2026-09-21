@@ -31,6 +31,18 @@ export type SqlValue =
 /** One result row, keyed by column name. */
 export type SqlRow = Record<string, unknown>;
 
+/**
+ * Map a bound value onto what a driver accepts.
+ *
+ * `undefined` becomes `null`: PostgreSQL has no way to bind "absent", and a
+ * repository should not have to remember which driver rejects it. Shared, so the
+ * two drivers cannot drift on the one mapping both need.
+ */
+export function toDriverValue(value: SqlValue): unknown {
+  if (value === undefined) return null;
+  return value;
+}
+
 /** The result of running a statement. */
 export interface SqlResult {
   /** Rows returned (`RETURNING`, `SELECT`), or an empty array. */
@@ -48,8 +60,10 @@ export interface SqlClient {
    * Run several statements atomically.
    *
    * The callback receives a client bound to the transaction; a throw rolls the
-   * whole thing back, which is how "apply the migration and record it" and
-   * "update the resource and audit it" stay one unit.
+   * whole thing back, which is how "apply the migration and record it" stays one
+   * unit. A change that also touches the project volume cannot join this
+   * transaction — a filesystem is not enlisted — so only the database half is
+   * atomic.
    */
   transaction<T>(run: (tx: SqlClient) => Promise<T>): Promise<T>;
 

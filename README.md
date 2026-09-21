@@ -539,13 +539,20 @@ What exists today:
   server project is as portable as a local one.
 - **Sign-in** — OIDC authorization code with PKCE and a server-side session in an
   `HttpOnly` cookie; no token is ever put in `localStorage`.
+- **Authorization** — one policy (`src/application/authorization.ts`, ADR-042)
+  decides every project operation, and use cases enforce it themselves. The
+  server workspace provider asks the same policy before it hands out a writable
+  repository, so a read-only caller cannot write through the shared
+  documentation service.
 - **Optimistic concurrency** — every server write names the revision it read, and
   a stale write is a `409` rather than a silent overwrite.
 
-Remote MCP, Personal Access Tokens and OAuth-compatible MCP authorization are
-later phases; the application and authorization layers they will use are already
-in place. The migration plan and its boundaries are recorded in
-[docs/plan/server-migration-0-3.md](docs/plan/server-migration-0-3.md).
+Not yet: the **browser** does not open server projects, the **stdio MCP server**
+still runs on the local filesystem, and **Personal Access Tokens**,
+**OAuth-compatible MCP authorization** and **remote MCP** are later phases. The
+application and authorization layers they will use are already in place. The
+migration plan, its definition-of-done review and its known compromises are
+recorded in [docs/plan/server-migration-0-3.md](docs/plan/server-migration-0-3.md).
 
 ## Repository layout
 
@@ -561,9 +568,13 @@ src/
   language/       Two DSLs (lexer, parser, diagnostics) — `sequence/` and
                   `eventflow/` — plus the markdown renderer
   layout/         AST -> geometry (independent of SVG)
-  renderer/       SVG rendering of the layout model
+  renderer/       SVG rendering of the layout model, plus the shared preview
+                  pipeline (pipeline/) every host renders through
   workspace/      Persistence abstraction + implementations; portable
                   project archives (transfer/)
+  persistence/    Server persistence: the SQL client port (`pg` in production,
+                  PGlite in tests), migrations, repositories, the project
+                  storage volume and the filesystem path boundary (ADR-040)
   features/       React feature modules:
                     explorer, editor, preview (+ viewport), tabs, commands, docs,
                     notes (markdown editor/view), history (version timeline),
@@ -571,9 +582,6 @@ src/
 mcp/              MCP server for coding agents: a Node filesystem workspace
                   adapter, the two-era protocol layer, the tool catalog, the
                   reference resources, the workflow prompts, and its tests
-  persistence/    Server persistence: the SQL client port (`pg` in production,
-                  PGlite in tests), migrations, repositories, the project
-                  storage volume and the filesystem path boundary (ADR-040)
 apps/api/         The authenticated HTTP API: config, the HTTP transport, the
                   route table, and the composition root. An adapter over
                   `src/application`, never imported by the MCP host
@@ -615,7 +623,7 @@ deliverables and boundaries — is recorded under [`docs/plan/`](./docs/plan/).
 
 ## Status
 
-**Phases 0–11 are implemented** on this branch. `npm test` runs 1350+ tests,
+**Phases 0–11 are implemented** on this branch. `npm test` runs 1589 tests,
 `npm run test:e2e` drives 85 checks against the production bundle in Chromium,
 and `npm run typecheck`, `npm run lint`, `npm run build` and
 `npm run format:check` are clean.
@@ -628,6 +636,15 @@ package the common jobs. The server links the browser engine's own modules over
 a Node filesystem repository, so an agent's diagrams and diagnostics are exactly
 the editor's. `npm run test:mcp` drives the bundled server over real stdio. See
 [MCP server](#mcp-server-for-coding-agents) above.
+
+**Server migration Phases 0–3 are implemented** — the application layer
+(ADR-039), server persistence (ADR-040), OIDC sign-in (ADR-041) and the
+authorization policy (ADR-042). The migration then stops, as its mission
+instructs, before Personal Access Tokens and remote MCP; local-first mode is
+untouched and remains the default. See
+[Server mode](#server-mode-multi-user-in-progress) above and
+[docs/plan/server-migration-0-3.md](docs/plan/server-migration-0-3.md) for the
+definition-of-done review and the compromises that remain.
 
 **Phase 11 (event-driven modeling).** A project can now document an
 event-driven architecture in its own language, `*.eventseq`:

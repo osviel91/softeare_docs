@@ -15,7 +15,8 @@
  * It is `HttpOnly` and short-lived, and it is cleared on every completion path —
  * success, failure or a callback that arrives with junk in it.
  */
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHmac } from "node:crypto";
+import { constantTimeEquals } from "./secret-compare";
 import type { LoginTransaction } from "./oidc";
 
 /** The cookie a login transaction rides in. */
@@ -72,10 +73,7 @@ export function decodeLoginState(
   const payload = value.slice(0, index);
   const provided = value.slice(index + 1);
   const expected = sign(secret, payload);
-  const providedBytes = Buffer.from(provided, "utf8");
-  const expectedBytes = Buffer.from(expected, "utf8");
-  if (providedBytes.length !== expectedBytes.length) return null;
-  if (!timingSafeEqual(providedBytes, expectedBytes)) return null;
+  if (!constantTimeEquals(provided, expected)) return null;
 
   let parsed: unknown;
   try {

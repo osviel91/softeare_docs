@@ -91,7 +91,7 @@ import type { SearchMatch } from "./domain/search/project-search";
 import type { Command, CommandRegistry } from "./features/commands/command";
 import OutlinePanel from "./features/outline/OutlinePanel";
 import EventFlowPreview from "./features/preview/EventFlowPreview";
-import { renderEventFlowDocument } from "./features/preview/eventflow-to-svg";
+import { renderEventFlowDocument } from "./renderer/pipeline/eventflow-to-svg";
 import { analyzeEventFlow } from "./language/eventflow/parser";
 import {
   eventFlowNodeAtPosition,
@@ -131,7 +131,7 @@ import type { SourceMention } from "./domain/source-mention";
 import { isValid } from "./language/validator/validator";
 import { offsetToPosition, rangeToOffsets } from "./language/source-position";
 import { analyze } from "./language/analyze";
-import { renderDiagramDocument } from "./features/preview/diagram-to-svg";
+import { renderDiagramDocument } from "./renderer/pipeline/diagram-to-svg";
 import ExportDialog from "./features/export/ExportDialog";
 import {
   exportDiagramSvg,

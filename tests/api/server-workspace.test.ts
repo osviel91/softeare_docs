@@ -277,6 +277,78 @@ describe("optimistic concurrency through the shared updateResource use case", ()
   });
 });
 
+describe("the shared service cannot bypass the policy", () => {
+  /** A catalog over the same database and volume, for membership setup. */
+  function aCatalog() {
+    return createProjectCatalog({
+      projects,
+      storage: (projectId) =>
+        createFsProjectStorage({ root: path.join(volume, projectId) }),
+    });
+  }
+
+  it("refuses a viewer's write with a permission error, not a silent success", async () => {
+    const owner = await aContext();
+    const ownerService = serviceOver(owner);
+    await ownerService.createProject("Shared read-only");
+    const project = await ownerService.resolveProject("Shared read-only");
+    await ownerService.createResource(project, {
+      kind: "diagram",
+      name: "a",
+      content: "one",
+    });
+
+    const viewer = await aContext();
+    await aCatalog().setMember(
+      owner,
+      project.id,
+      viewer.principal.userId,
+      "VIEWER",
+    );
+
+    const viewerService = serviceOver(viewer);
+    const opened = await viewerService.resolveProject("Shared read-only");
+    await expect(
+      viewerService.updateResource(opened, "a.seq", {
+        content: "two",
+        expectedRevision: 1,
+      }),
+    ).rejects.toBeInstanceOf(ApplicationError);
+
+    // The refused write changed nothing.
+    const read = await ownerService.readResource(project, "a.seq");
+    expect(read.content).toBe("one");
+  });
+
+  it("lets an editor write through the same service", async () => {
+    const owner = await aContext();
+    const ownerService = serviceOver(owner);
+    await ownerService.createProject("Shared writable");
+    const project = await ownerService.resolveProject("Shared writable");
+    await ownerService.createResource(project, {
+      kind: "diagram",
+      name: "a",
+      content: "one",
+    });
+
+    const editor = await aContext();
+    await aCatalog().setMember(
+      owner,
+      project.id,
+      editor.principal.userId,
+      "EDITOR",
+    );
+
+    const editorService = serviceOver(editor);
+    const opened = await editorService.resolveProject("Shared writable");
+    const updated = await editorService.updateResource(opened, "a.seq", {
+      content: "two",
+      expectedRevision: 1,
+    });
+    expect(updated.revision).toBe(2);
+  });
+});
+
 describe("the catalog is the only way in", () => {
   it("gives the API host an ApplicationError it can map to a status", async () => {
     const owner = await aContext();

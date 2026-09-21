@@ -136,6 +136,19 @@ describe("dependency rule (ADR-039)", () => {
     expect(found).toEqual([]);
   });
 
+  it("keeps the hosts out of the React feature layer", async () => {
+    const hosts = [
+      ...(await filesUnder(path.join(ROOT, "mcp"))),
+      ...(await filesUnder(path.join(ROOT, "apps"))),
+    ];
+    const found = await violations(hosts, (relative, specifier) => {
+      if (/^react(-dom)?(\/|$)/.test(specifier)) return true;
+      const imported = importedLayer(path.join(ROOT, relative), specifier);
+      return imported === "features";
+    });
+    expect(found).toEqual([]);
+  });
+
   it("keeps the application layer out of the hosts", async () => {
     const files = await filesUnder(path.join(ROOT, "src/application"));
     const found = await violations(files, (relative, specifier) => {

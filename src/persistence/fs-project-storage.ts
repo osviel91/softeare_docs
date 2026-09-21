@@ -90,9 +90,10 @@ async function ensureRoot(root: string): Promise<string> {
  *
  * Two checks, because either alone is insufficient. The *textual* resolution
  * catches `..`; the *canonical* resolution follows every existing component with
- * `realpath`, so a symlink pointing out of the project is refused even though
- * its textual path was a legal project-relative one. Missing components are
- * expected on a create; the existing components above them are still checked.
+ * `realpath` — the final one included — so a symlink pointing out of the project
+ * is refused even though its textual path was a legal project-relative one.
+ * Missing components are expected on a create; the existing components above
+ * them are still checked.
  */
 async function resolveInsideRoot(
   root: string,
@@ -120,6 +121,23 @@ async function resolveInsideRoot(
         "the path's directory leaves the project",
       );
     }
+  }
+  // The final component is checked too. A symlinked *file* whose textual path is
+  // a legal project-relative one would otherwise be followed straight out of the
+  // project by `readFile`, and the ancestor walk would never see it because the
+  // link itself sits directly inside the root. A missing component is a create.
+  let canonicalTarget: string;
+  try {
+    canonicalTarget = await realpath(target);
+  } catch (error) {
+    if (isAbsent(error)) return target;
+    throw error;
+  }
+  if (
+    canonicalTarget !== canonicalRoot &&
+    !canonicalTarget.startsWith(prefix)
+  ) {
+    throw new InvalidResourcePathError(relative, "the path leaves the project");
   }
   return target;
 }

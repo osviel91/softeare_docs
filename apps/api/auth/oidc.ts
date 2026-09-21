@@ -17,10 +17,13 @@
  *   in a short-lived signed cookie and is verified for that browser only.
  *
  * Cryptographic verification uses the platform's Web Crypto API (`node:crypto`'s
- * `webcrypto`), not a hand-written signature check, for the same reason the
- * mission gives: the application must not implement its own cryptography.
+ * `webcrypto`), never a hand-written signature algorithm: the application does
+ * not implement cryptography. The JWS parsing and claim validation around it is
+ * this module's own code, a deliberate deviation from the mission's "use a
+ * maintained library", recorded in `docs/plan/server-migration-0-3.md`.
  */
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
+import { constantTimeEquals } from "./secret-compare";
 
 /** A fetched HTTP response, reduced to what this module needs. */
 export interface HttpFetchResponse {
@@ -128,14 +131,6 @@ export function createCodeVerifier(): string {
 /** The S256 challenge for a verifier. */
 export function codeChallengeS256(verifier: string): string {
   return base64url(createHash("sha256").update(verifier, "ascii").digest());
-}
-
-/** Whether two strings are equal without leaking where they differ. */
-function constantTimeEquals(a: string, b: string): boolean {
-  const left = Buffer.from(a, "utf8");
-  const right = Buffer.from(b, "utf8");
-  if (left.length !== right.length) return false;
-  return timingSafeEqual(left, right);
 }
 
 /** The decoded parts of a compact JWS. */

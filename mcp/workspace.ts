@@ -68,8 +68,8 @@ import type {
 } from "../src/domain/workspace/types";
 import { analyze } from "../src/language/analyze";
 import { analyzeEventFlow } from "../src/language/eventflow/parser";
-import { renderDiagramDocument } from "../src/features/preview/diagram-to-svg";
-import { renderEventFlowDocument } from "../src/features/preview/eventflow-to-svg";
+import { renderDiagramDocument } from "../src/renderer/pipeline/diagram-to-svg";
+import { renderEventFlowDocument } from "../src/renderer/pipeline/eventflow-to-svg";
 import type { RenderOptions } from "../src/renderer/svg/sequence-svg-renderer";
 import type { EventFlowRenderOptions } from "../src/renderer/svg/eventflow-svg-renderer";
 import { isOk, type Result } from "../src/shared/result/result";

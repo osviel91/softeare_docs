@@ -11,7 +11,7 @@
  * read cannot be replayed as a login, and logging out (or revoking a session)
  * invalidates it immediately.
  */
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import type {
   ApplicationContext,
   AuthType,
@@ -22,7 +22,9 @@ import type {
   SessionRepository,
   SessionWithUser,
 } from "../../src/persistence/session-repository";
+import { ALL_PERMISSIONS } from "../../src/domain/access/permissions";
 import type { Permission } from "../../src/domain/access/permissions";
+import { constantTimeEquals } from "./auth/secret-compare";
 import type { ServerRequest } from "./http/http";
 import { correlationId } from "./http/node-server";
 
@@ -53,12 +55,7 @@ export function createSessionToken(sessionId: string): string {
 }
 
 /** Compare two hex digests without leaking their length relationship. */
-export function hashesMatch(a: string, b: string): boolean {
-  const left = Buffer.from(a, "utf8");
-  const right = Buffer.from(b, "utf8");
-  if (left.length !== right.length) return false;
-  return timingSafeEqual(left, right);
-}
+export const hashesMatch = constantTimeEquals;
 
 /** What a session lookup found. */
 export type SessionLookup =
@@ -90,22 +87,11 @@ export async function resolveSession(
  *
  * A session is a human at a browser, and a human's authority is their project
  * membership — resolved per project by the authorization layer, not baked into a
- * credential. The scope list is therefore the full vocabulary, and the *role*
- * check is what constrains it. Listing them explicitly keeps "a session has no
- * token-imposed restriction" a decision rather than an omission.
+ * credential. The scope list is therefore the full vocabulary, named once in
+ * `permissions.ts` rather than re-listed here, and the *role* check is what
+ * constrains it.
  */
-export const SESSION_SCOPES: readonly Permission[] = [
-  "project:read",
-  "project:write",
-  "project:admin",
-  "resource:read",
-  "resource:write",
-  "diagram:render",
-  "project:validate",
-  "project:export",
-  "mcp:read",
-  "mcp:write",
-];
+export const SESSION_SCOPES: readonly Permission[] = ALL_PERMISSIONS;
 
 /**
  * The context for an unauthenticated request.

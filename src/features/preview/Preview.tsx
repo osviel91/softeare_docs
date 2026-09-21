@@ -16,7 +16,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { isValid } from "../../language/validator/validator";
 import { useDiagram } from "./use-diagram";
-import { renderDiagramDocument } from "./diagram-to-svg";
+import { renderDiagramDocument } from "../../renderer/pipeline/diagram-to-svg";
 import DiagramViewport from "./DiagramViewport";
 
 export interface PreviewProps {

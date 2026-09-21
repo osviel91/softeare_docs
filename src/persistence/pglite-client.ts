@@ -13,17 +13,12 @@
  */
 import { PGlite } from "@electric-sql/pglite";
 import type { SqlClient, SqlResult, SqlValue } from "./sql-client";
+import { toDriverValue } from "./sql-client";
 
 /** Where a test database keeps its data. */
 export interface PgliteOptions {
   /** `memory://` (default) for an ephemeral database, or a directory path. */
   dataDir?: string;
-}
-
-/** Map our parameter type onto what PGlite accepts. */
-function toDriverValue(value: SqlValue): unknown {
-  if (value === undefined) return null;
-  return value;
 }
 
 /** Open an in-process PostgreSQL for tests. */

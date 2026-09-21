@@ -225,7 +225,7 @@ describe("createFsProjectStorage", () => {
     }
   });
 
-  it("does not list hidden files or follow a symlinked file", async () => {
+  it("does not list hidden files", async () => {
     const storage = createFsProjectStorage({ root });
     await storage.write("visible.md", "# Visible");
     await writeFile(path.join(root, ".hidden.md"), "# Hidden", "utf8");
@@ -234,6 +234,30 @@ describe("createFsProjectStorage", () => {
     expect(listed.ok && listed.value.map((entry) => entry.path)).toEqual([
       "visible.md",
     ]);
+  });
+
+  it("refuses to read or write through a symlinked file that leaves the project", async () => {
+    const storage = createFsProjectStorage({ root });
+    const outside = await mkdtemp(path.join(tmpdir(), "sd-outside-file-"));
+    await writeFile(path.join(outside, "secret.md"), "# Secret", "utf8");
+    try {
+      // The link sits directly in the project root, so no *ancestor* of the
+      // target leaves the project — only the final component does.
+      await symlink(
+        path.join(outside, "secret.md"),
+        path.join(root, "linked.md"),
+        "file",
+      );
+      const read = await storage.read("linked.md");
+      expect(read.ok).toBe(false);
+      const write = await storage.write("linked.md", "# Replaced");
+      expect(write.ok).toBe(false);
+      expect(await readFile(path.join(outside, "secret.md"), "utf8")).toBe(
+        "# Secret",
+      );
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
   });
 
   it("refuses a move that would overwrite a sibling", async () => {

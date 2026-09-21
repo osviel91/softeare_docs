@@ -31,6 +31,7 @@ import { slugify } from "../domain/project/server-project";
 import type { Permission, ProjectRole } from "../domain/access/permissions";
 import {
   createAuthorizationPolicy,
+  credentialGrants,
   grantedPermissions,
   restrictionOf,
   type AuthorizationPolicy,
@@ -111,6 +112,21 @@ export interface ProjectCatalog {
     role: ProjectRole;
     permissions: readonly Permission[];
   }>;
+
+  /**
+   * Whether the caller may perform `permission` in this project.
+   *
+   * The non-throwing form of the same decision every use case makes, for an
+   * adapter that must ask *before* it offers an operation rather than after it
+   * fails — the server workspace provider uses it to make a read-only caller's
+   * repository genuinely read-only, so a write cannot slip past the policy by
+   * arriving through the shared documentation service instead of the catalog.
+   */
+  can(
+    context: ApplicationContext,
+    projectId: string,
+    permission: Permission,
+  ): Promise<boolean>;
 
   /** Rename a project, or change its slug. */
   updateProject(
@@ -315,7 +331,17 @@ export function createProjectCatalog(
         projectId,
         "project:read",
       );
-      return { projectId, role, permissions: grantedPermissions(role) };
+      // Both grants are reported, not just the role's: a read-only agent token
+      // whose user happens to own the project must not be told it may write.
+      const permissions = grantedPermissions(role).filter((permission) =>
+        credentialGrants(context.principal, permission),
+      );
+      return { projectId, role, permissions };
+    },
+
+    async can(context, projectId, permission) {
+      const outcome = await policy.decide(context, projectId, permission);
+      return outcome.allowed;
     },
 
     async createProject(context, input) {
@@ -457,9 +483,11 @@ export function createProjectCatalog(
       const record = await projects.findResource(projectId, resourceId);
       if (!record) throw notFound(`No resource with id ${resourceId}.`);
 
-      // The revision is claimed *first*, and the file is written inside the same
-      // attempt: a stale writer therefore changes nothing at all, and a failed
-      // write leaves the revision untouched rather than consuming it.
+      // The revision is claimed *first*, so a stale writer changes nothing at
+      // all. The claim and the file write cannot share a transaction — one is
+      // PostgreSQL, the other a volume — so a write that fails after the claim
+      // consumes the revision while leaving the content unchanged. That is the
+      // price of a conflict check that never lets a stale writer touch the file.
       const bumped = await projects.bumpRevision(
         projectId,
         resourceId,
@@ -492,6 +520,28 @@ export function createProjectCatalog(
       const record = await projects.findResource(projectId, resourceId);
       if (!record) throw notFound(`No resource with id ${resourceId}.`);
 
+      // A stale caller is refused *before* the volume is touched. The conditional
+      // update below is still the authority, but a rename that no record will
+      // ever point at would strand the document: moving the file first and only
+      // then discovering the conflict leaves the row at the old path and the
+      // bytes at the new one, which reads as a missing resource.
+      if (record.revision !== input.expectedRevision) {
+        throw conflict(resourceId, input.expectedRevision, record.revision);
+      }
+
+      // A destination another record already holds is refused here as a
+      // `conflict`; letting the conditional update discover it would surface a
+      // unique-constraint violation as a 500 instead.
+      const occupant = await withPath(() =>
+        projects.findResourceByPath(projectId, input.path),
+      );
+      if (occupant && occupant.id !== resourceId) {
+        throw new ApplicationError(
+          "conflict",
+          `A resource already exists at "${occupant.path}" (id: ${occupant.id}).`,
+        );
+      }
+
       const moved = await withPath(() =>
         storage(projectId).move({ from: record.path, to: input.path }),
       );
@@ -505,6 +555,11 @@ export function createProjectCatalog(
         input.expectedRevision,
       );
       if (!updated.ok) {
+        // A writer raced the pre-check. Put the file back, so even the race
+        // leaves the project as the refused caller found it.
+        await storage(projectId)
+          .move({ from: moved.value.path, to: record.path })
+          .catch(() => undefined);
         throw conflict(
           resourceId,
           updated.error.expectedRevision,

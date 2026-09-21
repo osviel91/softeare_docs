@@ -51,6 +51,8 @@ interface FakeState {
   calls: Array<{ method: string; path: string; body: unknown }>;
   /** Answer the next write with a conflict at this revision, once. */
   conflictAt: number | null;
+  /** Make the next write fail at the transport, as an offline browser would. */
+  networkFails: boolean;
 }
 
 const state: FakeState = {
@@ -58,6 +60,7 @@ const state: FakeState = {
   resources: new Map(),
   calls: [],
   conflictAt: null,
+  networkFails: false,
 };
 
 /** A response the API client can read: it only uses `ok`, `status`, `text`. */
@@ -154,6 +157,12 @@ function fakeFetch(input: string, init?: RequestInit): Promise<Response> {
     }
     if (method === "PUT") {
       const revision = body?.expectedRevision as number;
+      if (state.networkFails) {
+        // The transport failed, so nothing was refused: the client must report a
+        // retryable error rather than a server verdict.
+        state.networkFails = false;
+        return Promise.reject(new Error("ECONNREFUSED"));
+      }
       if (state.conflictAt !== null) {
         const current = state.conflictAt;
         state.conflictAt = null;
@@ -391,5 +400,35 @@ describe("App — authenticated browser", () => {
     expect(screen.queryByTestId("save-conflict-dialog")).toBeNull();
     expect(screen.getByTestId("dsl-textarea")).toHaveValue("title Mine");
     expect(state.resources.get("r1")?.content).toContain("title Checkout");
+  });
+
+  /**
+   * An offline save is not a refusal, so it must not be reported as one — and it
+   * must never cost the user their work. The banner offers a retry, the buffer
+   * stays in the editor, and the retry succeeds once the API answers again.
+   */
+  it("keeps the buffer and offers a retry when the API is unreachable", async () => {
+    await openServerProject();
+    state.networkFails = true;
+
+    fireEvent.change(screen.getByTestId("dsl-textarea"), {
+      target: { value: "title Offline" },
+    });
+
+    const banner = await screen.findByTestId("save-error");
+    expect(banner).toHaveTextContent(/could not be reached/i);
+    expect(screen.queryByTestId("save-conflict-dialog")).toBeNull();
+    // The work is still on screen and still unsaved.
+    expect(screen.getByTestId("dsl-textarea")).toHaveValue("title Offline");
+    expect(state.resources.get("r1")?.content).toContain("title Checkout");
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("save-error-retry"));
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("save-error")).toBeNull();
+    });
+    expect(state.resources.get("r1")?.content).toBe("title Offline");
   });
 });

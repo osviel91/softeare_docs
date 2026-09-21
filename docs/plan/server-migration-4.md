@@ -120,10 +120,26 @@ timeout.
    _"element is outside of the viewport"_ — which is why it was not a locator or
    overlay problem.
 
-Authenticated browser scenarios (login → create server project → create/edit/save
-→ reload → reopen; two clients and a `409`; a viewer who cannot mutate; an
-anonymous browser that keeps local mode working) are covered by
-`npm run test:e2e`, which starts a loopback OIDC provider and the real API.
+Authenticated browser scenarios are covered by `npm run test:e2e`, which builds
+the web bundle and the API, starts a **loopback OIDC provider** (real RSA signing,
+real PKCE, no external dependency) and the real API, and drives Chromium through:
+
+1. sign in → create a server project → create a sequence diagram → edit → save →
+   reload → reopen, with the content asserted **on the server**, not just in the
+   editor;
+2. the same for a Markdown document;
+3. two browser contexts on one document: the first saves, the second saves from a
+   stale revision and gets the conflict dialog, the server content is unchanged,
+   and *Reload server version* shows the first client's text;
+4. a second user added as `VIEWER`: reading works, and both the UI and the server
+   refuse a write;
+5. a fresh anonymous context: local projects still work and the server section
+   asks for a sign-in instead of listing projects.
+
+Making the switcher fit meant the explorer scrolls on Playwright's 720-pixel
+viewport, which changes what a click on a context-menu item has to wait for; that
+was resolved in the harness with concrete waits on the tab/note a scenario
+created, never by raising a timeout.
 
 ---
 
@@ -372,3 +388,7 @@ process (E2E, MCP smoke) run locally; nothing reaches the network.
 - Two browser clients editing the same document resolve a `409` by choosing
   reload or overwrite — there is no three-way merge editor yet (explicitly
   deferred by the mission).
+- The browser adapter lists a project's resources and then reads each one's text,
+  which is one request per document. Correct, and fine for the project sizes this
+  phase targets; a bulk read endpoint is the obvious optimisation when a project
+  grows large.

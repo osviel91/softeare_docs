@@ -43,6 +43,15 @@ export type RefusalReason =
   | "not_found"
   /** The credential is restricted to other projects. */
   | "restricted"
+  /**
+   * The credential itself does not carry the required permission.
+   *
+   * Distinct from `forbidden`: a read-only agent token would be refused a write
+   * even in a project where it is an owner, because the *credential* was never
+   * granted that capability. Both map to `403`, for the same reason a viewer's
+   * refusal does.
+   */
+  | "scope"
   /** The principal is a member, but the role is too weak. */
   | "forbidden";
 
@@ -128,6 +137,22 @@ export function credentialAllowsProject(
   return restricted === null || restricted.includes(projectId);
 }
 
+/**
+ * Whether a credential carries a permission at all.
+ *
+ * Two grants must line up before anything happens: the *credential* must carry
+ * the capability (a read-only agent token never does), and the caller's *role*
+ * in the project must carry it too. A session is unrestricted by construction —
+ * a person at a browser is limited by membership, which is what roles express —
+ * so it carries the whole vocabulary.
+ */
+export function credentialGrants(
+  principal: Principal,
+  permission: Permission,
+): boolean {
+  return principal.scopes.includes(permission);
+}
+
 /** Build the policy over the project repository. */
 export function createAuthorizationPolicy<
   P extends AuthorizedProject = AuthorizedProject,
@@ -138,6 +163,16 @@ export function createAuthorizationPolicy<
         return {
           allowed: false,
           reason: "restricted",
+          role: null,
+          missing: permission,
+        };
+      }
+      // The credential is checked before membership: a token that was never
+      // granted a capability must not be able to probe which projects exist.
+      if (!credentialGrants(context.principal, permission)) {
+        return {
+          allowed: false,
+          reason: "scope",
           role: null,
           missing: permission,
         };
@@ -185,6 +220,11 @@ export function createAuthorizationPolicy<
       const outcome = await policy.decide(context, projectId, permission);
       if (outcome.allowed) return outcome;
 
+      if (outcome.reason === "scope") {
+        throw forbidden(
+          `This credential does not carry the ${outcome.missing} permission.`,
+        );
+      }
       if (outcome.reason === "forbidden" && outcome.role !== null) {
         throw forbidden(
           `Your role in this project (${outcome.role}) does not permit ${outcome.missing}.`,

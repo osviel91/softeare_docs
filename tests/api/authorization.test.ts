@@ -212,6 +212,54 @@ describe("the policy", () => {
     }
   });
 
+  it("refuses a credential that does not carry the permission, whatever the role", async () => {
+    // The read-only agent case: an OWNER in the project, but the token itself was
+    // never granted a write capability.
+    const policy = createAuthorizationPolicy(
+      repository({ members: { u1: "OWNER" } }),
+    );
+    const readOnly = contextFor("u1");
+    const restricted = {
+      ...readOnly,
+      principal: {
+        ...readOnly.principal,
+        authType: "pat" as const,
+        scopes: ["resource:read", "project:read"] as const,
+      },
+    };
+    const outcome = await policy.decide(restricted, "p1", "resource:write");
+    expect(outcome).toEqual({
+      allowed: false,
+      reason: "scope",
+      role: null,
+      missing: "resource:write",
+    });
+    await expect(
+      policy.requirePermission(restricted, "p1", "resource:write"),
+    ).rejects.toMatchObject({ code: "forbidden", status: 403 });
+
+    // The same credential may still read.
+    expect(
+      (await policy.decide(restricted, "p1", "resource:read")).allowed,
+    ).toBe(true);
+  });
+
+  it("checks the credential before membership, so a token cannot probe projects", async () => {
+    const policy = createAuthorizationPolicy(repository({ members: {} }));
+    const readOnly = contextFor("u1");
+    const restricted = {
+      ...readOnly,
+      principal: {
+        ...readOnly.principal,
+        authType: "pat" as const,
+        scopes: ["resource:read"] as const,
+      },
+    };
+    const outcome = await policy.decide(restricted, "p1", "resource:write");
+    expect(outcome.allowed).toBe(false);
+    expect(outcome.allowed === false && outcome.reason).toBe("scope");
+  });
+
   it("fails closed when membership cannot be read", async () => {
     const policy = createAuthorizationPolicy(repository({ fail: true }));
     const outcome = await policy.decide(

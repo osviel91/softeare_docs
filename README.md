@@ -512,6 +512,41 @@ To try a change before pushing it, `docker-compose.yml` builds the same image
 from the working tree: `docker compose up --build -d`, then
 <http://localhost:8080/>.
 
+## Server mode (multi-user, in progress)
+
+Local-first remains the default and the only mode the application needs. The
+server stack is being added beside it, not instead of it, so a project can be
+either a local workspace (IndexedDB or a folder you open) or a server project
+(authenticated, shared, reachable by an agent over HTTPS).
+
+```
+docker compose -f compose.server.yml up --build -d   # web + api + postgres
+```
+
+Configuration lives in `.env` (see `.env.example`). `DATABASE_URL` and
+`COOKIE_SECRET` are required; `OIDC_ISSUER`, `OIDC_CLIENT_ID` and
+`OIDC_CLIENT_SECRET` enable sign-in and must be set together. Without an
+identity provider the API still runs, and `/auth/login` answers `503` rather
+than half-working.
+
+What exists today:
+
+- **`apps/api`** — an authenticated HTTP host over `src/application`, bundled to
+  `dist-api/server.mjs`. Routes: `/healthz`, `/api/me`, the four `/auth/*`
+  routes, and `/api/projects` with its resources and members.
+- **PostgreSQL** — users, projects, memberships, resources, sessions and audit
+  events. Content stays as `.seq`, `.eventseq` and `.md` files on a volume, so a
+  server project is as portable as a local one.
+- **Sign-in** — OIDC authorization code with PKCE and a server-side session in an
+  `HttpOnly` cookie; no token is ever put in `localStorage`.
+- **Optimistic concurrency** — every server write names the revision it read, and
+  a stale write is a `409` rather than a silent overwrite.
+
+Remote MCP, Personal Access Tokens and OAuth-compatible MCP authorization are
+later phases; the application and authorization layers they will use are already
+in place. The migration plan and its boundaries are recorded in
+[docs/plan/server-migration-0-3.md](docs/plan/server-migration-0-3.md).
+
 ## Repository layout
 
 ```

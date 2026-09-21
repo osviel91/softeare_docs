@@ -184,6 +184,27 @@ export function parseQuery(search: string): Record<string, string> {
   return query;
 }
 
+/**
+ * Parse a JSON request body.
+ *
+ * An absent body is an empty object (a `PATCH` with nothing to change is not an
+ * error); a body that is present but not a JSON object is a request error the
+ * caller reports as `invalid`.
+ */
+export function parseJsonBody(body: string | null): Record<string, unknown> {
+  if (body === null || body.trim() === "") return {};
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    throw new Error("The request body is not valid JSON.");
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new Error("The request body must be a JSON object.");
+  }
+  return parsed as Record<string, unknown>;
+}
+
 /** Headers a browser-facing JSON API should always send. */
 export const SECURITY_HEADERS: readonly ResponseHeader[] = [
   { name: "x-content-type-options", value: "nosniff" },

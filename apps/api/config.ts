@@ -13,6 +13,7 @@
  */
 import type { PgliteOptions } from "../../src/persistence/pglite-client";
 import type { PostgresOptions } from "../../src/persistence/postgres-client";
+import type { FetchLike } from "./auth/oidc";
 
 /** Where the server is running. */
 export type NodeEnvironment = "development" | "test" | "production";
@@ -49,6 +50,14 @@ export interface ServerConfig {
   oidc: OidcSettings | null;
   /** Whether requests carry a `Secure` cookie; false only for local HTTP. */
   secureCookies: boolean;
+  /**
+   * How the server reaches out to the identity provider.
+   *
+   * A seam rather than a global: a test injects a local provider, and a
+   * deployment behind an egress proxy can route discovery and token requests
+   * through it. Omitted means "use the platform's `fetch`".
+   */
+  oidcFetch?: FetchLike;
 }
 
 /** A configuration error: the server must not start. */
@@ -88,6 +97,7 @@ function required(
  */
 export function loadConfig(
   env: Record<string, string | undefined> = process.env,
+  options: { oidcFetch?: FetchLike } = {},
 ): ServerConfig {
   const environment = (optional(env, "NODE_ENV") ??
     "development") as NodeEnvironment;
@@ -162,6 +172,9 @@ export function loadConfig(
     projectVolume,
     oidc,
     secureCookies,
+    ...(options?.oidcFetch === undefined
+      ? {}
+      : { oidcFetch: options.oidcFetch }),
   };
 }
 

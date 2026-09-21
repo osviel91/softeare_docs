@@ -1,0 +1,74 @@
+# The server deployment: web, API and PostgreSQL.
+#
+# This is the local twin of the intended production topology. It is separate
+# from `docker-compose.yml` (the static-only image) on purpose, so the original
+# local-first deployment keeps working unchanged:
+#
+#   docker compose -f compose.server.yml up --build -d
+#
+# The web image serves the static SPA; the API image serves `/api` and `/auth`.
+# A reverse proxy terminates TLS in production and routes each path to the right
+# service; for local use the ports are published directly.
+services:
+  web:
+    build: .
+    image: sequencediagrams:local
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-8080}:8080"
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    image: sequencediagrams-api:local
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: "4000"
+      # Behind a TLS terminator this must be the public https URL.
+      PUBLIC_URL: "${PUBLIC_URL:-http://localhost:4000}"
+      DATABASE_URL: "postgres://sdm:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/sdm"
+      PROJECT_VOLUME: /data/projects
+      COOKIE_SECRET: "${COOKIE_SECRET:?set COOKIE_SECRET}"
+      # All three OIDC values are required together; login is refused without them.
+      OIDC_ISSUER: "${OIDC_ISSUER:-}"
+      OIDC_CLIENT_ID: "${OIDC_CLIENT_ID:-}"
+      OIDC_CLIENT_SECRET: "${OIDC_CLIENT_SECRET:-}"
+    ports:
+      - "${API_PORT:-4000}:4000"
+    volumes:
+      # User documents are a volume, never part of an image.
+      - project-data:/data/projects
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget -q -O /dev/null http://127.0.0.1:4000/healthz || exit 1",
+        ]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: sdm
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}"
+      POSTGRES_DB: sdm
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sdm -d sdm"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres-data:
+  project-data:

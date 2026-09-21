@@ -1,0 +1,36 @@
+# syntax=docker/dockerfile:1
+
+# ---- Build stage -----------------------------------------------------------
+# Compiles the API bundle (apps/api + the shared src/ modules it reaches).
+FROM node:22-alpine AS build
+
+WORKDIR /app
+
+# The project-local npm cache lives in the workspace and is not writable by a
+# normal user in CI, so override it with a writable dir here.
+COPY package.json package-lock.json .npmrc ./
+RUN npm ci --cache /tmp/.npm-cache
+
+COPY . .
+RUN npm run api:build
+
+# ---- Run stage -------------------------------------------------------------
+# The API is the only image that needs a Node runtime; the web image stays nginx
+# plus static files.
+FROM node:22-alpine AS serve
+
+WORKDIR /app
+ENV NODE_ENV=production
+
+# The API bundle is self-contained: `pg` and its dependencies are inlined except
+# for the optional native binding, which cannot be. PGlite (the in-process
+# PostgreSQL used by tests) is deliberately *not* copied — a deployment always
+# sets DATABASE_URL, and shipping a WebAssembly database in an image that will
+# never load it is weight for nothing.
+COPY --from=build /app/dist-api ./dist-api
+
+# The project volume: user documents live here, never in the image.
+VOLUME ["/data/projects"]
+
+EXPOSE 4000
+CMD ["node", "dist-api/server.mjs"]

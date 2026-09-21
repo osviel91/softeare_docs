@@ -230,7 +230,7 @@ export function createTools(): Tool[] {
         name: "list_projects",
         title: "List documentation projects",
         description:
-          "List every project in the workspace with its resource and diagnostic counts. A project is a subdirectory of the workspace and holds the diagrams, event flows and markdown documents for one system. Call this first when you do not know what already exists. Returns `{ root, projects: [{ id, name, resources, diagrams, eventFlows, documents, errors, warnings }] }`.",
+          "List every project in the workspace with its resource and diagnostic counts. A project is a subdirectory of the workspace and holds the diagrams, event flows and markdown documents for one system. Call this first when you do not know what already exists. Returns `{ workspace, projects: [{ id, name, resources, diagrams, eventFlows, documents, errors, warnings }] }`.",
         inputSchema: objectSchema({}),
         annotations: { ...readOnly, title: "List documentation projects" },
       },
@@ -238,7 +238,7 @@ export function createTools(): Tool[] {
         const projects = await context.workspace.listProjects();
         const text =
           projects.length === 0
-            ? `The workspace at ${context.workspace.root} has no projects yet. Create one with create_project, or add a subdirectory to the workspace.`
+            ? `The workspace at ${context.workspace.describe} has no projects yet. Create one with create_project, or add a subdirectory to the workspace.`
             : projects
                 .map(
                   (project) =>
@@ -247,7 +247,7 @@ export function createTools(): Tool[] {
                 .join("\n");
         return {
           text,
-          structured: { root: context.workspace.root, projects },
+          structured: { workspace: context.workspace.describe, projects },
         };
       },
     },

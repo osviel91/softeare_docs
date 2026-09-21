@@ -517,9 +517,12 @@ from the working tree: `docker compose up --build -d`, then
 ```
 src/
   app/            React application shell and (later) routing & commands
+  application/    The one layer every host calls: principal/context, ports,
+                  project services, the local workspace provider (ADR-039)
   shared/         Framework-agnostic helpers: Result, id factories
   domain/         Domain model: diagram, note, eventflow, project, resource,
-                  links; project-wide search (search/); project index (project/)
+                  links; project-wide search (search/); project index (project/);
+                  the capability vocabulary (access/)
   language/       Two DSLs (lexer, parser, diagnostics) — `sequence/` and
                   `eventflow/` — plus the markdown renderer
   layout/         AST -> geometry (independent of SVG)
@@ -533,6 +536,9 @@ src/
 mcp/              MCP server for coding agents: a Node filesystem workspace
                   adapter, the two-era protocol layer, the tool catalog, the
                   reference resources, the workflow prompts, and its tests
+apps/             Server hosts. `api` is the authenticated HTTP API; the remote
+                  MCP server moves here in a later phase. Both are adapters over
+                  `src/application` and are never imported by each other.
 scripts/          Repo scripts: the MCP bundle, and the MCP/browser smoke tests
 tests/            Browser-independent and workflow tests
 docs/plan/        Mission plans: intent, deliverables, and verification

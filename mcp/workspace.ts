@@ -24,15 +24,17 @@
  * message written for the model to act on; the tool layer turns them into MCP
  * tool-execution errors.
  */
-import path from "node:path";
-import type { WorkspaceRepository } from "../src/workspace/WorkspaceRepository";
-import { createFileSystemWorkspaceRepository } from "../src/workspace/fs-access/file-system-workspace-repository";
+import { createLocalWorkspaceProvider } from "../src/application/local-workspace-provider";
+import type {
+  ProjectWorkspace,
+  ProjectWorkspaceProvider,
+} from "../src/application/ports";
 import {
   loadProjectSnapshot,
   recordResourceRename,
   toSourceFiles,
   type ProjectSnapshot,
-} from "../src/services/project-service";
+} from "../src/application/project-service";
 import { createProjectIndexer } from "../src/domain/project/indexer";
 import type {
   ProjectDiagnostic,
@@ -258,29 +260,57 @@ export function resourceTypeOfInput(kind: ResourceKindInput): ResourceType {
  */
 export class DocumentationWorkspace {
   /**
-   * @param root - The absolute workspace directory.
-   * @param repo - The repository over that directory.
+   * @param provider - The source of project workspaces this service reads and
+   *   writes through: a directory of projects in local mode, the server's
+   *   project registry in server mode.
    * @param defaultProject - A project id/name used when a tool omits `project`.
    */
   private constructor(
-    readonly root: string,
-    private readonly repo: WorkspaceRepository,
+    private readonly provider: ProjectWorkspaceProvider,
     private readonly defaultProject: string | undefined,
   ) {}
 
-  /** Open a directory as a workspace. */
+  /** A human-readable name for this workspace (its directory, in local mode). */
+  get describe(): string {
+    return this.provider.describe();
+  }
+
+  /** Open a directory as a workspace (local mode). */
   static open(root: string, defaultProject?: string): DocumentationWorkspace {
-    const resolved = path.resolve(root);
     return new DocumentationWorkspace(
-      resolved,
-      createFileSystemWorkspaceRepository(createNodeDirectoryHandle(resolved)),
+      createLocalWorkspaceProvider(root, createNodeDirectoryHandle),
       defaultProject,
     );
   }
 
+  /**
+   * Build a service over any provider.
+   *
+   * This is the seam every host uses. The HTTP API and the MCP adapter construct
+   * the same service with a different provider, so they cannot disagree about
+   * what a resource means, what its diagnostics are, or what a revision is.
+   */
+  static over(
+    provider: ProjectWorkspaceProvider,
+    defaultProject?: string,
+  ): DocumentationWorkspace {
+    return new DocumentationWorkspace(provider, defaultProject);
+  }
+
+  /** The project and its resource store, or an error naming what is missing. */
+  private async workspaceOf(project: Project): Promise<ProjectWorkspace> {
+    const workspace = await this.provider.openProject(project);
+    if (workspace === null) {
+      throw new Error(
+        `Project "${project.id}" is not reachable through this workspace.`,
+      );
+    }
+    return workspace;
+  }
+
   /** Every project in the workspace, with its documentation counts. */
   async listProjects(): Promise<ProjectSummary[]> {
-    const projects = unwrap(await this.repo.listProjects());
+    const projects = await this.provider.listProjects();
     const summaries: ProjectSummary[] = [];
     for (const project of projects) {
       summaries.push(await this.projectSummary(project));
@@ -319,7 +349,7 @@ export class DocumentationWorkspace {
    */
   async resolveProject(name?: string): Promise<Project> {
     const wanted = (name ?? this.defaultProject ?? "").trim();
-    const projects = unwrap(await this.repo.listProjects());
+    const projects = await this.provider.listProjects();
     if (wanted === "") {
       if (projects.length === 1) return projects[0];
       if (projects.length === 0) {
@@ -360,21 +390,22 @@ export class DocumentationWorkspace {
         "A project name must not contain a path separator; it names one subdirectory of the workspace.",
       );
     }
-    const existing = unwrap(await this.repo.listProjects());
-    if (existing.some((project) => project.name === trimmed)) {
+    const existing = await this.provider.listProjects();
+    const clash = existing.find((project) => project.name === trimmed);
+    if (clash) {
       throw new Error(
-        `A project named "${trimmed}" already exists (id: "${
-          existing.find((project) => project.name === trimmed)?.id
-        }").`,
+        `A project named "${trimmed}" already exists (id: "${clash.id}").`,
       );
     }
-    const project = unwrap(await this.repo.createProject(trimmed));
+    const project = await this.provider.createProject(trimmed);
+    if (project === null) {
+      throw new Error("This workspace does not support creating projects.");
+    }
+    const { repo } = await this.workspaceOf(project);
     // Materialise the identity record immediately, so the project is
     // self-describing before its first file exists: an agent (or a human) can
     // read `project.json` to learn the project's shape without the app.
-    unwrap(
-      await this.repo.writeProjectMetadata(project.id, createEmptyMetadata()),
-    );
+    unwrap(await repo.writeProjectMetadata(project.id, createEmptyMetadata()));
     // Reading the snapshot reconciles the record against the files, which is
     // what gives the first resource its stable id.
     await this.snapshot(project);
@@ -383,7 +414,8 @@ export class DocumentationWorkspace {
 
   /** Read a project's files and its reconciled identity record. */
   async snapshot(project: Project): Promise<ProjectSnapshot> {
-    return unwrap(await loadProjectSnapshot(this.repo, project));
+    const { repo } = await this.workspaceOf(project);
+    return unwrap(await loadProjectSnapshot(repo, project));
   }
 
   /** Build the project index from a snapshot, or read one first when omitted. */
@@ -695,16 +727,17 @@ export class DocumentationWorkspace {
     const fromPath = descriptor.path;
     const target = isNote ? ensureMarkdownExtension(trimmed) : trimmed;
 
+    const { repo } = await this.workspaceOf(project);
     const renamed = isNote
       ? unwrap(
-          await this.repo.renameNoteFile(
+          await repo.renameNoteFile(
             project.id,
             fullPath(project, fromPath),
             target,
           ),
         )
       : unwrap(
-          await this.repo.renameDiagramFile(
+          await repo.renameDiagramFile(
             project.id,
             fullPath(project, fromPath),
             target,
@@ -713,7 +746,7 @@ export class DocumentationWorkspace {
 
     unwrap(
       await recordResourceRename(
-        this.repo,
+        repo,
         project.id,
         snapshot.metadata,
         fromPath,
@@ -746,16 +779,17 @@ export class DocumentationWorkspace {
         `Refusing to delete "${descriptor.path}" without confirmation. Show the user what will be removed, then call delete_resource again with confirm: true.`,
       );
     }
+    const { repo } = await this.workspaceOf(project);
     if (descriptor.type === "markdown-document") {
       unwrap(
-        await this.repo.deleteNoteFile(
+        await repo.deleteNoteFile(
           project.id,
           fullPath(project, descriptor.path),
         ),
       );
     } else {
       unwrap(
-        await this.repo.deleteDiagramFile(
+        await repo.deleteDiagramFile(
           project.id,
           fullPath(project, descriptor.path),
         ),
@@ -770,6 +804,7 @@ export class DocumentationWorkspace {
     reference: string,
     request: RenderRequest = {},
   ): Promise<RenderResult> {
+    const { root } = await this.workspaceOf(project);
     const { resource, content } = await this.readResource(project, reference);
     let svg: string;
     let width: number;
@@ -817,7 +852,7 @@ export class DocumentationWorkspace {
       resource: resource.path,
     };
     if (request.output !== undefined && request.output.trim() !== "") {
-      const absolute = resolveInside(this.root, request.output.trim());
+      const absolute = resolveInside(root, request.output.trim());
       await writeTextFile(absolute, svg);
       result.output = request.output.trim();
     } else {
@@ -837,9 +872,7 @@ export class DocumentationWorkspace {
     scanned: number;
     truncated: boolean;
   }> {
-    const projects = project
-      ? [project]
-      : unwrap(await this.repo.listProjects());
+    const projects = project ? [project] : await this.provider.listProjects();
     const documents: SearchDocument[] = [];
 
     for (const current of projects) {
@@ -1094,6 +1127,7 @@ export class DocumentationWorkspace {
     name: string,
     content: string,
   ): Promise<void> {
+    const { repo } = await this.workspaceOf(project);
     if (type === "markdown-document") {
       const note: NoteFile = {
         id: fullPath(project, name),
@@ -1101,7 +1135,7 @@ export class DocumentationWorkspace {
         markdown: content,
         projectId: project.id,
       };
-      unwrap(await this.repo.saveNoteFile(project.id, note));
+      unwrap(await repo.saveNoteFile(project.id, note));
       return;
     }
     const diagram: DiagramFile = {
@@ -1110,7 +1144,7 @@ export class DocumentationWorkspace {
       source: content,
       projectId: project.id,
     };
-    unwrap(await this.repo.saveDiagramFile(project.id, diagram));
+    unwrap(await repo.saveDiagramFile(project.id, diagram));
   }
 
   /**

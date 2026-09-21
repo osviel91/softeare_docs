@@ -16,7 +16,7 @@ import type { DiagramFile, NoteFile } from "../../domain/workspace/types";
 import type { ProjectMetadata } from "../../domain/workspace/metadata";
 import { createProjectIndexer } from "../../domain/project/indexer";
 import type { ProjectIndex } from "../../domain/project/project-index";
-import { toSourceFiles } from "../../services/project-service";
+import { toSourceFiles } from "../../application/project-service";
 
 /**
  * Build the active project's index, re-analysing only what changed.

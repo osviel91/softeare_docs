@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { loadProjectSnapshot } from "../../src/services/project-service";
+import { loadProjectSnapshot } from "../../src/application/project-service";
 import { isOk } from "../../src/shared/result/result";
 import { createInMemoryWorkspaceRepository } from "../../src/workspace/in-memory";
 

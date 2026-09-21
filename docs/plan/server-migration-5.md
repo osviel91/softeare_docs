@@ -30,10 +30,10 @@ the same model.
 
 | Checkpoint | Delivered                                                                               | Commit    |
 | ---------- | --------------------------------------------------------------------------------------- | --------- |
-| A          | Domain model, scope vocabulary, Principal normalization, migration 0002, repositories   | this tree |
-| B          | Agent/credential application service, audit attribution, rotation, disable              | this tree |
-| C          | Credential authentication, converged API bearer auth, agents API, remote MCP re-pointed | this tree |
-| D          | Agents & access-token screen, ADR-045, tests and E2E                                    | this tree |
+| A          | Domain model, scope vocabulary, Principal normalization, migration 0002, repositories   | `43464a2` |
+| B          | Agent/credential application service, audit attribution, rotation, disable              | `43464a2` |
+| C          | Credential authentication, converged API bearer auth, agents API, remote MCP re-pointed | `43464a2` |
+| D          | Agents & access-token screen, ADR-045, tests and E2E                                    | `43464a2` |
 
 ---
 

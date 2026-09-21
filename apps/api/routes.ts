@@ -23,6 +23,7 @@ import { guarded } from "./http/errors";
 import { correlationId } from "./http/node-server";
 import { requireContext, resolveSession } from "./context";
 import { createAuthRoutes, oidcClientFor } from "./auth/routes";
+import { registerPersonalAccessTokenRoutes } from "./pat/routes";
 import type { ProjectRole } from "../../src/domain/access/permissions";
 import { isProjectRole } from "../../src/domain/access/permissions";
 import { invalid } from "../../src/application/errors";
@@ -284,6 +285,13 @@ export function createRouter(dependencies: AppDependencies): Router {
         return json(204, null);
       }),
   );
+
+  // ---- Personal access tokens ----------------------------------------------
+  //
+  // Cookie/session authenticated, so a machine credential cannot mint or revoke
+  // credentials. The routes live in their own module because the surface has a
+  // different threat model from project editing, not merely different URLs.
+  registerPersonalAccessTokenRoutes(router, dependencies);
 
   return router;
 }

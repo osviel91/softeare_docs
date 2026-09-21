@@ -40,6 +40,7 @@ export const AUDIT_ACTIONS = [
   "resource.deleted",
   "token.created",
   "token.revoked",
+  "token.renamed",
   "mcp.tool.executed",
 ] as const;
 

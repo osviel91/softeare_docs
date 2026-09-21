@@ -15,11 +15,14 @@ import { createUserRepository } from "../../src/persistence/user-repository";
 import { createProjectRepository } from "../../src/persistence/project-repository";
 import { createSessionRepository } from "../../src/persistence/session-repository";
 import { createAuditRepository } from "../../src/persistence/audit-repository";
+import { createPersonalAccessTokenRepository } from "../../src/persistence/personal-access-token-repository";
 import type { SqlClient } from "../../src/persistence/sql-client";
 import {
   createProjectCatalog,
   type ProjectCatalog,
 } from "../../src/application/project-catalog";
+import { createPersonalAccessTokenService } from "../../src/application/personal-access-token-service";
+import { generatePat } from "./auth/pat";
 import {
   assertProjectVolumeUsable,
   createFsProjectStorage,
@@ -34,6 +37,10 @@ export interface AppDependencies {
   projects: ReturnType<typeof createProjectRepository>;
   sessions: ReturnType<typeof createSessionRepository>;
   audit: ReturnType<typeof createAuditRepository>;
+  /** Personal Access Tokens: the machine credentials remote MCP presents. */
+  tokens: ReturnType<typeof createPersonalAccessTokenRepository>;
+  /** The PAT lifecycle use cases the browser's token screen calls. */
+  personalAccessTokens: ReturnType<typeof createPersonalAccessTokenService>;
   /**
    * A catalog over the same repositories.
    *
@@ -44,6 +51,17 @@ export interface AppDependencies {
   catalog: ProjectCatalog;
   /** Where a project's files live. Never derived from a request. */
   storageFor: (projectId: string) => ReturnType<typeof createFsProjectStorage>;
+  /**
+   * A project's storage handle and its root directory together.
+   *
+   * The remote MCP workspace provider needs both for a project the catalog has
+   * already authorized; building it here keeps the composition root the only
+   * place that knows where the volume is.
+   */
+  locationFor: (projectId: string) => {
+    storage: ReturnType<typeof createFsProjectStorage>;
+    root: string;
+  };
   /** Whether the database is reachable, for the health endpoint. */
   ping: () => Promise<boolean>;
 }
@@ -75,6 +93,7 @@ export async function createApp(
       root: path.join(config.projectVolume, projectId),
     });
   const audit = createAuditRepository(sql);
+  const tokens = createPersonalAccessTokenRepository(sql);
 
   return {
     config,
@@ -83,8 +102,19 @@ export async function createApp(
     projects,
     sessions: createSessionRepository(sql),
     audit,
+    tokens,
+    personalAccessTokens: createPersonalAccessTokenService({
+      tokens,
+      projects,
+      audit,
+      mint: generatePat,
+    }),
     catalog: createProjectCatalog({ projects, audit, storage: storageFor }),
     storageFor,
+    locationFor: (projectId: string) => ({
+      storage: storageFor(projectId),
+      root: path.join(config.projectVolume, projectId),
+    }),
     async ping() {
       try {
         await sql.query("SELECT 1");

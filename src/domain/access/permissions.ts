@@ -135,6 +135,84 @@ export const AGENT_PROFILES: Readonly<Record<string, readonly Permission[]>> = {
   PROJECT_ADMIN: ALL_PERMISSIONS,
 };
 
+/**
+ * The coarse scope model a Personal Access Token is created with (Phase 5).
+ *
+ * Deliberately two scopes, not one per operation. A machine credential is a
+ * grant of *intent* — "this agent may read my projects" or "this agent may keep
+ * my documentation up to date" — and a token that names `resource:write` but not
+ * `resource:read` is a combination nobody wants and every UI would have to
+ * explain. The two scopes expand into the fine-grained {@link Permission}
+ * vocabulary below, so the authorization policy stays exactly as it was: it
+ * still compares permissions, and a token simply carries a smaller set of them.
+ *
+ * `projects:write` implies `projects:read`. Neither grants `project:admin`:
+ * members, ownership and project deletion are human actions, not agent actions.
+ */
+export const PAT_SCOPES = ["projects:read", "projects:write"] as const;
+
+/** One coarse scope a PAT can carry. */
+export type PatScope = (typeof PAT_SCOPES)[number];
+
+/**
+ * The permissions each PAT scope expands to.
+ *
+ * This is the only place a PAT scope is interpreted. `projects:write` is a
+ * superset of `projects:read` on purpose, so a caller never has to ask for both
+ * and a token can never be in the contradictory state of "write but not read".
+ */
+export const PERMISSIONS_BY_PAT_SCOPE: Readonly<
+  Record<PatScope, readonly Permission[]>
+> = {
+  "projects:read": [
+    "project:read",
+    "resource:read",
+    "diagram:render",
+    "project:validate",
+    "project:export",
+    "mcp:read",
+  ],
+  "projects:write": [
+    "project:read",
+    "project:write",
+    "resource:read",
+    "resource:write",
+    "diagram:render",
+    "project:validate",
+    "project:export",
+    "mcp:read",
+    "mcp:write",
+  ],
+};
+
+/** Whether a value is one of the known PAT scopes. */
+export function isPatScope(value: unknown): value is PatScope {
+  return (
+    typeof value === "string" &&
+    (PAT_SCOPES as readonly string[]).includes(value)
+  );
+}
+
+/**
+ * Expand stored PAT scopes into permissions, dropping an unknown one.
+ *
+ * Dropping rather than throwing is deliberate and fail-closed: a scope a newer
+ * server wrote that this build does not know grants nothing here, instead of
+ * either inventing a permission or refusing every request from a valid token.
+ */
+export function permissionsOfPatScopes(
+  scopes: readonly string[],
+): Permission[] {
+  const granted: Permission[] = [];
+  for (const scope of scopes) {
+    if (!isPatScope(scope)) continue;
+    for (const permission of PERMISSIONS_BY_PAT_SCOPE[scope]) {
+      if (!granted.includes(permission)) granted.push(permission);
+    }
+  }
+  return granted;
+}
+
 /** Whether a value is one of the known permissions. */
 export function isPermission(value: unknown): value is Permission {
   return (

@@ -3,6 +3,19 @@
 #
 #   docker compose -f compose.production.yml up --build -d
 #
+# This is one file with two supported entry points, because the same topology has
+# to run both ways:
+#
+#   * **Build from a checkout** — the command above, which is what the
+#     `container-integration` CI job and local verification use. Each service
+#     builds its own Dockerfile from this repository.
+#   * **Deploy published images** — a Portainer stack (Git repository or web
+#     editor) with `WEB_IMAGE`, `API_IMAGE` and `MCP_IMAGE` set to the images
+#     `publish-image.yml` pushes to GHCR. Nothing is built on the host, so the
+#     running deployment traces back to a pushed commit. Pin the immutable
+#     `sha-<short>` tag (or a digest) rather than `latest` when a deployment has
+#     to be reproducible.
+#
 # This is the topology Phase 6 defines:
 #
 #   internet → HTTPS → reverse-proxy ─┬─ web   (nginx + static bundle)
@@ -22,6 +35,10 @@
 # TLS terminates at the proxy. For local use the proxy also publishes plain HTTP
 # on 8080 so the composition can be exercised without certificates; in a real
 # deployment terminate TLS with the certificates the proxy config expects.
+#
+# Required environment (see `.env.example`): POSTGRES_PASSWORD, COOKIE_SECRET,
+# TOKEN_PEPPER, API_PUBLIC_URL, MCP_PUBLIC_URL, OIDC_ISSUER, OIDC_CLIENT_ID,
+# OIDC_CLIENT_SECRET. TOKEN_PEPPER must be independent of COOKIE_SECRET.
 # ---------------------------------------------------------------------------
 services:
   reverse-proxy:
@@ -51,7 +68,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: sequencediagrams-web:phase6
+    image: "${WEB_IMAGE:-sequencediagrams-web:phase6}"
     restart: unless-stopped
     # No ports: only the proxy reaches it, over the compose network.
     expose:
@@ -67,7 +84,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.api
-    image: sequencediagrams-api:phase6
+    image: "${API_IMAGE:-sequencediagrams-api:phase6}"
     restart: unless-stopped
     depends_on:
       postgres:
@@ -98,7 +115,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.mcp
-    image: sequencediagrams-mcp:phase6
+    image: "${MCP_IMAGE:-sequencediagrams-mcp:phase6}"
     restart: unless-stopped
     depends_on:
       postgres:

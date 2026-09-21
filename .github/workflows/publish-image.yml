@@ -27,8 +27,9 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
-  # github.repository is already lower-case, which GHCR requires.
-  IMAGE_NAME: ${{ github.repository }}
+  # github.repository is already lower-case, which GHCR requires. The per-service
+  # image name is derived in the publish job's matrix, which is what lets the
+  # three images of Phase 6 be published from one workflow.
 
 jobs:
   verify:
@@ -102,13 +103,67 @@ jobs:
       - name: Smoke test the built bundle
         run: npm run test:e2e
 
-  publish:
-    name: Build and push image
+  # The composition is the deployment artefact, so it is exercised before any
+  # image is published: the real Dockerfiles build, the real compose topology
+  # starts, migrations run, and the API and MCP are proved to read and write the
+  # same project volume. This is the Phase 6 property a browser smoke test cannot
+  # reach, and it runs in the repository's own CI rather than only locally.
+  container-integration:
+    name: Container integration
     runs-on: ubuntu-latest
     needs: [verify, browser-smoke]
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Prepare npm cache
+        run: mkdir -p "$RUNNER_TEMP/npm-cache"
+
+      - name: Restore npm cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/npm-cache
+          key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install dependencies
+        run: npm ci --cache "$RUNNER_TEMP/npm-cache"
+
+      # Builds the three real images with the real Dockerfiles and proves the
+      # API and the MCP service share one project: MCP writes, API reads, and
+      # the reverse. It tears the composition down itself.
+      - name: Run the container integration test
+        run: npm run test:containers
+
+  publish:
+    name: Build and push ${{ matrix.service }} image
+    runs-on: ubuntu-latest
+    needs: [verify, browser-smoke, container-integration]
     permissions:
       contents: read
       packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The web image keeps the bare repository name it has always had, so
+          # an existing stack keeps pulling the same reference. The two server
+          # images are namespaced under it.
+          - service: web
+            dockerfile: Dockerfile
+            image: ${{ github.repository }}
+            tag_suffix: ""
+          - service: api
+            dockerfile: Dockerfile.api
+            image: ${{ github.repository }}/api
+            tag_suffix: "-api"
+          - service: mcp
+            dockerfile: Dockerfile.mcp
+            image: ${{ github.repository }}/mcp
+            tag_suffix: "-mcp"
     steps:
       - uses: actions/checkout@v4
 
@@ -130,7 +185,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ${{ env.REGISTRY }}/${{ matrix.image }}
           tags: |
             type=ref,event=branch
             type=ref,event=tag
@@ -140,23 +195,30 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
 
       # amd64 + arm64: a Portainer host is as likely to be an ARM NAS or a
-      # Raspberry Pi as it is an x86 server, and the image is small enough that
+      # Raspberry Pi as it is an x86 server, and the images are small enough that
       # the emulated leg is cheap.
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: .
+          file: ${{ matrix.dockerfile }}
           platforms: linux/amd64,linux/arm64
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # A per-service cache scope, or the three legs would evict each
+          # other's layers in the shared GitHub Actions cache.
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
 
-      # The image that was just published is the artefact Portainer will pull,
-      # so serve it once and prove routing and asset permissions actually work.
-      - name: Smoke test the published image
-        if: github.event_name != 'pull_request'
+      # The published web image is served once to prove routing and asset
+      # permissions work. The two server images are *not* probed here: both
+      # migrate the schema during startup, so a container without a database is
+      # meant to fail, and a "health check" against one would prove nothing. The
+      # `container-integration` job above is what proves them — it starts the
+      # real composition against a real PostgreSQL and exercises both hosts.
+      - name: Smoke test the published web image
+        if: github.event_name != 'pull_request' && matrix.service == 'web'
         run: |
           set -euo pipefail
           # Fetch into a scratch dir: the repository root has its own
@@ -189,3 +251,15 @@ jobs:
           test -n "$asset"
           curl -fsS "http://127.0.0.1:8080$asset" -o /dev/null
           echo "Image serves the app, the SPA fallback and $asset"
+
+      # The server images are multi-arch builds, so `docker image inspect` on the
+      # runner sees a manifest list rather than a runnable image. Record the
+      # digest the manifest was pushed under: that digest is what a Portainer
+      # stack pins to, and what makes a running deployment traceable to a commit.
+      - name: Report the published digest
+        if: github.event_name != 'pull_request'
+        run: |
+          set -euo pipefail
+          reference="${{ env.REGISTRY }}/${{ matrix.image }}@${{ steps.meta.outputs.digest }}"
+          echo "${{ matrix.service }} image: $reference" >> "$GITHUB_STEP_SUMMARY"
+          docker buildx imagetools inspect "$reference" || true

@@ -31,6 +31,9 @@ export async function main(): Promise<void> {
   const dependencies = await createApp(config);
   const server = createHttpServer({
     router: createRouter(dependencies),
+    // The browser's own origin. A state-changing request that names a different
+    // one is a forged request, not this application's.
+    expectedOrigin: config.publicUrl,
     onError(error, requestId) {
       // The correlation id is the only thing that ties a 500 to its cause.
       process.stderr.write(

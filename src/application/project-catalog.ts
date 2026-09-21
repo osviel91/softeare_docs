@@ -39,13 +39,10 @@ import {
 import type {
   ProjectRepository,
   ResourceRecord,
-} from "../persistence/project-repository";
+} from "./ports/project-repository";
 import type { ProjectStorage } from "./project-storage";
-import { InvalidResourcePathError } from "../persistence/resource-path";
-import type {
-  AuditAction,
-  AuditRepository,
-} from "../persistence/audit-repository";
+import { InvalidResourcePathError } from "./ports/resource-path";
+import type { AuditAction, AuditRepository } from "./ports/audit-repository";
 import type { JsonObject } from "../shared/json/json-value";
 
 /** A resource as the API and MCP surface it: identity, path, type, revision. */
@@ -78,6 +75,38 @@ export interface ProjectCatalogOptions {
    * policy without any use case changing.
    */
   policy?: AuthorizationPolicy<ServerProject>;
+  /**
+   * Called when an audit entry could not be written.
+   *
+   * An audit write happens *after* the mutation it describes has committed, so
+   * failing the request would tell the caller their change did not happen when it
+   * did — worse than the missing row. The failure is therefore reported here and
+   * swallowed, which is what makes it observable without being a lie. The default
+   * writes to stderr, so a deployment that forgets to inject a reporter still
+   * sees the problem in its logs.
+   *
+   * The durable fix is a transactional outbox, where the audit row commits with
+   * the mutation instead of after it. That is Phase 6 work, recorded in
+   * `docs/plan/server-migration-4.md`.
+   */
+  onAuditFailure?: (error: unknown, event: AuditFailureContext) => void;
+}
+
+/** What a failed audit write was trying to record. */
+export interface AuditFailureContext {
+  action: AuditAction;
+  userId: string;
+  projectId: string | null;
+  resourceId: string | null;
+  requestId: string;
+}
+
+/** The default reporter: one line on stderr, with the correlation id. */
+function reportAuditFailure(error: unknown, event: AuditFailureContext): void {
+  const message = error instanceof Error ? error.message : String(error);
+  process.stderr.write(
+    `${event.requestId} audit ${event.action} failed: ${message}\n`,
+  );
 }
 
 /** The server project use cases. */
@@ -279,15 +308,29 @@ export function createProjectCatalog(
     },
   ): Promise<void> => {
     if (!audit) return;
-    await audit.record({
+    const failureContext: AuditFailureContext = {
       action: event.action,
       userId: context.principal.userId,
-      authType: context.principal.authType,
       projectId: event.projectId ?? null,
       resourceId: event.resourceId ?? null,
       requestId: context.requestId,
-      ...(event.detail === undefined ? {} : { detail: event.detail }),
-    });
+    };
+    try {
+      await audit.record({
+        action: event.action,
+        userId: context.principal.userId,
+        authType: context.principal.authType,
+        projectId: event.projectId ?? null,
+        resourceId: event.resourceId ?? null,
+        requestId: context.requestId,
+        ...(event.detail === undefined ? {} : { detail: event.detail }),
+      });
+    } catch (error) {
+      // The mutation has already committed. Reporting a failure here would be
+      // false, and swallowing it silently would hide a compliance problem, so it
+      // is reported and the successful mutation stands.
+      (options.onAuditFailure ?? reportAuditFailure)(error, failureContext);
+    }
   };
 
   const conflict = (

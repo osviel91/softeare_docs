@@ -28,11 +28,15 @@ import {
 } from "./features/editor/snippets";
 import Preview from "./features/preview/Preview";
 import Explorer, { type MenuPosition } from "./features/explorer/Explorer";
+import WorkspaceSwitcher, {
+  type WorkspaceMode,
+} from "./features/explorer/WorkspaceSwitcher";
 import TabBar from "./features/tabs/TabBar";
 import DocsPage from "./features/docs/DocsPage";
 import ConfirmDialog from "./features/ui/ConfirmDialog";
 import ContextMenu, { type ContextMenuItem } from "./features/ui/ContextMenu";
 import PromptDialog from "./features/ui/PromptDialog";
+import SaveConflictDialog from "./features/ui/SaveConflictDialog";
 import HistoryPanel from "./features/history/HistoryPanel";
 import MarkdownEditor from "./features/notes/MarkdownEditor";
 import MarkdownView from "./features/notes/MarkdownView";
@@ -150,6 +154,11 @@ import {
   type OpenedFolder,
 } from "./workspace/fs-access/create-file-system-repository";
 import type { WorkspaceRepository } from "./workspace/WorkspaceRepository";
+import { ServerApiClient } from "./workspace/server/api-client";
+import { useAuth } from "./features/server/use-auth";
+import { useServerWorkspaces } from "./features/server/use-server-workspaces";
+import { RevisionConflictError } from "./workspace/server/api-errors";
+import { supportsForcedWrite } from "./workspace/server/server-workspace-repository";
 
 const PRODUCT_NAME = "SequenceDiagrams Manager";
 
@@ -214,6 +223,11 @@ function wordCount(markdown: string): number {
 export default function App() {
   const defaultRepo = useWorkspaceRepository();
   const [openedFolder, setOpenedFolder] = useState<OpenedFolder | null>(null);
+  // The API client is stateless and shared: one instance keeps the cookie
+  // handling, error mapping and base URL in one place for every feature.
+  const apiClient = useMemo(() => new ServerApiClient(), []);
+  const auth = useAuth(apiClient);
+  const server = useServerWorkspaces(apiClient, auth);
   const [page, setPage] = useState<AppPage>("workspace");
   const [view, setView] = useState<EditorView>("code");
   const [autoUpdate, setAutoUpdate] = useState(true);
@@ -236,6 +250,9 @@ export default function App() {
   const [transferError, setTransferError] = useState<string | null>(null);
   // The hidden file input the Import Project command clicks.
   const importInputRef = useRef<HTMLInputElement | null>(null);
+  // Whether the conflict dialog's "copy my changes" has just succeeded, so the
+  // button can say so instead of looking inert.
+  const [conflictCopied, setConflictCopied] = useState(false);
   // Quick open, and the caret/preview-sync state that drives the outline
   // highlight, hover cards and source↔diagram selection.
   const [quickOpenOpen, setQuickOpenOpen] = useState(false);
@@ -264,32 +281,51 @@ export default function App() {
   /**
    * Open a local folder (replacing the active repository) or, when a folder is
    * already open, close it and return to in-browser projects. A cancelled picker
-   * leaves the current repository untouched by resetting to `null`.
+   * leaves the current repository untouched by resetting to `null`. Opening a
+   * folder also closes any server project, so the editor is only ever bound to
+   * one source.
    */
   const openFolder = useCallback(async () => {
     if (openedFolder) {
       setOpenedFolder(null);
       return;
     }
+    server.close();
     try {
       setOpenedFolder(await openFileSystemRepository());
     } catch {
       setOpenedFolder(null);
     }
-  }, [openedFolder]);
+  }, [openedFolder, server.close]);
+
+  /** Return to the in-browser projects. */
+  const openLocalWorkspace = useCallback(() => {
+    server.close();
+    setOpenedFolder(null);
+  }, [server.close]);
 
   const activeRepo: WorkspaceRepository =
-    openedFolder?.repository ?? defaultRepo;
+    server.active?.repository ?? openedFolder?.repository ?? defaultRepo;
+
+  /** Which source the editor is bound to, for the switcher's own rendering. */
+  const workspaceMode: WorkspaceMode = server.active
+    ? "server"
+    : openedFolder
+      ? "folder"
+      : "local";
 
   // Paths the user "removed from the app" are remembered per opened folder, so
   // hiding a file never touches the disk and is scoped to that folder's tree.
-  // In-browser projects have no second copy, so a session-local store suffices.
+  // In-browser projects have no second copy, so a session-local store suffices,
+  // and a server project gets its own so switching projects starts clean.
   const hiddenStore = useMemo(
     () =>
       openedFolder
         ? createLocalStorageHiddenPathStore(openedFolder.folderName)
         : createInMemoryHiddenPathStore(),
-    [openedFolder],
+    // A new store per server project is the point: hide state must not leak
+    // between projects.
+    [openedFolder, server.active?.project.id],
   );
 
   const workspace = useWorkspace(activeRepo, hiddenStore);
@@ -360,6 +396,142 @@ export default function App() {
     closeTab,
     updateActiveSource,
   } = tabsHook;
+
+  // A failed auto-save is surfaced rather than swallowed. A revision conflict is
+  // the one failure that needs a decision from the user; everything else is
+  // reported with a retry. In both cases the buffer stays in the editor and the
+  // tab stays dirty, because the user's work must survive a failed write.
+  const saveFailure = tabsHook.saveError;
+  const conflict =
+    saveFailure !== null && saveFailure.error instanceof RevisionConflictError
+      ? saveFailure
+      : null;
+  const retryableSaveFailure =
+    saveFailure !== null &&
+    !(saveFailure.error instanceof RevisionConflictError)
+      ? saveFailure
+      : null;
+
+  // A new failure belongs to a new decision, so the "copied" confirmation resets.
+  useEffect(() => {
+    setConflictCopied(false);
+  }, [saveFailure]);
+
+  /** Take the server's version, discarding the local buffer for that document. */
+  const resolveConflictByReload = useCallback(async (): Promise<void> => {
+    if (conflict === null) return;
+    const document = conflict.document;
+    if (document.kind === "note") {
+      const read = await activeRepo.getNoteFile(
+        document.projectId,
+        document.id,
+      );
+      if (isOk(read) && read.value !== null) {
+        tabsHook.applyExternalNote(read.value);
+      }
+    } else {
+      const read = await activeRepo.getDiagramFile(
+        document.projectId,
+        document.id,
+      );
+      if (isOk(read) && read.value !== null) {
+        tabsHook.applyExternalDiagram(read.value);
+      }
+    }
+    tabsHook.dismissSaveError();
+  }, [conflict, activeRepo, tabsHook]);
+
+  /**
+   * Overwrite the server's version with the local buffer.
+   *
+   * Only offered when the server told us its current revision *and* the active
+   * repository can write against an explicitly named revision. Local mode has no
+   * revisions and therefore never reaches this dialog at all.
+   */
+  const resolveConflictByKeepingMine = useCallback(async (): Promise<void> => {
+    if (conflict === null) return;
+    const document = conflict.document;
+    const current =
+      conflict.error instanceof RevisionConflictError
+        ? conflict.error.currentRevision
+        : null;
+    if (current === null || !supportsForcedWrite(activeRepo)) return;
+    if (document.kind === "note") {
+      const written = await activeRepo.forceSaveNoteFile(
+        document.projectId,
+        {
+          id: document.id,
+          name: document.name,
+          markdown: document.source,
+          projectId: document.projectId,
+        },
+        current,
+      );
+      if (isOk(written)) {
+        tabsHook.markActiveSaved();
+        applyNoteEdit({
+          id: document.id,
+          name: document.name,
+          markdown: document.source,
+          projectId: document.projectId,
+        });
+        return;
+      }
+    } else {
+      const written = await activeRepo.forceSaveDiagramFile(
+        document.projectId,
+        {
+          id: document.id,
+          name: document.name,
+          source: document.source,
+          projectId: document.projectId,
+        },
+        current,
+      );
+      if (isOk(written)) {
+        tabsHook.markActiveSaved();
+        applyDiagramEdit({
+          id: document.id,
+          name: document.name,
+          source: document.source,
+          projectId: document.projectId,
+        });
+        return;
+      }
+    }
+    // Someone wrote again between the conflict and the confirmation. Re-running
+    // the normal save replaces this dialog's information with the newest revision
+    // rather than pretending the overwrite landed.
+    tabsHook.retrySave();
+  }, [conflict, activeRepo, tabsHook, applyNoteEdit, applyDiagramEdit]);
+
+  /** Put the local buffer on the clipboard so it can be pasted by hand. */
+  const copyConflictBuffer = useCallback((): void => {
+    if (conflict === null) return;
+    const clipboard = navigator.clipboard;
+    if (clipboard !== undefined) {
+      void clipboard.writeText(conflict.document.source).catch(() => undefined);
+    }
+    setConflictCopied(true);
+  }, [conflict]);
+
+  /**
+   * Create a project in whichever source is active.
+   *
+   * The explorer's "new project" form is about the workspace the user is looking
+   * at, not about a storage backend, so this is the one place that has to know
+   * which of the two it means.
+   */
+  const createProjectHere = useCallback(
+    (name: string): void => {
+      if (workspaceMode === "server") {
+        void server.createProject(name);
+        return;
+      }
+      void createProject(name);
+    },
+    [workspaceMode, server.createProject, createProject],
+  );
 
   // The project index: every symbol, reference and problem in the selected
   // project, derived from the files and rebuilt incrementally. Everything below
@@ -1884,7 +2056,35 @@ export default function App() {
                 selectedDiagramId={selectedDiagramId}
                 selectedNoteId={selectedNoteId}
                 isLoading={isLoading}
-                onCreateProject={createProject}
+                onCreateProject={createProjectHere}
+                switcher={
+                  <WorkspaceSwitcher
+                    mode={workspaceMode}
+                    folderName={openedFolder?.folderName ?? null}
+                    folderSupported={supportsFileSystemAccess()}
+                    auth={auth}
+                    serverProjects={server.projects}
+                    serverProjectsLoading={server.projectsLoading}
+                    serverProjectsError={server.projectsError}
+                    activeServerProjectId={server.active?.project.id ?? null}
+                    serverOpenError={server.openError}
+                    onOpenLocal={openLocalWorkspace}
+                    onOpenFolder={openFolder}
+                    onSignIn={auth.signIn}
+                    onSignOut={() => {
+                      void auth.signOut();
+                    }}
+                    onOpenServerProject={(project) => {
+                      void server.openProject(project);
+                    }}
+                    onCreateServerProject={(name) => {
+                      void server.createProject(name);
+                    }}
+                    onReloadServerProjects={() => {
+                      void server.refresh();
+                    }}
+                  />
+                }
                 onAddMenu={(project, position) =>
                   setMenu({ kind: "project-add", project, ...position })
                 }
@@ -2148,6 +2348,30 @@ export default function App() {
                 {transferError}
               </span>
             )}
+            {retryableSaveFailure && (
+              <span
+                className="app__status-item app__status-item--error"
+                data-testid="save-error"
+              >
+                {retryableSaveFailure.error.message}
+                <button
+                  type="button"
+                  className="app__status-action"
+                  data-testid="save-error-retry"
+                  onClick={tabsHook.retrySave}
+                >
+                  Retry
+                </button>
+                <button
+                  type="button"
+                  className="app__status-action"
+                  data-testid="save-error-dismiss"
+                  onClick={tabsHook.dismissSaveError}
+                >
+                  Dismiss
+                </button>
+              </span>
+            )}
             <span className="app__status-spacer" />
             <span className="app__status-item app__status-item--muted">
               {noteMode ? "Note" : autoUpdate ? "Live" : "Paused"}
@@ -2242,6 +2466,22 @@ export default function App() {
                   ? "Project actions"
                   : "Add to project"
           }
+        />
+      )}
+
+      {conflict && (
+        <SaveConflictDialog
+          documentName={conflict.document.name}
+          message={conflict.error.message}
+          copied={conflictCopied}
+          onReload={() => {
+            void resolveConflictByReload();
+          }}
+          onKeepMine={() => {
+            void resolveConflictByKeepingMine();
+          }}
+          onCopyMine={copyConflictBuffer}
+          onCancel={tabsHook.dismissSaveError}
         />
       )}
 

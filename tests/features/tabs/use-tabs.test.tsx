@@ -292,4 +292,96 @@ describe("useTabs", () => {
     // The externally supplied content is already stored, so it is not dirty.
     expect(result.current.tabs[0].savedSource).toBe("# Retitled\n\nProse.");
   });
+
+  /**
+   * A write that fails must be visible and recoverable. Before Phase 4A the
+   * auto-save swallowed the failure: the tab stayed dirty and nothing said why,
+   * which is indistinguishable from "saved" to anyone watching the screen.
+   */
+  it("surfaces a failed save and keeps the buffer dirty", async () => {
+    const repo = await seedRepo();
+    const failure = new Error("the server is unreachable");
+    const save = vi
+      .spyOn(repo, "saveDiagramFile")
+      .mockResolvedValueOnce({ ok: false, error: failure });
+
+    const { result } = renderHook(() => useTabs(repo, doc1));
+    await act(async () => {
+      result.current.updateActiveSource("title Welcome\nA -> B: edited");
+    });
+
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(result.current.saveError?.error).toBe(failure);
+    // The user's text is still in the editor and the tab is still dirty.
+    expect(result.current.source).toBe("title Welcome\nA -> B: edited");
+    expect(result.current.tabs[0].source).not.toBe(
+      result.current.tabs[0].savedSource,
+    );
+  });
+
+  it("retries a failed save and clears the failure when it lands", async () => {
+    const repo = await seedRepo();
+    const failure = new Error("the server is unreachable");
+    vi.spyOn(repo, "saveDiagramFile").mockResolvedValueOnce({
+      ok: false,
+      error: failure,
+    });
+
+    const { result } = renderHook(() => useTabs(repo, doc1));
+    await act(async () => {
+      result.current.updateActiveSource("title Welcome\nA -> B: edited");
+    });
+    expect(result.current.saveError).not.toBeNull();
+
+    await act(async () => {
+      result.current.retrySave();
+    });
+
+    expect(result.current.saveError).toBeNull();
+    // The retry really reached the repository: the stored source is the edit.
+    const stored = await repo.getDiagramFile("proj-0", "diag-1");
+    expect(stored.ok && stored.value?.source).toContain("edited");
+  });
+
+  it("marks the buffer saved after a write made outside the auto-save path", async () => {
+    const repo = await seedRepo();
+    const { result } = renderHook(() => useTabs(repo, doc1));
+    await act(async () => {
+      result.current.updateActiveSource("title Welcome\nA -> B: kept");
+    });
+
+    await act(async () => {
+      result.current.markActiveSaved();
+    });
+
+    expect(result.current.saveError).toBeNull();
+    expect(result.current.tabs[0].savedSource).toBe(
+      "title Welcome\nA -> B: kept",
+    );
+  });
+
+  /**
+   * Switching workspaces must drop the open tabs: an id is only meaningful in
+   * the store that issued it, and carrying one across could address a document
+   * the new store never had. The workspace then selects a document from the new
+   * store, which opens its tab as usual.
+   */
+  it("drops the open tabs when the repository changes", async () => {
+    const first = await seedRepo();
+    const second = await seedRepo();
+    const { result, rerender } = renderHook(({ repo }) => useTabs(repo, doc1), {
+      initialProps: { repo: first },
+    });
+    expect(result.current.tabs).toHaveLength(1);
+
+    // A different store is a different workspace: its tabs must not survive the
+    // switch, even when the same document id happens to exist in both.
+    await act(async () => {
+      rerender({ repo: second });
+    });
+
+    expect(result.current.tabs).toHaveLength(0);
+    expect(result.current.saveError).toBeNull();
+    expect(result.current.source).not.toBe(diag1.source);
+  });
 });

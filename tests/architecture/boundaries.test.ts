@@ -48,12 +48,19 @@ function importsOf(source: string): string[] {
 
 /** The dependency-layer of a repo-relative path. */
 type Layer =
-  "domain" | "application" | "features" | "host" | "shared" | "other";
+  | "domain"
+  | "application"
+  | "features"
+  | "persistence"
+  | "host"
+  | "shared"
+  | "other";
 
 function layerOf(relative: string): Layer {
   if (relative.startsWith("src/domain/")) return "domain";
   if (relative.startsWith("src/application/")) return "application";
   if (relative.startsWith("src/features/")) return "features";
+  if (relative.startsWith("src/persistence/")) return "persistence";
   if (relative.startsWith("mcp/") || relative.startsWith("apps/"))
     return "host";
   if (relative.startsWith("src/shared/")) return "shared";
@@ -157,17 +164,43 @@ describe("dependency rule (ADR-039)", () => {
     });
     expect(found).toEqual([]);
   });
+
+  /**
+   * The arrow that Phase 4D put right. A use case must depend on a *port*, and
+   * the port must be defined where the use case lives: an application module
+   * importing `src/persistence` would bind the policy to PostgreSQL and make the
+   * "one application layer, two adapters" claim false.
+   */
+  it("keeps the application layer out of persistence", async () => {
+    const files = await filesUnder(path.join(ROOT, "src/application"));
+    const found = await violations(files, (relative, specifier) => {
+      const imported = importedLayer(path.join(ROOT, relative), specifier);
+      return imported === "persistence";
+    });
+    expect(found).toEqual([]);
+  });
 });
 
 describe("the application layer exists and is reachable", () => {
   it("exposes the ports and context a host must supply", async () => {
-    for (const name of [
-      "ports.ts",
-      "context.ts",
-      "errors.ts",
-      "project-service.ts",
-    ]) {
+    for (const name of ["context.ts", "errors.ts", "project-service.ts"]) {
       const info = await stat(path.join(ROOT, "src/application", name));
+      expect(info.isFile()).toBe(true);
+    }
+  });
+
+  /**
+   * The persistence ports, now defined inside the layer that consumes them so
+   * that persistence depends on application and never the reverse.
+   */
+  it("defines the persistence ports in the application layer", async () => {
+    for (const name of [
+      "index.ts",
+      "project-repository.ts",
+      "audit-repository.ts",
+      "resource-path.ts",
+    ]) {
+      const info = await stat(path.join(ROOT, "src/application/ports", name));
       expect(info.isFile()).toBe(true);
     }
   });

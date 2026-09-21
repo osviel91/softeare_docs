@@ -22,10 +22,10 @@
  * is one edit in `src/domain/access/authorize.ts` rather than an edit in every
  * repository implementation.
  */
-import type { Project } from "../domain/workspace/types";
-import type { ProjectId } from "../domain/workspace/workspace-ids";
-import type { WorkspaceRepository } from "../workspace/WorkspaceRepository";
-import type { Result } from "../shared/result/result";
+import type { Project } from "../../domain/workspace/types";
+import type { ProjectId } from "../../domain/workspace/workspace-ids";
+import type { WorkspaceRepository } from "../../workspace/WorkspaceRepository";
+import type { Result } from "../../shared/result/result";
 
 /** A project and the store its resources live in. */
 export interface ProjectWorkspace {

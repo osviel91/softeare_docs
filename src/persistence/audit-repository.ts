@@ -1,86 +1,28 @@
 /**
- * The audit trail (ADR-040 / mission Phase 10).
+ * The PostgreSQL audit repository (ADR-040 / mission Phase 10).
  *
- * When agents can mutate documentation, "who changed this, and how did they
- * authenticate?" has to be answerable after the fact. Every application use case
- * that changes something records one row here, inside the same transaction as
- * the change wherever possible, so an audit row and the change it describes
- * cannot disagree.
+ * This is the *implementation* of a port defined in the application layer
+ * (`src/application/ports/audit-repository.ts`); its types are re-exported here
+ * so existing callers keep working. See that file for why the audit trail exists
+ * and what is deliberately never written to it.
  *
- * What is deliberately **never** written here:
- *
- * - a raw access token, PAT secret or session cookie value;
- * - a password (this application never sees one);
- * - a document's contents.
- *
- * The writer takes an {@link AuditEvent} shape and fills the id and timestamp
- * itself, so a caller cannot backdate a row or choose its own primary key.
+ * The writer fills the id and timestamp itself, so a caller cannot backdate a row
+ * or choose its own primary key.
  */
-import type { AuthType } from "../application/context";
-import type { JsonObject } from "../shared/json/json-value";
 import type { SqlClient } from "./sql-client";
 import { createIdGenerator, type IdGenerator } from "../shared/ids/uuid";
+import type { AuthType } from "../application/context";
+import type { JsonObject } from "../shared/json/json-value";
+import {
+  AUDIT_ACTIONS,
+  type AuditAction,
+  type AuditEvent,
+  type AuditRecord,
+  type AuditRepository,
+} from "../application/ports/audit-repository";
 
-/**
- * The actions the audit trail records.
- *
- * A closed vocabulary rather than free text: an action nobody can spell two ways
- * is an action that can be counted.
- */
-export const AUDIT_ACTIONS = [
-  "project.created",
-  "project.updated",
-  "project.deleted",
-  "project.member.added",
-  "project.member.removed",
-  "resource.created",
-  "resource.updated",
-  "resource.moved",
-  "resource.deleted",
-  "token.created",
-  "token.revoked",
-  "mcp.tool.executed",
-] as const;
-
-export type AuditAction = (typeof AUDIT_ACTIONS)[number];
-
-/** One audit entry, before it is written. */
-export interface AuditEvent {
-  action: AuditAction;
-  /** The user who acted. `null` only for a system action. */
-  userId: string | null;
-  authType: AuthType;
-  projectId?: string | null;
-  resourceId?: string | null;
-  requestId?: string | null;
-  /** Extra context. Never a secret, never document content. */
-  detail?: JsonObject;
-}
-
-/** One stored audit entry. */
-export interface AuditRecord extends AuditEvent {
-  id: string;
-  occurredAt: Date;
-}
-
-export interface AuditRepository {
-  /** Append an entry. */
-  record(event: AuditEvent): Promise<AuditRecord>;
-
-  /**
-   * Append several entries atomically.
-   *
-   * Used when one use case produces more than one event (a move that rewrites a
-   * reference records both), so the trail never shows half a story.
-   */
-  recordAll(events: readonly AuditEvent[]): Promise<AuditRecord[]>;
-
-  /** The most recent entries for a project, newest first. */
-  listForProject(projectId: string, limit?: number): Promise<AuditRecord[]>;
-
-  /** The most recent entries by a user, newest first. */
-  listForUser(userId: string, limit?: number): Promise<AuditRecord[]>;
-}
+export { AUDIT_ACTIONS };
+export type { AuditAction, AuditEvent, AuditRecord, AuditRepository };
 
 /** Cap on how many entries one listing returns, so a query cannot be unbounded. */
 const MAX_LIMIT = 500;

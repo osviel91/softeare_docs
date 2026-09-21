@@ -22,24 +22,21 @@
  * A decoded path is checked too. A resource path may legally contain a percent
  * sign (a file really called `50%.seq`), so the check is not "reject `%`": it is
  * "decode it, and reject the result if decoding changes the structure".
+ *
+ * The error type it throws is defined in the application layer
+ * (`src/application/ports/resource-path.ts`), because the use cases that catch it
+ * live there; it is re-exported here so a caller of this module does not have to
+ * know that.
  */
+import { InvalidResourcePathError } from "../application/ports/resource-path";
+
+export { InvalidResourcePathError };
 
 /** The longest path a resource may have, in characters. */
 export const MAX_RESOURCE_PATH_LENGTH = 512;
 
 /** The longest single segment a resource path may have. */
 export const MAX_RESOURCE_SEGMENT_LENGTH = 200;
-
-/** Why a path was refused. Carries no filesystem detail. */
-export class InvalidResourcePathError extends Error {
-  readonly path: string;
-
-  constructor(path: string, reason: string) {
-    super(`Invalid resource path ${JSON.stringify(path)}: ${reason}`);
-    this.name = "InvalidResourcePathError";
-    this.path = path;
-  }
-}
 
 /** Control characters, including NUL, are never legal in a resource path. */
 // eslint-disable-next-line no-control-regex

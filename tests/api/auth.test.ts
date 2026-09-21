@@ -29,16 +29,18 @@ import {
   codeChallengeS256,
   createCodeVerifier,
   createOidcClient,
-  decodeJws,
   verifyIdTokenClaims,
-  verifySignature,
   OidcError,
+  type OidcClient,
+  type VerifiedIdentity,
 } from "../../apps/api/auth/oidc";
 import { createAuthRoutes, oidcClientFor } from "../../apps/api/auth/routes";
+import { SignJWT, decodeJwt } from "jose";
 import {
   createTestProvider,
   createUnrelatedKeys,
   generateEcKeys,
+  generateRsaKeys,
   signIdToken,
   challengeFor,
   type TestProvider,
@@ -133,6 +135,45 @@ describe("the OIDC client", () => {
       redirectUri: testProvider.redirectUri,
       fetch: testProvider.fetch,
     });
+
+  /**
+   * Run one full exchange through the public client path.
+   *
+   * Every negative case goes through `exchange` rather than through a JOSE
+   * helper, so what is asserted is the behaviour a browser would see. `claims`
+   * overrides what the provider signs, and `idToken` replaces the token
+   * wholesale for cases (a forged signature, a foreign algorithm) that the
+   * provider's own signer deliberately cannot produce.
+   */
+  async function attempt(
+    testProvider: TestProvider,
+    client: OidcClient,
+    input: {
+      nonce: string;
+      subject?: string;
+      claims?: Record<string, unknown>;
+      idToken?: string;
+    },
+  ): Promise<VerifiedIdentity> {
+    const verifier = createCodeVerifier();
+    const code = testProvider.issueCode({
+      codeChallenge: codeChallengeS256(verifier),
+      nonce: input.nonce,
+      ...(input.subject === undefined ? {} : { subject: input.subject }),
+      ...(input.claims === undefined ? {} : { claims: input.claims }),
+    });
+    if (input.idToken !== undefined) testProvider.setIssuedToken(input.idToken);
+    try {
+      return await client.exchange(code, {
+        state: "s",
+        nonce: input.nonce,
+        codeVerifier: verifier,
+        returnTo: "/",
+      });
+    } finally {
+      testProvider.setIssuedToken(null);
+    }
+  }
 
   it("reads discovery and refuses an issuer that disagrees with it", async () => {
     const client = clientFor(provider);
@@ -284,164 +325,225 @@ describe("the OIDC client", () => {
     });
     expect(identity.subject).toBe("ec-user");
   });
-});
 
-describe("ID token verification", () => {
-  const expectations = {
-    issuer: "https://idp.test",
-    audience: "test-client",
-    nonce: "nonce-1",
-  };
+  it("accepts a rotated key by refetching the provider's key set", async () => {
+    // A rotation test only means something once the previous key set has been
+    // cached, so this does one successful exchange first. The second token is
+    // signed with a key the client has never seen: the unknown-`kid` path must
+    // fetch again rather than fail until a restart.
+    const rotated = await createTestProvider({
+      issuer: "https://rotate.test",
+    });
+    const client = clientFor(rotated);
 
-  it("refuses a token for a different audience", async () => {
-    const token = await signIdToken(
-      {
-        iss: "https://idp.test",
-        aud: "another-application",
-        sub: "s",
-        exp: Math.floor(Date.now() / 1000) + 60,
-        nonce: "nonce-1",
-      },
-      provider.keys,
-    );
-    const payload = await verifySignature(
-      token,
-      [provider.keys.jwk],
-      ["RS256"],
-    );
-    expect(() => verifyIdTokenClaims(payload, expectations)).toThrow(
-      /not issued for this/,
-    );
+    const firstVerifier = createCodeVerifier();
+    const firstCode = rotated.issueCode({
+      codeChallenge: codeChallengeS256(firstVerifier),
+      nonce: "nonce-before-rotation",
+      subject: "before-rotation",
+    });
+    const first = await client.exchange(firstCode, {
+      state: "s",
+      nonce: "nonce-before-rotation",
+      codeVerifier: firstVerifier,
+      returnTo: "/",
+    });
+    expect(first.subject).toBe("before-rotation");
+
+    rotated.rotateKeys(await generateRsaKeys());
+
+    const secondVerifier = createCodeVerifier();
+    const secondCode = rotated.issueCode({
+      codeChallenge: codeChallengeS256(secondVerifier),
+      nonce: "nonce-after-rotation",
+      subject: "after-rotation",
+    });
+    const second = await client.exchange(secondCode, {
+      state: "s",
+      nonce: "nonce-after-rotation",
+      codeVerifier: secondVerifier,
+      returnTo: "/",
+    });
+    expect(second.subject).toBe("after-rotation");
   });
 
-  it("refuses a token from a different issuer", async () => {
-    const token = await signIdToken(
-      {
-        iss: "https://other-idp.test",
-        aud: "test-client",
-        sub: "s",
-        exp: Math.floor(Date.now() / 1000) + 60,
-        nonce: "nonce-1",
-      },
-      provider.keys,
-    );
-    const payload = await verifySignature(
-      token,
-      [provider.keys.jwk],
-      ["RS256"],
-    );
-    expect(() => verifyIdTokenClaims(payload, expectations)).toThrow(
-      /issued by/,
-    );
-  });
+  it("refuses a token signed by a key unrelated to the published one", async () => {
+    // The header names the *published* key, so the lookup succeeds and only the
+    // signature check can refuse it — which is the case being tested.
+    const unrelated = await createUnrelatedKeys();
+    const forged = await new SignJWT({
+      iss: provider.issuer,
+      aud: provider.clientId,
+      sub: "forged",
+      exp: Math.floor(Date.now() / 1000) + 60,
+      nonce: "nonce-signature",
+    })
+      .setProtectedHeader({
+        alg: "RS256",
+        typ: "JWT",
+        kid: provider.keys.kid,
+      })
+      .sign(unrelated.privateKey);
 
-  it("refuses an expired token", async () => {
-    const token = await signIdToken(
-      {
-        iss: "https://idp.test",
-        aud: "test-client",
-        sub: "s",
-        exp: Math.floor(Date.now() / 1000) - 3600,
-        nonce: "nonce-1",
-      },
-      provider.keys,
-    );
-    const payload = await verifySignature(
-      token,
-      [provider.keys.jwk],
-      ["RS256"],
-    );
-    expect(() => verifyIdTokenClaims(payload, expectations)).toThrow(/expired/);
-  });
-
-  it("refuses a token whose nonce does not match this login", async () => {
-    const token = await signIdToken(
-      {
-        iss: "https://idp.test",
-        aud: "test-client",
-        sub: "s",
-        exp: Math.floor(Date.now() / 1000) + 60,
-        nonce: "some-other-nonce",
-      },
-      provider.keys,
-    );
-    const payload = await verifySignature(
-      token,
-      [provider.keys.jwk],
-      ["RS256"],
-    );
-    expect(() => verifyIdTokenClaims(payload, expectations)).toThrow(/nonce/);
-  });
-
-  it("accepts a token whose audience is an array containing this client", async () => {
-    const token = await signIdToken(
-      {
-        iss: "https://idp.test",
-        aud: ["another", "test-client"],
-        sub: "s",
-        exp: Math.floor(Date.now() / 1000) + 60,
-        nonce: "nonce-1",
-      },
-      provider.keys,
-    );
-    const payload = await verifySignature(
-      token,
-      [provider.keys.jwk],
-      ["RS256"],
-    );
-    expect(verifyIdTokenClaims(payload, expectations).subject).toBe("s");
-  });
-
-  it("refuses an unsigned or HMAC-signed token outright", async () => {
-    const token = await signIdToken(
-      {
-        iss: "https://idp.test",
-        aud: "test-client",
-        sub: "s",
-        exp: Math.floor(Date.now() / 1000) + 60,
-        nonce: "nonce-1",
-      },
-      provider.keys,
-    );
     await expect(
-      verifySignature(token, [provider.keys.jwk], ["none"]),
-    ).rejects.toBeInstanceOf(OidcError);
-    // The header says RS256, so an HS256 allow-list must refuse it before any
-    // key material is consulted.
-    await expect(
-      verifySignature(
-        token,
-        [provider.keys.jwk],
-        ["HS256"],
-        "the-client-secret",
-      ),
+      attempt(provider, clientFor(provider), {
+        nonce: "nonce-signature",
+        idToken: forged,
+      }),
     ).rejects.toMatchObject({ kind: "invalid_token" });
   });
 
-  it("reports a malformed token as invalid rather than throwing a parse error", async () => {
+  it("refuses an expired token", async () => {
     await expect(
-      verifySignature("not.a.jwt", [provider.keys.jwk], ["RS256"]),
-    ).rejects.toBeInstanceOf(OidcError);
-    expect(() => decodeJws("only-one-part")).toThrow(OidcError);
+      attempt(provider, clientFor(provider), {
+        nonce: "nonce-expired",
+        claims: { exp: Math.floor(Date.now() / 1000) - 3600 },
+      }),
+    ).rejects.toMatchObject({ kind: "invalid_token" });
+  });
+
+  it("refuses a token from a different issuer", async () => {
+    await expect(
+      attempt(provider, clientFor(provider), {
+        nonce: "nonce-issuer",
+        claims: { iss: "https://other-idp.test" },
+      }),
+    ).rejects.toMatchObject({ kind: "invalid_token" });
+  });
+
+  it("refuses a token for a different audience", async () => {
+    await expect(
+      attempt(provider, clientFor(provider), {
+        nonce: "nonce-audience",
+        claims: { aud: "another-application" },
+      }),
+    ).rejects.toMatchObject({ kind: "invalid_token" });
+  });
+
+  it("refuses a token that is not valid yet", async () => {
+    const now = Math.floor(Date.now() / 1000);
+    await expect(
+      attempt(provider, clientFor(provider), {
+        nonce: "nonce-not-yet",
+        claims: { nbf: now + 3600, exp: now + 7200 },
+      }),
+    ).rejects.toMatchObject({ kind: "invalid_token" });
+  });
+
+  it("reports an unreadable key set as a discovery failure", async () => {
+    // The token exchange succeeds; only the JWKS fetch fails. That is the
+    // provider's problem, so it must surface as `discovery`, not as a bad token.
+    const broken = await createTestProvider({ issuer: "https://broken.test" });
+    const client = createOidcClient({
+      issuer: broken.issuer,
+      clientId: broken.clientId,
+      clientSecret: broken.clientSecret,
+      redirectUri: broken.redirectUri,
+      fetch: async (url, init) =>
+        url.endsWith("/jwks")
+          ? {
+              ok: false,
+              status: 503,
+              async text() {
+                return "unavailable";
+              },
+            }
+          : broken.fetch(url, init),
+    });
+
+    await expect(
+      attempt(broken, client, { nonce: "nonce-discovery" }),
+    ).rejects.toMatchObject({ kind: "discovery" });
+  });
+
+  it("refuses a token without a subject", async () => {
+    await expect(
+      attempt(provider, clientFor(provider), {
+        nonce: "nonce-subject",
+        claims: { sub: undefined },
+      }),
+    ).rejects.toMatchObject({ kind: "invalid_token" });
+  });
+
+  it("refuses a token whose header names an algorithm off the allow-list", async () => {
+    // A real HS256 token, signed with the client secret: the classic algorithm
+    // confusion attempt. The allow-list must refuse it before the token's own
+    // header can select HMAC.
+    const hmac = await new SignJWT({
+      iss: provider.issuer,
+      aud: provider.clientId,
+      sub: "hmac",
+      exp: Math.floor(Date.now() / 1000) + 60,
+      nonce: "nonce-algorithm",
+    })
+      .setProtectedHeader({ alg: "HS256", typ: "JWT" })
+      .sign(new TextEncoder().encode(provider.clientSecret));
+
+    await expect(
+      attempt(provider, clientFor(provider), {
+        nonce: "nonce-algorithm",
+        idToken: hmac,
+      }),
+    ).rejects.toMatchObject({ kind: "invalid_token" });
+  });
+
+  it("reports a malformed token as invalid rather than a parse error", async () => {
+    await expect(
+      attempt(provider, clientFor(provider), {
+        nonce: "nonce-malformed",
+        idToken: "not.a.jwt",
+      }),
+    ).rejects.toMatchObject({ kind: "invalid_token" });
+  });
+});
+
+describe("ID token claim checking", () => {
+  // Read lazily: the provider is created in `beforeAll`, after collection.
+  const expectations = () => ({
+    issuer: provider.issuer,
+    audience: provider.clientId,
+    nonce: "nonce-1",
+  });
+
+  /** A real provider-signed token, decoded with jose to feed the claim check. */
+  async function payloadFor(
+    claims: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    const token = await signIdToken(claims, provider.keys);
+    return decodeJwt(token) as Record<string, unknown>;
+  }
+
+  it("refuses a token whose nonce does not match this login", async () => {
+    const payload = await payloadFor({
+      iss: provider.issuer,
+      aud: provider.clientId,
+      sub: "s",
+      exp: Math.floor(Date.now() / 1000) + 60,
+      nonce: "some-other-nonce",
+    });
+    expect(() => verifyIdTokenClaims(payload, expectations())).toThrow(/nonce/);
+  });
+
+  it("accepts a token whose audience is an array containing this client", async () => {
+    const payload = await payloadFor({
+      iss: provider.issuer,
+      aud: ["another", provider.clientId],
+      sub: "s",
+      exp: Math.floor(Date.now() / 1000) + 60,
+      nonce: "nonce-1",
+    });
+    expect(verifyIdTokenClaims(payload, expectations()).subject).toBe("s");
   });
 
   it("uses the subject as a display name when the provider gives none", async () => {
-    const token = await signIdToken(
-      {
-        iss: "https://idp.test",
-        aud: "test-client",
-        sub: "subject-only",
-        exp: Math.floor(Date.now() / 1000) + 60,
-        nonce: "nonce-1",
-      },
-      provider.keys,
-    );
-    const payload = await verifySignature(
-      token,
-      [provider.keys.jwk],
-      ["RS256"],
-    );
-    const identity = verifyIdTokenClaims(payload, expectations);
+    const payload = await payloadFor({
+      iss: provider.issuer,
+      aud: provider.clientId,
+      sub: "subject-only",
+      exp: Math.floor(Date.now() / 1000) + 60,
+      nonce: "nonce-1",
+    });
+    const identity = verifyIdTokenClaims(payload, expectations());
     expect(identity.displayName).toBe("subject-only");
     expect(identity.email).toBeNull();
   });
@@ -745,5 +847,87 @@ describe("the authentication routes", () => {
     expect(location?.value.startsWith(`${provider.issuer}/authorize`)).toBe(
       true,
     );
+  });
+});
+
+/**
+ * Session security (mission item 20).
+ *
+ * A session is the only credential a browser holds, so its cookie attributes,
+ * its rotation on sign-in, and its invalidation on sign-out are security
+ * behaviour rather than browser trivia. Each of these is a property an operator
+ * would assume; asserting them here is what stops a refactor from quietly
+ * dropping one.
+ */
+describe("session security", () => {
+  /** Run a complete login and return the raw `Set-Cookie` line. */
+  async function loginCookie(
+    subject: string,
+    config = dependencies.config,
+  ): Promise<string> {
+    const routes = createAuthRoutes(
+      { ...dependencies, config },
+      oidcClientFor(dependencies),
+    );
+    const start = await routes.login(request("GET", "/auth/login"));
+    const loginCookieValue = cookieFrom(start.headers, LOGIN_COOKIE) ?? "";
+    const transaction = decodeLoginState(config.cookieSecret, loginCookieValue);
+    const code = provider.issueCode({
+      codeChallenge: codeChallengeS256(transaction?.codeVerifier ?? ""),
+      nonce: transaction?.nonce ?? "",
+      subject,
+    });
+    const callback = await routes.callback(
+      request(
+        "GET",
+        `/auth/callback?code=${code}&state=${transaction?.state}`,
+        {
+          headers: {
+            cookie: `${LOGIN_COOKIE}=${encodeURIComponent(loginCookieValue)}`,
+          },
+        },
+      ),
+    );
+    const header = callback.headers.find(
+      (candidate) =>
+        candidate.name === "set-cookie" &&
+        candidate.value.startsWith(`${SESSION_COOKIE}=`),
+    );
+    if (header === undefined) throw new Error("No session cookie was issued.");
+    return header.value;
+  }
+
+  it("marks the session cookie HttpOnly, Lax, path-scoped and expiring", async () => {
+    const line = await loginCookie("cookie-attributes");
+    expect(line).toContain("HttpOnly");
+    expect(line).toContain("SameSite=Lax");
+    expect(line).toContain("Path=/");
+    expect(line).toMatch(/Max-Age=\d+/);
+    // A loopback HTTP deployment cannot set Secure without breaking sign-in;
+    // every other deployment must.
+    expect(line).not.toContain("Secure");
+  });
+
+  it("adds Secure when the deployment is not loopback HTTP", async () => {
+    const line = await loginCookie("secure-cookie", {
+      ...dependencies.config,
+      secureCookies: true,
+    });
+    expect(line).toContain("Secure");
+  });
+
+  it("rotates the session on every login, so a fixed session cannot be planted", async () => {
+    const first = await loginCookie("rotation-subject");
+    const second = await loginCookie("rotation-subject");
+    const idOf = (line: string): string | null =>
+      sessionIdOf(
+        decodeURIComponent(line.split(";")[0].slice(SESSION_COOKIE.length + 1)),
+      );
+
+    expect(idOf(first)).not.toBeNull();
+    expect(idOf(second)).not.toBeNull();
+    // A new session row per login: an identifier an attacker already knows is
+    // never promoted into a live session.
+    expect(idOf(first)).not.toBe(idOf(second));
   });
 });

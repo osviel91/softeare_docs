@@ -98,7 +98,11 @@ export function createEmptyMetadata(): ProjectMetadata {
 
 /** Whether a value is one of the resource types this app understands. */
 function isResourceType(value: unknown): value is ResourceType {
-  return value === "sequence-diagram" || value === "markdown-document";
+  return (
+    value === "sequence-diagram" ||
+    value === "event-flow" ||
+    value === "markdown-document"
+  );
 }
 
 /**

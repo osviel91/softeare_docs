@@ -77,6 +77,24 @@ export interface TabsHook {
   applyExternalDiagram(diagram: DiagramFile): void;
   /** Fold an externally changed note into its open tab, if any. */
   applyExternalNote(note: NoteFile): void;
+  /**
+   * The last auto-save failure, with the document it belongs to, or `null`.
+   *
+   * A failed write never clears the tab's dirty flag, so the buffer is intact;
+   * this is what lets the shell *say so* instead of failing silently. A server
+   * conflict and an unreachable API are both surfaced here, and the shell decides
+   * which to show as a conflict and which as a retryable error.
+   */
+  saveError: { document: TabDocument; error: Error } | null;
+  /** Try the active tab's failed write again, keeping its buffer. */
+  retrySave(): void;
+  /**
+   * Record the active tab's buffer as persisted after a write that happened
+   * outside the auto-save path — the conflict dialog's confirmed overwrite.
+   */
+  markActiveSaved(): void;
+  /** Stop surfacing the current failure without touching the buffer. */
+  dismissSaveError(): void;
 }
 
 /** The persistence key that identifies one in-flight write. */
@@ -133,6 +151,12 @@ export function useTabs(
   // The editor buffer is first-class so editing works even before any document is
   // loaded into a tab (the preview stays live on the seeded sample).
   const [source, setSource] = useState<string>(SAMPLE_SOURCE);
+  // The last write that did not land. Kept here rather than swallowed, because a
+  // failed auto-save leaves the tab dirty and only the shell can explain why.
+  const [saveError, setSaveError] = useState<{
+    document: TabDocument;
+    error: Error;
+  } | null>(null);
   // Which document `source` currently belongs to. The selection effect uses it to
   // tell "the user picked a different document" (adopt its content) from "the
   // same document was edited" (never overwrite the buffer).
@@ -141,6 +165,21 @@ export function useTabs(
   // `savedSource` cannot dedupe the async window between firing a save and the
   // save landing, so this closes that gap.
   const inFlightRef = useRef<Set<string>>(new Set());
+  // Which repository the open tabs belong to. Switching workspaces must drop
+  // them: a document id is only meaningful inside the store that issued it, and
+  // carrying a stale id into another store could address a file that never
+  // existed there.
+  const repoRef = useRef<WorkspaceRepository>(repo);
+
+  useEffect(() => {
+    if (repoRef.current === repo) return;
+    repoRef.current = repo;
+    inFlightRef.current.clear();
+    bufferRef.current = null;
+    setTabSet(createEmptyTabSet());
+    setSource(SAMPLE_SOURCE);
+    setSaveError(null);
+  }, [repo]);
 
   const activeTabId = tabSet.activeTabId;
 
@@ -236,6 +275,43 @@ export function useTabs(
   // already the saved content. Runs in an effect (not a state updater) so the
   // side effect stays out of render, and records success back into the tab so
   // the dirty flag clears without a round-trip to storage.
+  const saveDocument = useCallback(
+    async (document: TabDocument, key: string): Promise<void> => {
+      const result = await persistDocument(repo, document);
+      inFlightRef.current.delete(key);
+      if (!isOk(result)) {
+        // The tab is deliberately left dirty: the buffer is the user's work, and
+        // discarding it because a write failed would be data loss.
+        setSaveError({ document, error: result.error });
+        return;
+      }
+      // A different document's failure is not resolved by this success.
+      setSaveError((current) =>
+        current !== null && current.document.id === document.id
+          ? null
+          : current,
+      );
+      // Record exactly what was written: an edit that arrived during the write
+      // keeps the tab dirty so the next pass persists it too.
+      setTabSet((current) =>
+        markTabSaved(current, document.id, document.source),
+      );
+      onDocumentEdit?.(document);
+    },
+    [repo, onDocumentEdit],
+  );
+
+  const tabDocumentOf = useCallback(
+    (tab: Tab): TabDocument => ({
+      kind: tab.kind,
+      id: tab.documentId,
+      projectId: tab.projectId,
+      name: tab.name,
+      source: tab.source,
+    }),
+    [],
+  );
+
   useEffect(() => {
     const active = getActiveTab(tabSet);
     if (!active) return;
@@ -243,27 +319,29 @@ export function useTabs(
     const key = writeKey(active);
     if (inFlightRef.current.has(key)) return;
     inFlightRef.current.add(key);
+    void saveDocument(tabDocumentOf(active), key);
+  }, [tabSet, saveDocument, tabDocumentOf]);
 
-    const document: TabDocument = {
-      kind: active.kind,
-      id: active.documentId,
-      projectId: active.projectId,
-      name: active.name,
-      source: active.source,
-    };
+  const retrySave = useCallback((): void => {
+    const active = getActiveTab(tabSet);
+    if (!active) return;
+    // Clearing the in-flight marker is what makes a retry of the *same* buffer
+    // possible: the failed attempt's key is still recorded.
+    const key = writeKey(active);
+    inFlightRef.current.delete(key);
+    setSaveError(null);
+    void saveDocument(tabDocumentOf(active), key);
+  }, [tabSet, saveDocument, tabDocumentOf]);
 
-    void (async () => {
-      const result = await persistDocument(repo, document);
-      inFlightRef.current.delete(key);
-      if (!isOk(result)) return;
-      // Record exactly what was written: an edit that arrived during the write
-      // keeps the tab dirty so the next pass persists it too.
-      setTabSet((current) =>
-        markTabSaved(current, document.id, document.source),
-      );
-      onDocumentEdit?.(document);
-    })();
-  }, [tabSet, repo, onDocumentEdit]);
+  const dismissSaveError = useCallback((): void => setSaveError(null), []);
+
+  const markActiveSaved = useCallback((): void => {
+    setSaveError(null);
+    setTabSet((current) => {
+      const active = getActiveTab(current);
+      return active ? markTabSaved(current, active.id, active.source) : current;
+    });
+  }, []);
 
   return {
     tabs: tabSet.tabs,
@@ -279,5 +357,9 @@ export function useTabs(
     updateActiveSource,
     applyExternalDiagram,
     applyExternalNote,
+    saveError,
+    retrySave,
+    markActiveSaved,
+    dismissSaveError,
   };
 }

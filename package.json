@@ -17,7 +17,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "test:e2e": "npm run build:web && node scripts/e2e-smoke.mjs",
+    "test:e2e": "npm run build:web && npm run api:build && node scripts/e2e-smoke.mjs",
     "test:mcp": "npm run mcp:build && node scripts/mcp-smoke.mjs",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
@@ -28,6 +28,7 @@
     "api": "npm run api:build --silent && node dist-api/server.mjs"
   },
   "dependencies": {
+    "jose": "^6.2.12",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },

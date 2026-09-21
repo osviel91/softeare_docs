@@ -18,7 +18,11 @@
  * delete). Right-clicking the row opens the same menu, and the menu position is
  * reported so the shell can place it.
  */
-import { useState, type MouseEvent as ReactMouseEvent } from "react";
+import {
+  useState,
+  type MouseEvent as ReactMouseEvent,
+  type ReactNode,
+} from "react";
 import type {
   DiagramFile,
   NoteFile,
@@ -102,6 +106,15 @@ export interface ExplorerProps {
   folderName?: string | null;
   /** Whether the browser supports the File System Access API. */
   folderSupported?: boolean;
+  /**
+   * The workspace switcher, supplied by the shell.
+   *
+   * Passed in rather than built here so the explorer stays a pure function of the
+   * workspace it renders: which *sources* exist (local, folder, server) is a
+   * session concern the shell owns, and the tree below is only ever about the one
+   * source that is active.
+   */
+  switcher?: ReactNode;
 }
 
 const EMPTY_HINT =
@@ -137,6 +150,7 @@ export default function Explorer({
   onOpenFolder,
   folderName = null,
   folderSupported = false,
+  switcher,
 }: ExplorerProps) {
   const [pendingName, setPendingName] = useState<string>("");
   // The search filters files by name across all projects. It is local UI state:
@@ -203,6 +217,7 @@ export default function Explorer({
 
   return (
     <nav className="explorer" data-testid="explorer">
+      {switcher}
       <div
         className="explorer__header"
         data-testid="explorer-header"

@@ -546,13 +546,27 @@ What exists today:
   documentation service.
 - **Optimistic concurrency** — every server write names the revision it read, and
   a stale write is a `409` rather than a silent overwrite.
+- **Browser consumption (Phase 4)** — the explorer's workspace switcher lists
+  `LOCAL` sources (in-browser projects, an opened folder) and the signed-in user's
+  `SERVER` projects. Opening one binds the _same_ editor to a
+  `ServerWorkspaceRepository` over the API: create, edit, rename, move and delete
+  a diagram or a Markdown document, reload, and continue. A `409` opens a conflict
+  dialog offering _Reload server version_, _Keep my changes_ (an explicitly
+  confirmed overwrite) or _Copy my changes_ — never a silent overwrite, and never
+  a discarded buffer. Signing in is only required for server projects; local mode
+  is never gated.
+- **Cross-site protection** — a state-changing request is refused unless its
+  `Sec-Fetch-Site`/`Origin` says it came from this application
+  (`apps/api/http/csrf.ts`), on top of `SameSite=Lax` cookies and JSON-only
+  request bodies.
 
-Not yet: the **browser** does not open server projects, the **stdio MCP server**
-still runs on the local filesystem, and **Personal Access Tokens**,
-**OAuth-compatible MCP authorization** and **remote MCP** are later phases. The
-application and authorization layers they will use are already in place. The
-migration plan, its definition-of-done review and its known compromises are
-recorded in [docs/plan/server-migration-0-3.md](docs/plan/server-migration-0-3.md).
+Not yet: the **stdio MCP server** still runs on the local filesystem, and
+**Personal Access Tokens**, **OAuth-compatible MCP authorization** and **remote
+MCP** are later phases. The application and authorization layers they will use are
+already in place. The migration plans, their definition-of-done reviews and their
+known compromises are recorded in
+[docs/plan/server-migration-0-3.md](docs/plan/server-migration-0-3.md) and
+[docs/plan/server-migration-4.md](docs/plan/server-migration-4.md).
 
 ## Repository layout
 

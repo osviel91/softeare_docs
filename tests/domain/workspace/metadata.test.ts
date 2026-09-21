@@ -219,6 +219,27 @@ describe("project metadata", () => {
     expect(parseProjectMetadata(JSON.parse(text))).toEqual(metadata);
   });
 
+  /**
+   * Regression: an event flow is a resource type, so a project that contains one
+   * must still parse. Excluding it made `parseProjectMetadata` reject the whole
+   * document, so every load re-minted ids for *all* of the project's files and
+   * no link or history entry could rely on a stable id.
+   */
+  it("round-trips an event flow without losing its record", () => {
+    const metadata = reconcileMetadata(null, [
+      { path: "orders.eventseq", type: "event-flow" },
+      { path: "checkout.seq", type: "sequence-diagram" },
+    ]).metadata;
+    const parsed = parseProjectMetadata(
+      JSON.parse(serializeProjectMetadata(metadata)),
+    );
+    expect(parsed).toEqual(metadata);
+    expect(parsed?.resources[0]).toMatchObject({
+      path: "orders.eventseq",
+      type: "event-flow",
+    });
+  });
+
   it("rejects a document that is not ours", () => {
     expect(parseProjectMetadata(null)).toBeNull();
     expect(parseProjectMetadata({})).toBeNull();

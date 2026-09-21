@@ -10,12 +10,47 @@
  * ways a fixed-position menu would otherwise be left floating over stale
  * coordinates. Items are real buttons inside a `role="menu"`, so keyboard users
  * get the usual button semantics.
+ *
+ * Because it is `position: fixed`, an anchor near the bottom or right edge of
+ * the window would otherwise place the menu's own items off-screen, where
+ * neither the user nor an automated click can reach them. The menu therefore
+ * measures itself once it is in the DOM and shifts — never clips — so every item
+ * stays inside the viewport. A menu taller or wider than the viewport is pinned
+ * to the near margin, which is the only position where its first items remain
+ * reachable.
  */
 import {
   useEffect,
+  useLayoutEffect,
   useRef,
+  useState,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
+
+/** The gap kept between the menu and the viewport's edges, in pixels. */
+export const VIEWPORT_MARGIN = 8;
+
+/**
+ * Shift a menu box so it fits the viewport.
+ *
+ * Pure and exported so the geometry can be unit-tested without a real browser:
+ * jsdom has no layout, so measuring a rendered menu there would always report a
+ * zero-sized box.
+ */
+export function clampMenuToViewport(
+  anchor: { x: number; y: number },
+  size: { width: number; height: number },
+  viewport: { width: number; height: number },
+): { x: number; y: number } {
+  // Prefer the anchor, then pull back from the far edge. `Math.max` keeps the
+  // near margin authoritative when the menu is larger than the viewport.
+  const maxX = viewport.width - size.width - VIEWPORT_MARGIN;
+  const maxY = viewport.height - size.height - VIEWPORT_MARGIN;
+  return {
+    x: Math.max(VIEWPORT_MARGIN, Math.min(anchor.x, maxX)),
+    y: Math.max(VIEWPORT_MARGIN, Math.min(anchor.y, maxY)),
+  };
+}
 
 /** One action in a {@link ContextMenu}. */
 export interface ContextMenuItem {
@@ -50,6 +85,28 @@ export default function ContextMenu({
   label = "Actions",
 }: ContextMenuProps) {
   const menuRef = useRef<HTMLDivElement | null>(null);
+  // Where the menu is drawn. Starts at the requested anchor and is corrected
+  // before the first paint, so the menu never flashes off-screen.
+  const [position, setPosition] = useState({ x, y });
+
+  // The anchor is fixed for the life of a menu (a different anchor mounts a new
+  // one through React's keying), so this measures once.
+  useLayoutEffect(() => {
+    const menu = menuRef.current;
+    if (!menu) return;
+    const rect = menu.getBoundingClientRect();
+    // A zero-sized box means there is no layout to measure (jsdom): leave the
+    // requested position alone rather than pinning every menu to the margin.
+    if (rect.width === 0 && rect.height === 0) return;
+    const next = clampMenuToViewport(
+      { x, y },
+      { width: rect.width, height: rect.height },
+      { width: window.innerWidth, height: window.innerHeight },
+    );
+    setPosition((current) =>
+      current.x === next.x && current.y === next.y ? current : next,
+    );
+  }, [x, y]);
 
   useEffect(() => {
     menuRef.current?.focus();
@@ -106,7 +163,7 @@ export default function ContextMenu({
       aria-label={label}
       tabIndex={-1}
       data-testid="context-menu"
-      style={{ left: x, top: y }}
+      style={{ left: position.x, top: position.y }}
       onKeyDown={onKeyDown}
     >
       {items.map((item) => (

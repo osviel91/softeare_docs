@@ -12,6 +12,7 @@ _decisions_; these explain the _intent_.
 | [Phase C — Event-driven modeling](phase-c-event-driven-modeling.md)                                     | Implemented | `99362e6` + follow-up |
 | [Phase 12 — MCP server for coding agents](phase-12-mcp-server.md)                                       | Implemented | working tree          |
 | [Server migration, Phases 0–3](server-migration-0-3.md)                                                 | Implemented | `48242d4` + review    |
+| [Server migration, Phase 4](server-migration-4.md)                                                      | Implemented | Phase 4 checkpoint    |
 
 ## How a phase is run
 

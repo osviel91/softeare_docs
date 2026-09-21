@@ -29,6 +29,7 @@ import {
   type ServerResponse as ApiResponse,
 } from "./http";
 import type { Router } from "./router";
+import { refuseCrossSiteRequest } from "./csrf";
 
 /** The largest request body the API accepts, in bytes. */
 export const MAX_BODY_BYTES = 2 * 1024 * 1024;
@@ -107,7 +108,16 @@ export function writeResponse(
 ): void {
   response.statusCode = api.status;
   for (const header of api.headers) {
-    response.setHeader(header.name, header.value);
+    // `set-cookie` is the one header that legitimately repeats: a login response
+    // both sets the session cookie and clears the short-lived login cookie.
+    // `setHeader` *replaces* on a repeated name, so writing them that way
+    // silently drops every cookie but the last — which is exactly the bug that
+    // made a successful sign-in appear to do nothing. `appendHeader` keeps both.
+    if (header.name.toLowerCase() === "set-cookie") {
+      response.appendHeader(header.name, header.value);
+    } else {
+      response.setHeader(header.name, header.value);
+    }
   }
   response.end(api.body);
 }
@@ -117,6 +127,14 @@ export interface HttpServerOptions {
   router: Router;
   /** Called for every unexpected failure, with the correlation id. */
   onError?: (error: unknown, requestId: string) => void;
+  /**
+   * This deployment's public origin, used to refuse a cross-site state-changing
+   * request. Omitted means "do not check", which is only appropriate for a
+   * listener that is not browser-facing.
+   *
+   * @see refuseCrossSiteRequest
+   */
+  expectedOrigin?: string;
 }
 
 /**
@@ -143,6 +161,23 @@ export function createHttpServer(options: HttpServerOptions): Server {
       try {
         const request = await toServerRequest(incoming);
         requestId = correlationId(request);
+        // A cross-site state-changing request is refused before any route sees
+        // it, so no controller has to remember to check.
+        const refusal =
+          options.expectedOrigin === undefined
+            ? null
+            : refuseCrossSiteRequest(request, options.expectedOrigin);
+        if (refusal !== null) {
+          writeResponse(
+            outgoing,
+            errorResponse(
+              403,
+              "forbidden",
+              "This request did not come from the application.",
+            ),
+          );
+          return;
+        }
         const response = await router.handle(request);
         response.headers.push({ name: "x-request-id", value: requestId });
         writeResponse(outgoing, response);

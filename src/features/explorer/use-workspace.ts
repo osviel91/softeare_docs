@@ -419,11 +419,19 @@ export function useWorkspace(
     allNotes.find((note) => note.id === selectedNoteId) ?? null;
 
   // Initial load: projects plus every project's diagrams and notes.
+  //
+  // The workspace-wide lists are cleared first because this effect also runs when
+  // the *repository* changes — switching from local projects to a server project,
+  // say. A file id means nothing outside the store that issued it, so keeping the
+  // previous store's entries would let the explorer's search and a note's
+  // `[[Diagram]]` links resolve to documents that are no longer reachable.
   useEffect(() => {
     let active = true;
     (async () => {
       setIsLoading(true);
       setError(null);
+      setAllDiagrams([]);
+      setAllNotes([]);
       const projectsResult: Result<Project[], Error> =
         await repo.listProjects();
       if (!active) return;

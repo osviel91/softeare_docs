@@ -16,13 +16,26 @@
  *   with a TTL, but the login transaction (state, nonce, code verifier) travels
  *   in a short-lived signed cookie and is verified for that browser only.
  *
- * Cryptographic verification uses the platform's Web Crypto API (`node:crypto`'s
- * `webcrypto`), never a hand-written signature algorithm: the application does
- * not implement cryptography. The JWS parsing and claim validation around it is
- * this module's own code, a deliberate deviation from the mission's "use a
- * maintained library", recorded in `docs/plan/server-migration-0-3.md`.
+ * The JOSE mechanics — compact-JWS parsing, key selection, signature checks and
+ * the claims the library can validate — are delegated to the maintained `jose`
+ * package (Phase 4C). This module keeps only the decisions that are ours: which
+ * issuer, audience and algorithms may be accepted, that a `nonce` belongs to
+ * *this* login, and that a subject is present. The installable discovery
+ * document and the token/PKCE flows remain this module's own code. The previous
+ * hand-rolled verifier this replaced is recorded in
+ * `docs/plan/server-migration-0-3.md`.
  */
 import { createHash, randomBytes } from "node:crypto";
+import {
+  createRemoteJWKSet,
+  customFetch,
+  errors,
+  jwtVerify,
+  type FetchImplementation,
+  type JWSAlgorithm,
+  type JWTVerifyGetKey,
+  type RemoteJWKSet,
+} from "jose";
 import { constantTimeEquals } from "./secret-compare";
 
 /** A fetched HTTP response, reduced to what this module needs. */
@@ -49,7 +62,10 @@ export interface OidcClientOptions {
   scopes?: readonly string[];
   /** Where to fetch from. Defaults to the global `fetch`. */
   fetch?: FetchLike;
-  /** How long a discovery or JWKS document may be reused, in ms. */
+  /**
+   * How long the discovery document may be reused, in ms. The JWKS cache is
+   * jose's own and is bounded by its `cacheMaxAge` default instead.
+   */
   cacheTtlMs?: number;
   /** Clock, injectable for tests. */
   now?: () => number;
@@ -98,21 +114,6 @@ export interface LoginTransaction {
   returnTo: string;
 }
 
-/**
- * Copy bytes into a fresh, plainly-backed buffer for Web Crypto.
- *
- * `crypto.subtle` requires an `ArrayBuffer`-backed view, and a `Buffer` from
- * `node:crypto` is typed as possibly backed by a `SharedArrayBuffer`. Copying is
- * the honest fix: it is one small allocation per verification, and it keeps the
- * signature check using the platform's implementation rather than a hand-rolled
- * comparison.
- */
-function bufferSource(bytes: Uint8Array | Buffer): Uint8Array<ArrayBuffer> {
-  const copy = new Uint8Array(bytes.length);
-  copy.set(bytes);
-  return copy;
-}
-
 /** Base64url without padding, as JOSE requires. */
 function base64url(bytes: Uint8Array | Buffer): string {
   return Buffer.from(bytes).toString("base64url");
@@ -133,223 +134,27 @@ export function codeChallengeS256(verifier: string): string {
   return base64url(createHash("sha256").update(verifier, "ascii").digest());
 }
 
-/** The decoded parts of a compact JWS. */
-interface DecodedJws {
-  header: Record<string, unknown>;
-  payload: Record<string, unknown>;
-  signingInput: string;
-  signature: Uint8Array;
-  alg: string;
-  kid: string | null;
-}
-
-/** Split and decode a compact JWS without verifying it. */
-export function decodeJws(token: string): DecodedJws {
-  const parts = token.split(".");
-  if (parts.length !== 3) {
-    throw new OidcError("invalid_token", "A token must have three parts.");
-  }
-  const [encodedHeader, encodedPayload, encodedSignature] = parts;
-  let header: unknown;
-  let payload: unknown;
-  try {
-    header = JSON.parse(
-      Buffer.from(encodedHeader, "base64url").toString("utf8"),
-    );
-    payload = JSON.parse(
-      Buffer.from(encodedPayload, "base64url").toString("utf8"),
-    );
-  } catch {
-    throw new OidcError("invalid_token", "A token part is not valid JSON.");
-  }
-  if (
-    typeof header !== "object" ||
-    header === null ||
-    typeof payload !== "object" ||
-    payload === null
-  ) {
-    throw new OidcError("invalid_token", "A token part is not a JSON object.");
-  }
-  const record = header as Record<string, unknown>;
-  const alg = typeof record.alg === "string" ? record.alg : "";
-  const kid = typeof record.kid === "string" ? record.kid : null;
-  return {
-    header: record,
-    payload: payload as Record<string, unknown>,
-    signingInput: `${encodedHeader}.${encodedPayload}`,
-    signature: Buffer.from(encodedSignature, "base64url"),
-    alg,
-    kid,
-  };
-}
-
 /**
  * The algorithms this server accepts for an ID token.
  *
- * An allow-list, not a pass-through: `none` and the HMAC family are refused
- * outright, which closes the classic confusion attack where a token signed with
- * the (public) client secret as an HMAC key is accepted as an RSA token.
+ * An allow-list, not a pass-through: `none` and the HMAC family are absent, so
+ * a token can never choose its own algorithm. That closes the classic confusion
+ * attack where a token signed with the (public) client secret as an HMAC key is
+ * accepted as an RSA token — jose refuses the algorithm before any key is
+ * consulted, because the list below is passed to it, not read from the header.
  */
-const SUPPORTED_ID_TOKEN_ALGORITHMS: Readonly<
-  Record<string, { name: string; hash: string }>
-> = {
-  RS256: { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
-  RS384: { name: "RSASSA-PKCS1-v1_5", hash: "SHA-384" },
-  RS512: { name: "RSASSA-PKCS1-v1_5", hash: "SHA-512" },
-  PS256: { name: "RSA-PSS", hash: "SHA-256" },
-  ES256: { name: "ECDSA", hash: "SHA-256" },
-  ES384: { name: "ECDSA", hash: "SHA-384" },
-  ES512: { name: "ECDSA", hash: "SHA-512" },
-};
+const SUPPORTED_ID_TOKEN_ALGORITHMS: readonly JWSAlgorithm[] = [
+  "RS256",
+  "RS384",
+  "RS512",
+  "PS256",
+  "ES256",
+  "ES384",
+  "ES512",
+];
 
-/** One JSON Web Key, as a JWKS document holds it. */
-interface Jwk {
-  kty?: string;
-  kid?: string;
-  n?: string;
-  e?: string;
-  crv?: string;
-  x?: string;
-  y?: string;
-  use?: string;
-  alg?: string;
-}
-
-/** Import a JWK as a verification key for a supported algorithm. */
-async function importKey(
-  jwk: Jwk,
-  algorithm: { name: string; hash: string },
-): Promise<CryptoKey> {
-  const key = jwk as JsonWebKey;
-  if (algorithm.name === "ECDSA") {
-    return crypto.subtle.importKey(
-      "jwk",
-      key,
-      { name: "ECDSA", namedCurve: jwk.crv ?? "P-256" },
-      false,
-      ["verify"],
-    );
-  }
-  if (algorithm.name === "RSA-PSS") {
-    return crypto.subtle.importKey(
-      "jwk",
-      key,
-      { name: "RSA-PSS", hash: algorithm.hash },
-      false,
-      ["verify"],
-    );
-  }
-  return crypto.subtle.importKey(
-    "jwk",
-    key,
-    { name: "RSASSA-PKCS1-v1_5", hash: algorithm.hash },
-    false,
-    ["verify"],
-  );
-}
-
-/** Import a JWK as an HMAC verification key, for the test provider only. */
-async function importHmacKey(secret: string): Promise<CryptoKey> {
-  return crypto.subtle.importKey(
-    "raw",
-    bufferSource(new TextEncoder().encode(secret)),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["verify"],
-  );
-}
-
-/**
- * Verify a compact JWS against a set of keys.
- *
- * @param token - The compact token.
- * @param keys - Candidate keys, tried in order; `kid` narrows them first.
- * @param allowedAlgorithms - The algorithms that may be used to verify.
- * @param hmacSecret - When set, an `HS256` token may be verified against it.
- *   Supplied only by the local test provider; a real deployment leaves it unset,
- *   which is what keeps HMAC out of the accepted set.
- */
-export async function verifySignature(
-  token: string,
-  keys: readonly Jwk[],
-  allowedAlgorithms: readonly string[],
-  hmacSecret?: string,
-): Promise<Record<string, unknown>> {
-  const decoded = decodeJws(token);
-  if (!allowedAlgorithms.includes(decoded.alg)) {
-    throw new OidcError(
-      "invalid_token",
-      `The token uses ${decoded.alg || "an unknown algorithm"}, which this server does not accept.`,
-    );
-  }
-
-  // A token that names a key must be verified with *that* key. Falling back to
-  // every published key when the `kid` is unknown would accept a token whose
-  // signing key the provider has retired — the case key rotation exists for.
-  const usable =
-    decoded.kid === null ? keys : keys.filter((key) => key.kid === decoded.kid);
-  if (usable.length === 0) {
-    throw new OidcError(
-      "invalid_token",
-      "The token names a signing key this provider does not publish.",
-    );
-  }
-  const data = new TextEncoder().encode(decoded.signingInput);
-
-  if (decoded.alg === "HS256") {
-    if (hmacSecret === undefined) {
-      throw new OidcError(
-        "invalid_token",
-        "HMAC-signed tokens are not accepted.",
-      );
-    }
-    const key = await importHmacKey(hmacSecret);
-    const ok = await crypto.subtle.verify(
-      "HMAC",
-      key,
-      bufferSource(decoded.signature),
-      bufferSource(data),
-    );
-    if (!ok)
-      throw new OidcError("invalid_token", "The token signature is invalid.");
-    return decoded.payload;
-  }
-
-  const algorithm = SUPPORTED_ID_TOKEN_ALGORITHMS[decoded.alg];
-  if (algorithm === undefined) {
-    throw new OidcError(
-      "unsupported",
-      `Unsupported signing algorithm ${decoded.alg}.`,
-    );
-  }
-
-  for (const jwk of usable) {
-    if (jwk.use !== undefined && jwk.use !== "sig") continue;
-    if (jwk.alg !== undefined && jwk.alg !== decoded.alg) continue;
-    if (jwk.kty === undefined) continue;
-    let key: CryptoKey;
-    try {
-      key = await importKey(jwk, algorithm);
-    } catch {
-      // A key of the wrong type is simply not a candidate.
-      continue;
-    }
-    const parameters =
-      algorithm.name === "ECDSA"
-        ? { name: "ECDSA", hash: algorithm.hash }
-        : algorithm.name === "RSA-PSS"
-          ? { name: "RSA-PSS", saltLength: 32 }
-          : { name: "RSASSA-PKCS1-v1_5" };
-    const ok = await crypto.subtle.verify(
-      parameters,
-      key,
-      bufferSource(decoded.signature),
-      bufferSource(data),
-    );
-    if (ok) return decoded.payload;
-  }
-  throw new OidcError("invalid_token", "The token signature is invalid.");
-}
+/** The clock skew tolerated on `exp`/`nbf`/`iat`, in seconds. */
+const DEFAULT_CLOCK_TOLERANCE_SECONDS = 60;
 
 /** A cached document with an expiry. */
 interface Cached<T> {
@@ -372,6 +177,12 @@ export interface IdTokenExpectations {
  * Every check is a refusal: a token is accepted only when issuer, audience,
  * expiry and nonce all agree with what this login asked for. `email` is read for
  * display and never used as an identity key.
+ *
+ * `jose` has already verified the signature and validated `iss`, `aud`, `exp`
+ * and `nbf` with the same clock tolerance when this runs from `exchange`; the
+ * function is kept because the `nonce` and `sub` checks are this module's, and
+ * because a caller holding only a payload (a test, say) still gets the full
+ * check rather than a partial one.
  */
 export function verifyIdTokenClaims(
   payload: Record<string, unknown>,
@@ -399,7 +210,9 @@ export function verifyIdTokenClaims(
     );
   }
 
-  const tolerance = (expectations.clockToleranceSeconds ?? 60) * 1000;
+  const tolerance =
+    (expectations.clockToleranceSeconds ?? DEFAULT_CLOCK_TOLERANCE_SECONDS) *
+    1000;
   const now = nowMs;
   if (typeof payload.exp !== "number" || !Number.isFinite(payload.exp)) {
     throw new OidcError("invalid_token", "The token has no expiry.");
@@ -477,17 +290,116 @@ const defaultFetch: FetchLike = async (url, init) => {
   };
 };
 
+/**
+ * A human-readable reason for a claim jose refused.
+ *
+ * The claim name is a fixed vocabulary, so the message can name the actual
+ * problem instead of echoing jose's generic "unexpected claim value".
+ */
+function claimFailureMessage(error: { readonly claim: string }): string {
+  switch (error.claim) {
+    case "iss":
+      return "The token was issued by a different issuer.";
+    case "aud":
+      return "The token was not issued for this application.";
+    case "exp":
+      return "The token has expired.";
+    case "nbf":
+      return "The token is not valid yet.";
+    case "iat":
+      return "The token was issued in the future.";
+    case "sub":
+      return "The token has no subject.";
+    default:
+      return `The token's ${error.claim} claim is invalid.`;
+  }
+}
+
+/**
+ * Translate a jose verification failure into this module's error type.
+ *
+ * Everything jose rejects because of *the token* becomes `invalid_token`: a
+ * failed claim check, a failed signature, a malformed compact JWS, or a header
+ * naming an algorithm the allow-list excludes. Failures that belong to the
+ * provider — an unreachable or malformed key set — never arrive here, because
+ * the key resolver wraps them as `discovery` before jose can surface them.
+ *
+ * `JWTExpired` gets its own branch because jose models it as a sibling of
+ * `JWTClaimValidationFailed`, not as a subclass: checking only the latter would
+ * report an expired token with jose's generic claim message.
+ */
+function invalidTokenError(error: unknown): OidcError {
+  if (error instanceof OidcError) return error;
+  if (error instanceof errors.JWTExpired) {
+    return new OidcError("invalid_token", "The token has expired.");
+  }
+  if (error instanceof errors.JWTClaimValidationFailed) {
+    return new OidcError("invalid_token", claimFailureMessage(error));
+  }
+  if (error instanceof errors.JWSSignatureVerificationFailed) {
+    return new OidcError("invalid_token", "The token signature is invalid.");
+  }
+  if (error instanceof errors.JOSEAlgNotAllowed) {
+    return new OidcError(
+      "invalid_token",
+      "The token uses a signing algorithm this server does not accept.",
+    );
+  }
+  if (error instanceof errors.JWKSNoMatchingKey) {
+    return new OidcError(
+      "invalid_token",
+      "The token names a signing key this provider does not publish.",
+    );
+  }
+  if (error instanceof errors.JOSEError) {
+    return new OidcError(
+      "invalid_token",
+      `The token is not a valid ID token (${error.code}).`,
+    );
+  }
+  return new OidcError("invalid_token", "The token could not be verified.");
+}
+
+/**
+ * Adapt this module's small `FetchLike` seam to jose's `customFetch` contract.
+ *
+ * jose's remote key set asks for a WHATWG `Response`; this module's injectable
+ * fetch deliberately returns only the members its own callers need. `status`
+ * and `json()` are the two the JWKS fetch actually reads, so a small shim is the
+ * honest bridge: the injectable seam survives and no test needs a network.
+ */
+function jwksFetch(fetchImpl: FetchLike): FetchImplementation {
+  return async (url) => {
+    const response = await fetchImpl(url, {
+      headers: { accept: "application/json" },
+    });
+    return {
+      ok: response.ok,
+      status: response.status,
+      async json(): Promise<unknown> {
+        return JSON.parse(await response.text());
+      },
+    } as unknown as Response;
+  };
+}
+
 /** Build the OIDC client for one provider. */
 export function createOidcClient(options: OidcClientOptions): OidcClient {
   const fetchImpl = options.fetch ?? defaultFetch;
   const now = options.now ?? (() => Date.now());
   const cacheTtlMs = options.cacheTtlMs ?? 5 * 60 * 1000;
   const scopes = options.scopes ?? ["openid", "profile", "email"];
+  // The `iss` this client accepts, normalised the same way discovery is: a
+  // provider that publishes a trailing slash must not make its own tokens fail.
+  const issuerClaim = options.issuer.replace(/\/+$/, "");
 
   let metadataCache: Cached<ProviderMetadata> | null = null;
-  let jwksCache: Cached<Jwk[]> | null = null;
+  // jose owns the JWKS cache. The resolver is rebuilt only when a newly fetched
+  // discovery document points at a different `jwks_uri`.
+  let keySet: RemoteJWKSet | null = null;
+  let keySetUrl: string | null = null;
 
-  const discoveryUrl = `${options.issuer.replace(/\/+$/, "")}/.well-known/openid-configuration`;
+  const discoveryUrl = `${issuerClaim}/.well-known/openid-configuration`;
 
   const metadata = async (): Promise<ProviderMetadata> => {
     if (metadataCache && metadataCache.expiresAt > now())
@@ -506,9 +418,7 @@ export function createOidcClient(options: OidcClientOptions): OidcClient {
     if (typeof documentIssuer !== "string") {
       throw new OidcError("discovery", "The discovery document has no issuer.");
     }
-    if (
-      documentIssuer.replace(/\/+$/, "") !== options.issuer.replace(/\/+$/, "")
-    ) {
+    if (documentIssuer.replace(/\/+$/, "") !== issuerClaim) {
       throw new OidcError(
         "discovery",
         `The discovery document claims issuer ${documentIssuer}, not ${options.issuer}.`,
@@ -549,26 +459,77 @@ export function createOidcClient(options: OidcClientOptions): OidcClient {
     return parsed;
   };
 
-  const jwks = async (force = false): Promise<Jwk[]> => {
-    if (!force && jwksCache && jwksCache.expiresAt > now())
-      return jwksCache.value;
-    const document = await metadata();
-    const response = await fetchImpl(document.jwks_uri, {
-      headers: { accept: "application/json" },
-    });
-    if (!response.ok) {
+  /**
+   * The resolver jose verifies against, built on demand from discovery.
+   *
+   * `cooldownDuration: 0` is deliberate. jose otherwise refuses to refetch a
+   * key set for 30 seconds after a successful fetch, so a provider that rotated
+   * its signing key would be unusable until the cooldown lapsed — a
+   * restart-shaped failure for a routine rotation. `cacheMaxAge` keeps the
+   * ordinary case cached; only an unknown `kid` triggers the extra fetch, and
+   * jose attempts exactly one per verification.
+   */
+  const resolveKey: JWTVerifyGetKey = async (protectedHeader, token) => {
+    let resolver: RemoteJWKSet;
+    try {
+      const document = await metadata();
+      if (keySet === null || keySetUrl !== document.jwks_uri) {
+        keySet = createRemoteJWKSet(new URL(document.jwks_uri), {
+          cooldownDuration: 0,
+          // The symbol is jose's opt-in for a caller-supplied transport; the
+          // same injectable fetch that serves discovery serves the key set.
+          [customFetch]: jwksFetch(fetchImpl),
+        });
+        keySetUrl = document.jwks_uri;
+      }
+      resolver = keySet;
+    } catch (error) {
+      // `metadata()` already reports as `discovery`; anything else here is a
+      // malformed `jwks_uri`, which is a provider problem too.
+      if (error instanceof OidcError) throw error;
       throw new OidcError(
         "discovery",
-        `The provider's key set could not be read (HTTP ${response.status}).`,
+        "The provider's key set location is invalid.",
       );
     }
-    const parsed = parseJson(await response.text(), "jwks");
-    const keys = Array.isArray(parsed.keys) ? (parsed.keys as Jwk[]) : [];
-    if (keys.length === 0) {
-      throw new OidcError("discovery", "The provider's key set is empty.");
+    try {
+      return await resolver(protectedHeader, token);
+    } catch (error) {
+      // An unknown `kid` is the token's problem, not the provider's: it must
+      // become `invalid_token` (jose has already retried after the rotation).
+      if (error instanceof errors.JWKSNoMatchingKey) throw error;
+      throw new OidcError(
+        "discovery",
+        "The provider's key set could not be read.",
+      );
     }
-    jwksCache = { value: keys, expiresAt: now() + cacheTtlMs };
-    return keys;
+  };
+
+  /**
+   * Verify a compact ID token with jose, under this server's own policy.
+   *
+   * The issuer, audience and algorithm list come from configuration and an
+   * allow-list — never from the token — and the injectable clock is threaded
+   * through `currentDate` so a test's `now` governs expiry exactly as it did
+   * before. `requiredClaims` makes a token without `exp` or `sub` a claim
+   * failure here rather than a surprise later.
+   */
+  const verifyIdToken = async (
+    idToken: string,
+  ): Promise<Record<string, unknown>> => {
+    try {
+      const { payload } = await jwtVerify(idToken, resolveKey, {
+        issuer: issuerClaim,
+        audience: options.clientId,
+        algorithms: [...SUPPORTED_ID_TOKEN_ALGORITHMS],
+        clockTolerance: DEFAULT_CLOCK_TOLERANCE_SECONDS,
+        currentDate: new Date(now()),
+        requiredClaims: ["exp", "sub"],
+      });
+      return payload as Record<string, unknown>;
+    } catch (error) {
+      throw invalidTokenError(error);
+    }
   };
 
   const tokenRequest = async (
@@ -639,30 +600,13 @@ export function createOidcClient(options: OidcClientOptions): OidcClient {
         );
       }
 
-      let keys = await jwks();
-      let payload: Record<string, unknown>;
-      try {
-        payload = await verifySignature(
-          idToken,
-          keys,
-          Object.keys(SUPPORTED_ID_TOKEN_ALGORITHMS),
-        );
-      } catch (error) {
-        // A key rotation is the one recoverable case: refetch once, then fail.
-        if (!(error instanceof OidcError) || error.kind !== "invalid_token")
-          throw error;
-        keys = await jwks(true);
-        payload = await verifySignature(
-          idToken,
-          keys,
-          Object.keys(SUPPORTED_ID_TOKEN_ALGORITHMS),
-        );
-      }
-
+      const payload = await verifyIdToken(idToken);
+      // The signature and the claims jose can check are settled; the nonce,
+      // subject and display-name derivation are still this module's to enforce.
       return verifyIdTokenClaims(
         payload,
         {
-          issuer: options.issuer.replace(/\/+$/, ""),
+          issuer: issuerClaim,
           audience: options.clientId,
           nonce: transaction.nonce,
         },

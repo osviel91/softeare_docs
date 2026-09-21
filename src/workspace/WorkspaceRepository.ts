@@ -42,6 +42,18 @@ export interface WorkspaceRepository {
   /** Create an empty project with a fresh id and the given name. */
   createProject(name: string): Promise<Result<Project, Error>>;
 
+  /**
+   * Change a project's display name. Where a project's identity is derived from
+   * its directory (the local-folder repository) the returned project carries a
+   * new id and the files beneath it move with it; callers must follow it.
+   *
+   * Implementations refuse an empty name and never overwrite a sibling project.
+   */
+  renameProject(
+    id: ProjectId,
+    newName: string,
+  ): Promise<Result<Project, Error>>;
+
   /** Delete a project and all of its diagram and note files. */
   deleteProject(id: ProjectId): Promise<Result<void, Error>>;
 

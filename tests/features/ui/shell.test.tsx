@@ -11,31 +11,32 @@ describe("App — editor views", () => {
   it("shows the code editor by default", () => {
     render(<App />);
     expect(screen.getByTestId("dsl-editor")).toBeInTheDocument();
-    expect(screen.queryByTestId("dsl-reference")).toBeNull();
+    expect(screen.queryByTestId("docs-page")).toBeNull();
   });
 
-  it("switches to the DSL reference and back", () => {
+  it("opens the documentation as its own page and returns to the workspace", () => {
     render(<App />);
-    fireEvent.click(screen.getByTestId("view-docs"));
+    fireEvent.click(screen.getByTestId("open-docs"));
+    expect(screen.getByTestId("docs-page")).toBeInTheDocument();
     expect(screen.getByTestId("dsl-reference")).toBeInTheDocument();
+    // The page replaces the workspace rather than sharing the editor pane.
     expect(screen.queryByTestId("dsl-editor")).toBeNull();
 
-    fireEvent.click(screen.getByTestId("view-code"));
+    fireEvent.click(screen.getByTestId("docs-back"));
     expect(screen.getByTestId("dsl-editor")).toBeInTheDocument();
-    expect(screen.queryByTestId("dsl-reference")).toBeNull();
+    expect(screen.queryByTestId("docs-page")).toBeNull();
   });
 
-  it("marks the active view for assistive technology", () => {
+  it("keeps documentation out of the editor view tabs", () => {
     render(<App />);
     expect(screen.getByTestId("view-code")).toHaveAttribute(
       "aria-selected",
       "true",
     );
-    fireEvent.click(screen.getByTestId("view-docs"));
-    expect(screen.getByTestId("view-docs")).toHaveAttribute(
-      "aria-selected",
-      "true",
-    );
+    // Docs is a page, not a panel between Overview and History.
+    expect(screen.queryByTestId("view-docs")).toBeNull();
+    expect(screen.getByTestId("view-overview")).toBeInTheDocument();
+    expect(screen.getByTestId("view-history")).toBeInTheDocument();
   });
 });
 

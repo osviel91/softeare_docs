@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { MAX_VERSIONS_PER_DIAGRAM } from "../../src/domain/workspace/version";
 import { isOk } from "../../src/shared/result/result";
 import { createInMemoryVersionHistory } from "../../src/workspace/version-history";
@@ -58,6 +58,39 @@ describe("in-memory version history", () => {
     if (!isOk(first)) throw first.error;
     expect(first.value).toHaveLength(1);
     expect(first.value[0].source).toBe("one");
+  });
+
+  it("lists one project's versions across its diagrams, newest first", async () => {
+    const store = createInMemoryVersionHistory();
+    // Distinct times so "newest first" is unambiguous across diagrams.
+    let now = 1_000;
+    const clock = vi.spyOn(Date, "now").mockImplementation(() => (now += 10));
+    try {
+      for (const [diagramId, source, projectId] of [
+        ["diag-1", "first", "proj-1"],
+        ["diag-2", "second", "proj-1"],
+        ["diag-9", "other-project", "proj-2"],
+      ] as const) {
+        const result = await store.recordVersion({
+          diagramId,
+          projectId,
+          name: "d.seq",
+          source,
+          label: "checkpoint",
+        });
+        if (!isOk(result)) throw result.error;
+      }
+    } finally {
+      clock.mockRestore();
+    }
+
+    const result = await store.listProjectVersions("proj-1");
+    if (!isOk(result)) throw result.error;
+    expect(result.value.map((version) => version.source)).toEqual([
+      "second",
+      "first",
+    ]);
+    expect(result.value.every((v) => v.projectId === "proj-1")).toBe(true);
   });
 
   it("does not record a source identical to the newest version", async () => {

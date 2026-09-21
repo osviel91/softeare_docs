@@ -12,9 +12,10 @@ WORKDIR /app
 COPY package.json package-lock.json .npmrc ./
 RUN npm ci --cache /tmp/.npm-cache
 
-# Copy the rest of the source and build the static bundle into dist/.
+# Copy the rest of the source and build the static bundle into dist/. The MCP
+# server is a Node tool, not part of the image, so the web-only build is used.
 COPY . .
-RUN npm run build
+RUN npm run build:web
 
 # ---- Serve stage -----------------------------------------------------------
 # Serves the static bundle with nginx and supports SPA client-side routing.

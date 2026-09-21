@@ -19,6 +19,7 @@ import { openToResult } from "./idb-promises";
 import {
   latestVersion,
   makeVersion,
+  newestVersionsFirst,
   prependAndPrune,
   shouldRecordVersion,
   type RecordVersionInput,
@@ -120,6 +121,24 @@ export function createIndexedDbVersionHistory(
     ): Promise<Result<DiagramVersion[], Error>> {
       try {
         return ok(await readTimeline(diagramId));
+      } catch (error) {
+        return err(toRepoError(error));
+      }
+    },
+
+    async listProjectVersions(
+      projectId: string,
+    ): Promise<Result<DiagramVersion[], Error>> {
+      try {
+        const all = await withTx<DiagramVersion[]>(
+          "readonly",
+          async (store) => (await store.getAll()) as DiagramVersion[],
+        );
+        return ok(
+          newestVersionsFirst(
+            all.filter((version) => version.projectId === projectId),
+          ),
+        );
       } catch (error) {
         return err(toRepoError(error));
       }

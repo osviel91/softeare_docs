@@ -11,6 +11,7 @@
  * I open?") and sharing one shortcut would make each unreliable.
  */
 import { useCallback, useEffect, useState } from "react";
+import { COMMAND_PALETTE_BINDING, bindingMatches } from "./shortcuts";
 
 /** The open/closed state and the actions the App needs to render the palette. */
 export interface CommandPaletteController {
@@ -25,20 +26,16 @@ export interface CommandPaletteController {
 /**
  * Manage the palette's open state and its global keyboard shortcut.
  *
- * Ctrl/Cmd+Shift+P toggles the palette open and closed, and Esc dismisses it
- * when open. The shortcut is attached to `document` so it works regardless of
- * where focus currently is.
+ * {@link COMMAND_PALETTE_BINDING} toggles the palette open and closed, and Esc
+ * dismisses it when open. The shortcut is attached to `document` so it works
+ * regardless of where focus currently is.
  */
 export function useCommandPalette(): CommandPaletteController {
   const [isOpen, setIsOpen] = useState(false);
 
   useEffect(() => {
     function onKeydown(event: KeyboardEvent): void {
-      if (
-        (event.metaKey || event.ctrlKey) &&
-        event.shiftKey &&
-        event.key.toLowerCase() === "p"
-      ) {
+      if (bindingMatches(COMMAND_PALETTE_BINDING, event)) {
         event.preventDefault();
         setIsOpen((open) => !open);
         return;

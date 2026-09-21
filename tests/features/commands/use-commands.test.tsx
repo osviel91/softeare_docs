@@ -16,6 +16,7 @@ function mockContext(
   const openSearch = overrides.openSearch ?? vi.fn();
   const openQuickOpen = overrides.openQuickOpen ?? vi.fn();
   const showView = overrides.showView ?? vi.fn();
+  const openDocs = overrides.openDocs ?? vi.fn();
   const findReferences = overrides.findReferences ?? vi.fn();
   const renameSymbol = overrides.renameSymbol ?? vi.fn();
   const exportDiagram = overrides.exportDiagram ?? vi.fn();
@@ -23,6 +24,8 @@ function mockContext(
   const exportProject = overrides.exportProject ?? vi.fn();
   const importProject = overrides.importProject ?? vi.fn();
   const openFolder = overrides.openFolder ?? vi.fn();
+  const collapseAllProjects = overrides.collapseAllProjects ?? vi.fn();
+  const expandAllProjects = overrides.expandAllProjects ?? vi.fn();
 
   const context = {
     createEmptyDiagram,
@@ -34,6 +37,7 @@ function mockContext(
     openSearch,
     openQuickOpen,
     showView,
+    openDocs,
     findReferences,
     renameSymbol,
     exportDiagram,
@@ -43,6 +47,8 @@ function mockContext(
     openFolder,
     folderOpen: false,
     folderSupported: true,
+    collapseAllProjects,
+    expandAllProjects,
     ...overrides,
   };
 
@@ -56,11 +62,14 @@ function mockContext(
     openSearch,
     openQuickOpen,
     showView,
+    openDocs,
     findReferences,
     renameSymbol,
     exportProject,
     importProject,
     openFolder,
+    collapseAllProjects,
+    expandAllProjects,
   };
 }
 
@@ -161,5 +170,54 @@ describe("useCommands", () => {
     );
     await result.current.run("search-project");
     expect(openSearch).toHaveBeenCalledTimes(1);
+  });
+
+  it("offers Documentation and opens the page through the provided callback", async () => {
+    const openDocs = vi.fn();
+    const { context } = mockContext({ openDocs });
+    const { result } = renderHook(() => useCommands(context));
+
+    expect(result.current.commands.map((c) => c.id)).toContain("open-docs");
+    await result.current.run("open-docs");
+    expect(openDocs).toHaveBeenCalledTimes(1);
+  });
+
+  it("gives every command a shortcut, and no two share one", () => {
+    const { context } = mockContext({
+      folderSupported: true,
+      folderOpen: false,
+    });
+    const { result } = renderHook(() => useCommands(context));
+
+    const seen = new Set<string>();
+    for (const command of result.current.commands) {
+      expect(command.binding, `${command.id} has no shortcut`).toBeDefined();
+      const fingerprint = [
+        command.binding?.key,
+        command.binding?.mod ? "mod" : "",
+        command.binding?.shift ? "shift" : "",
+        command.binding?.alt ? "alt" : "",
+      ].join("|");
+      expect(
+        seen.has(fingerprint),
+        `${command.id} duplicates ${fingerprint}`,
+      ).toBe(false);
+      seen.add(fingerprint);
+    }
+  });
+
+  it("runs Collapse All and Expand All Projects through the provided callbacks", async () => {
+    const collapseAllProjects = vi.fn();
+    const expandAllProjects = vi.fn();
+    const { context } = mockContext({
+      collapseAllProjects,
+      expandAllProjects,
+    });
+    const { result } = renderHook(() => useCommands(context));
+
+    await result.current.run("collapse-all-projects");
+    expect(collapseAllProjects).toHaveBeenCalledTimes(1);
+    await result.current.run("expand-all-projects");
+    expect(expandAllProjects).toHaveBeenCalledTimes(1);
   });
 });

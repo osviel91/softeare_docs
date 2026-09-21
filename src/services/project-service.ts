@@ -21,7 +21,6 @@ import {
 } from "../domain/workspace/metadata";
 import {
   resourceKindOf,
-  resourceTypeOf,
   resourceTypeOfName,
 } from "../domain/workspace/resource-id";
 import type { DiagramFile, NoteFile, Project } from "../domain/workspace/types";
@@ -52,7 +51,12 @@ function metadataFileFor(file: DiagramFile | NoteFile): MetadataFile {
   const isNote = "markdown" in file;
   return {
     path: file.name,
-    type: resourceTypeOf(isNote ? "note" : "diagram"),
+    // A note is a markdown document whatever it is called — an in-browser note
+    // may not carry `.md`, and the store it came from is authoritative. A
+    // diagram needs its name: the extension is what separates an event flow
+    // from a sequence diagram (ADR-028), and using the store kind alone would
+    // record every event flow as a sequence diagram and mis-analyse it.
+    type: isNote ? "markdown-document" : resourceTypeOfName(file.name),
     title: isNote
       ? noteDisplayName(file.name, file.markdown)
       : diagramDisplayName(file.name, file.source),

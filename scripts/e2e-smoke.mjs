@@ -458,25 +458,41 @@ async function runChecks(browser) {
     (await page.locator('[data-testid="minimap-image"]').count()) === 1,
   );
 
-  console.log("\nEditor views and auto-update:");
-  await page.locator('[data-testid="view-docs"]').click();
-  await page.locator('[data-testid="dsl-reference"]').waitFor({
+  console.log("\nDocumentation page and auto-update:");
+  await page.locator('[data-testid="open-docs"]').click();
+  await page.locator('[data-testid="docs-page"]').waitFor({
     state: "visible",
     timeout: UI_TIMEOUT_MS,
   });
-  check("docs view shows the DSL reference", true);
+  check("the toolbar opens the documentation page", true);
   check(
     "the reference documents the activation construct",
     (
       await page.locator('[data-testid="dsl-reference"]').textContent()
     ).includes("activate"),
   );
-  await page.locator('[data-testid="view-code"]').click();
+
+  await page.locator('[data-testid="docs-nav-commands"]').click();
+  check(
+    "the command reference lists a palette command",
+    (
+      await page.locator('[data-testid="commands-reference"]').textContent()
+    ).includes("New Diagram"),
+  );
+  await page.locator('[data-testid="docs-nav-mcp"]').click();
+  check(
+    "the MCP section explains how to build the server",
+    (
+      await page.locator('[data-testid="mcp-reference"]').textContent()
+    ).includes("npm run mcp:build"),
+  );
+
+  await page.locator('[data-testid="docs-back"]').click();
   await page.locator('[data-testid="dsl-textarea"]').waitFor({
     state: "visible",
     timeout: UI_TIMEOUT_MS,
   });
-  check("code view restores the editor", true);
+  check("leaving the documentation page restores the editor", true);
 
   // With auto-update off the canvas must keep the last rendered diagram.
   await page.locator('[data-testid="auto-update-switch"]').click();

@@ -25,7 +25,8 @@ describe("App — safe delete for in-browser projects", () => {
       expect(screen.getByTestId("project-name")).toHaveTextContent("Notes");
     });
 
-    fireEvent.click(screen.getByTestId("delete-project-button"));
+    fireEvent.click(screen.getByTestId("project-menu-button"));
+    fireEvent.click(screen.getByTestId("context-menu-delete-project"));
     expect(screen.getByTestId("confirm-dialog")).toHaveTextContent(
       "Delete project",
     );
@@ -51,7 +52,8 @@ describe("App — safe delete for in-browser projects", () => {
       expect(screen.getByTestId("project-name")).toHaveTextContent("Keep me");
     });
 
-    fireEvent.click(screen.getByTestId("delete-project-button"));
+    fireEvent.click(screen.getByTestId("project-menu-button"));
+    fireEvent.click(screen.getByTestId("context-menu-delete-project"));
     fireEvent.click(screen.getByTestId("confirm-dialog-cancel"));
     expect(screen.queryByTestId("confirm-dialog")).toBeNull();
     expect(screen.getByTestId("project-name")).toHaveTextContent("Keep me");

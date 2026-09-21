@@ -82,8 +82,18 @@ function toDirectoryHandle(
         : undefined;
       return toFileHandle(await native.getFileHandle(name, nativeOptions));
     },
-    async getDirectoryHandle(name: string): Promise<FsDirectoryHandle> {
-      return toDirectoryHandle(await native.getDirectoryHandle(name));
+    async getDirectoryHandle(
+      name: string,
+      options?: { createIfNotExists?: boolean },
+    ): Promise<FsDirectoryHandle> {
+      // The native lib names this option `create`; map ours onto it. Without it
+      // the native call rejects when the directory is absent.
+      const nativeOptions = options
+        ? { create: options.createIfNotExists }
+        : undefined;
+      return toDirectoryHandle(
+        await native.getDirectoryHandle(name, nativeOptions),
+      );
     },
     async removeEntry(name: string): Promise<void> {
       await native.removeEntry(name);

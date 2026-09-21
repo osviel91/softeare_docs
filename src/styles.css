@@ -129,6 +129,28 @@ body {
 
 .app__command-button {
   margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.app__command-shortcut,
+.palette__shortcut {
+  font-family: inherit;
+  font-size: 10.5px;
+  line-height: 1;
+  padding: 3px 5px;
+  color: var(--text-faint);
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.palette__item--active .palette__shortcut {
+  color: var(--on-accent);
+  background: transparent;
+  border-color: currentColor;
+  opacity: 0.85;
 }
 
 .app__workspace {
@@ -791,6 +813,276 @@ body {
 }
 
 /* ==========================================================================
+   Documentation page
+   ========================================================================== */
+.app__docs-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.app__page-title {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--text-muted);
+}
+
+.docspage {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  background: var(--bg);
+}
+
+.docspage__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 26px 30px 20px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+}
+
+.docspage__eyebrow {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.docspage__title {
+  margin: 0;
+  font-size: 21px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.docspage__lead {
+  max-width: 68ch;
+  margin: 9px 0 0;
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--text-muted);
+}
+
+.docspage__back {
+  flex: 0 0 auto;
+}
+
+.docspage__body {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.docspage__nav {
+  flex: 0 0 236px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 20px 14px;
+  overflow-y: auto;
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border);
+}
+
+.docspage__nav-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 9px 11px;
+  font: inherit;
+  text-align: left;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.docspage__nav-item:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.docspage__nav-item--active {
+  color: var(--text);
+  background: var(--bg-elevated);
+  border-color: var(--border);
+}
+
+.docspage__nav-label {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.docspage__nav-hint {
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--text-faint);
+}
+
+.docspage__content {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 24px 30px 48px;
+}
+
+/*
+ * The DSL reference brings its own pane padding and scroll; inside the page the
+ * content area owns both, so the reference lays out as one section among three.
+ */
+.docspage__content .docs {
+  padding: 0;
+  overflow: visible;
+  background: transparent;
+}
+
+/* Shared shape for the command and MCP reference sections. */
+.ref {
+  max-width: 78ch;
+}
+
+.ref__intro {
+  margin: 0 0 26px;
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--text-muted);
+}
+
+.ref__group + .ref__group {
+  margin-top: 34px;
+}
+
+.ref__group-title {
+  margin: 0 0 16px;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.ref__list {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.ref__list--bullets {
+  gap: 9px;
+  padding-left: 18px;
+  list-style: disc;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
+.ref__entry {
+  display: grid;
+  grid-template-columns: minmax(180px, 240px) 1fr;
+  gap: 18px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.ref__entry:last-child {
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.ref__name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.ref__shortcut {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  line-height: 1;
+  padding: 3px 5px;
+  color: var(--text-faint);
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.ref__body {
+  margin: 0;
+  min-width: 0;
+}
+
+.ref__summary {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
+.ref__summary + .ref__code,
+.ref__summary + .ref__summary {
+  margin-top: 11px;
+}
+
+.ref__condition {
+  margin: 7px 0 0;
+  font-size: 12px;
+  font-style: italic;
+  color: var(--text-faint);
+}
+
+.ref__code {
+  margin: 11px 0 0;
+  padding: 12px 14px;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text);
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.ref__code code {
+  font: inherit;
+}
+
+@media (max-width: 860px) {
+  .docspage__body {
+    flex-direction: column;
+  }
+
+  .docspage__nav {
+    flex: 0 0 auto;
+    flex-direction: row;
+    overflow-x: auto;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .docspage__nav-hint {
+    display: none;
+  }
+
+  .ref__entry {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+}
+
+/* ==========================================================================
    Preview pane and diagram viewport
    ========================================================================== */
 .preview {
@@ -1168,22 +1460,39 @@ body {
   font-weight: 600;
 }
 
-.explorer__delete-button {
+/* The project collapse chevron and actions menu sit on the right of the header,
+   beside the add button. Both stay visible: a project row has no hover-revealed
+   affordances, unlike a file row. */
+.explorer__project-collapse,
+.explorer__project-menu {
   flex: 0 0 auto;
-  width: 20px;
-  height: 20px;
-  font-size: 11px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  font: inherit;
+  font-size: 12px;
   line-height: 1;
   color: var(--text-faint);
   background: transparent;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
 }
 
-.explorer__delete-button:hover {
-  color: var(--danger);
+.explorer__project-collapse:hover,
+.explorer__project-menu:hover {
+  color: var(--text);
   background: var(--bg-hover);
+}
+
+.explorer__project-collapse:focus-visible,
+.explorer__project-menu:focus-visible {
+  color: var(--text);
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .explorer__diagrams {
@@ -1293,7 +1602,10 @@ body {
 }
 
 .palette__item {
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   width: 100%;
   padding: 10px 13px;
   font: inherit;
@@ -1306,12 +1618,22 @@ body {
   cursor: pointer;
 }
 
+.palette__item-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .palette__item--active {
   color: var(--on-accent);
   background: var(--accent);
 }
 
 .palette__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   padding: 7px 18px;
   border-top: 1px solid var(--border);
 }
@@ -1319,6 +1641,12 @@ body {
 .palette__hint {
   color: var(--text-faint);
   font-size: 11.5px;
+}
+
+.palette__open-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 /* ==========================================================================
@@ -1483,6 +1811,72 @@ body {
   color: var(--text-faint);
 }
 
+.history__project {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+/* The project tree: one branch per diagram, each with its own left rail so a
+   version reads as hanging off the document it belongs to. */
+.history__tree {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.history__branch {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.history__branch-header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 10px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.history__branch--active .history__branch-header {
+  border-color: var(--accent);
+}
+
+.history__branch-icon {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.history__branch-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.history__branch-count {
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-faint);
+}
+
+.history__branch > .history__list {
+  margin-left: 9px;
+  padding-left: 13px;
+  border-left: 1px solid var(--border-strong);
+}
+
 .history__empty {
   margin: auto;
   max-width: 34ch;
@@ -1631,35 +2025,6 @@ body {
   min-width: 0;
 }
 
-.explorer__diagram-delete {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  margin-right: 4px;
-  font: inherit;
-  font-size: 11px;
-  line-height: 1;
-  color: var(--text-faint);
-  background: transparent;
-  border: none;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  opacity: 0;
-}
-
-.explorer__diagram:hover .explorer__diagram-delete,
-.explorer__diagram-delete:focus-visible {
-  opacity: 1;
-}
-
-.explorer__diagram-delete:hover {
-  color: var(--danger);
-  background: rgba(248, 113, 113, 0.12);
-}
-
 /* ==========================================================================
    Explorer notes
    ========================================================================== */
@@ -1716,8 +2081,7 @@ body {
 }
 
 .explorer__diagram-menu,
-.explorer__note-menu,
-.explorer__note-delete {
+.explorer__note-menu {
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
@@ -1738,10 +2102,8 @@ body {
 
 .explorer__diagram:hover .explorer__diagram-menu,
 .explorer__note:hover .explorer__note-menu,
-.explorer__note:hover .explorer__note-delete,
 .explorer__diagram-menu:focus-visible,
-.explorer__note-menu:focus-visible,
-.explorer__note-delete:focus-visible {
+.explorer__note-menu:focus-visible {
   opacity: 1;
 }
 
@@ -1749,11 +2111,6 @@ body {
 .explorer__note-menu:hover {
   color: var(--text);
   background: var(--bg-elevated);
-}
-
-.explorer__note-delete:hover {
-  color: var(--danger);
-  background: rgba(248, 113, 113, 0.12);
 }
 
 .explorer__project-add {

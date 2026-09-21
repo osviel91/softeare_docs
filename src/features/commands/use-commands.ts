@@ -1,12 +1,16 @@
 /**
  * App command registry (Phase 6).
  *
- * Composes the concrete {@link Command}s the palette exposes, each closing over
- * the current workspace and tab state. "New diagram" creates an empty file in
- * the selected project and opens its tab; "Close tab" closes the active tab;
- * "Open/Close folder" toggles the local-folder workspace. The list is memoized
- * on the state it depends on, so the palette re-renders only when behavior
- * changes (for example when a folder is opened or closed).
+ * The catalog of commands — their labels, descriptions, chords and categories —
+ * lives in `command-catalog.ts`. This hook attaches the behaviour to each spec
+ * by closing over the current workspace and tab state, so the palette, the
+ * shortcut listener, and the documentation page all read one list.
+ *
+ * The list is memoized on the state it depends on, so the palette re-renders
+ * only when behavior changes (for example when a folder is opened or closed).
+ * Every command declares the {@link KeyBinding} that runs it, so the palette can
+ * print the shortcut and the shell's listener can honour it without a second
+ * registry.
  */
 import { useCallback, useMemo } from "react";
 import type { DiagramFile, NoteFile } from "../../domain/workspace/types";
@@ -15,6 +19,7 @@ import {
   type Command,
   type CommandRegistry,
 } from "./command";
+import { availableCommands } from "./command-catalog";
 
 /** The app state the command registry is built from. */
 export interface CommandContext {
@@ -34,10 +39,15 @@ export interface CommandContext {
   openSearch: () => void;
   /** Show the quick-open overlay (also bound to Ctrl/Cmd+P). */
   openQuickOpen: () => void;
-  /** Switch the middle pane to one of its panels. */
+  /**
+   * Switch the middle pane to one of its panels, returning to the workspace
+   * when the documentation page is open.
+   */
   showView: (
-    view: "code" | "outline" | "problems" | "overview" | "docs" | "history",
+    view: "code" | "outline" | "problems" | "overview" | "history",
   ) => void;
+  /** Open the documentation page. */
+  openDocs: () => void;
   /** List every use of the symbol under the caret. */
   findReferences: () => void;
   /** Rename the symbol under the caret across the project. */
@@ -56,6 +66,10 @@ export interface CommandContext {
   folderOpen: boolean;
   /** Whether the File System Access API is available in this browser. */
   folderSupported: boolean;
+  /** Collapse every project in the explorer to a header row. */
+  collapseAllProjects: () => void;
+  /** Expand every project in the explorer back to its file list. */
+  expandAllProjects: () => void;
 }
 
 /** Build the app's command registry from its current state. */
@@ -69,6 +83,7 @@ export function useCommands({
   openSearch,
   openQuickOpen,
   showView,
+  openDocs,
   findReferences,
   renameSymbol,
   exportDiagram,
@@ -78,6 +93,8 @@ export function useCommands({
   openFolder,
   folderOpen,
   folderSupported,
+  collapseAllProjects,
+  expandAllProjects,
 }: CommandContext): CommandRegistry {
   const newDiagram = useCallback(() => {
     // Nothing to create a diagram in until a project is selected. The command
@@ -101,80 +118,44 @@ export function useCommands({
   }, [createEmptyNote, selectedProjectId]);
 
   const commands = useMemo<Command[]>(() => {
-    const list: Command[] = [
-      { id: "new-diagram", label: "New Diagram", execute: newDiagram },
-      { id: "new-note", label: "New Note", execute: newNote },
-      {
-        id: "new-event-flow",
-        label: "New Event Flow",
-        execute: newEventFlow,
-      },
-      { id: "close-tab", label: "Close Tab", execute: closeActiveTab },
-      { id: "search-project", label: "Search Project…", execute: openSearch },
-      { id: "quick-open", label: "Quick Open…", execute: openQuickOpen },
-      {
-        id: "show-outline",
-        label: "Toggle Outline",
-        execute: () => showView("outline"),
-      },
-      {
-        id: "show-problems",
-        label: "Toggle Problems",
-        execute: () => showView("problems"),
-      },
-      {
-        id: "show-overview",
-        label: "Project Overview",
-        execute: () => showView("overview"),
-      },
-      {
-        id: "validate-project",
-        label: "Validate Project",
-        execute: () => showView("problems"),
-      },
-      {
-        id: "find-references",
-        label: "Find References",
-        execute: findReferences,
-      },
-      { id: "rename-symbol", label: "Rename Symbol…", execute: renameSymbol },
-      {
-        id: "export-diagram",
-        label: "Export Diagram…",
-        execute: exportDiagram,
-      },
-      {
-        id: "export-site",
-        label: "Export Documentation Site",
-        execute: exportSite,
-      },
-      { id: "export-project", label: "Export Project", execute: exportProject },
-      {
-        id: "import-project",
-        label: "Import Project…",
-        execute: importProject,
-      },
-    ];
+    // One executor per catalog id. A spec with no executor is a programming
+    // error, so it throws rather than registering a command that does nothing.
+    const executors: Record<string, () => void> = {
+      "new-diagram": newDiagram,
+      "new-note": newNote,
+      "new-event-flow": newEventFlow,
+      "close-tab": closeActiveTab,
+      "search-project": openSearch,
+      "quick-open": openQuickOpen,
+      "show-outline": () => showView("outline"),
+      "show-problems": () => showView("problems"),
+      "show-overview": () => showView("overview"),
+      "open-docs": openDocs,
+      "validate-project": () => showView("problems"),
+      "collapse-all-projects": collapseAllProjects,
+      "expand-all-projects": expandAllProjects,
+      "find-references": findReferences,
+      "rename-symbol": renameSymbol,
+      "export-diagram": exportDiagram,
+      "export-site": exportSite,
+      "export-project": exportProject,
+      "import-project": importProject,
+      "open-folder": openFolder,
+      "close-folder": openFolder,
+    };
 
-    // A folder command only makes sense when the API is available. Folder open
-    // implies support, so guard both branches on it. When a folder is open,
-    // offer to close it; otherwise offer to open one.
-    if (folderSupported && !folderOpen) {
-      list.push({
-        id: "open-folder",
-        label: "Open Folder…",
-        execute: openFolder,
-      });
-    }
-    if (folderSupported && folderOpen) {
-      list.push({
-        id: "close-folder",
-        label: "Close Folder",
-        execute: openFolder,
-      });
-    }
-
-    return list;
+    return availableCommands({ folderSupported, folderOpen }).map((spec) => {
+      const execute = executors[spec.id];
+      if (!execute) {
+        throw new Error(`No executor registered for command "${spec.id}"`);
+      }
+      return {
+        id: spec.id,
+        label: spec.label,
+        binding: spec.binding,
+        execute,
+      };
+    });
   }, [
     newDiagram,
     newNote,
@@ -183,6 +164,9 @@ export function useCommands({
     openSearch,
     openQuickOpen,
     showView,
+    openDocs,
+    collapseAllProjects,
+    expandAllProjects,
     findReferences,
     renameSymbol,
     exportDiagram,

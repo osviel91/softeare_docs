@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import HistoryPanel from "../../../src/features/history/HistoryPanel";
 import type { DiagramVersion } from "../../../src/domain/workspace/version";
 
@@ -110,5 +110,74 @@ describe("HistoryPanel", () => {
     expect(screen.getByTestId("history-empty")).toHaveTextContent(
       "No versions yet",
     );
+  });
+});
+
+describe("HistoryPanel — project tree", () => {
+  /** Render the panel over a two-diagram project history. */
+  function renderTree(
+    overrides: Partial<Parameters<typeof HistoryPanel>[0]> = {},
+  ) {
+    const props = {
+      versions: [
+        { ...version("ver-2", "title Two", 2_000), diagramId: "diag-2" },
+        { ...version("ver-1", "title One", 1_000), diagramId: "diag-1" },
+      ],
+      isLoading: false,
+      hasDiagram: true,
+      currentSource: "",
+      activeDiagramId: "diag-2",
+      labelForDiagram: (diagramId: string) =>
+        diagramId === "diag-2" ? "Second" : "First",
+      kindForDiagram: () => "sequence-diagram",
+      projectName: "Docs",
+      onSaveVersion: vi.fn(),
+      onRestore: vi.fn(),
+      onDeleteVersion: vi.fn(),
+      ...overrides,
+    };
+    render(<HistoryPanel {...props} />);
+    return props;
+  }
+
+  it("groups versions into one branch per diagram", () => {
+    renderTree();
+
+    const branches = screen.getAllByTestId("history-branch");
+    expect(branches).toHaveLength(2);
+    expect(branches[0]).toHaveTextContent("Second");
+    expect(branches[1]).toHaveTextContent("First");
+
+    // A version stays under the diagram it belongs to.
+    const rows = within(branches[0]).getAllByTestId("history-version");
+    expect(rows).toHaveLength(1);
+    expect(rows[0].getAttribute("data-diagram-id")).toBe("diag-2");
+
+    // Only the open diagram's branch is marked.
+    expect(
+      within(branches[0]).getByTestId("history-branch-open"),
+    ).toBeInTheDocument();
+    expect(within(branches[1]).queryByTestId("history-branch-open")).toBeNull();
+
+    // The header names the project.
+    expect(screen.getByTestId("history-project")).toHaveTextContent("Docs");
+  });
+
+  it("marks Current only in the open diagram's branch", () => {
+    const sameSource = "title Same\nA -> B: hi";
+    renderTree({
+      versions: [
+        { ...version("ver-2", sameSource, 2_000), diagramId: "diag-2" },
+        { ...version("ver-1", sameSource, 1_000), diagramId: "diag-1" },
+      ],
+      currentSource: sameSource,
+    });
+
+    // Identical content in two diagrams: only the open one is "Current".
+    expect(screen.getAllByTestId("version-current")).toHaveLength(1);
+    const branches = screen.getAllByTestId("history-branch");
+    expect(
+      within(branches[0]).getByTestId("version-current"),
+    ).toBeInTheDocument();
   });
 });

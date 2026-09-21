@@ -226,6 +226,26 @@ describe("App — event flows", () => {
     expect(messages.some((text) => text.includes("has no producer"))).toBe(
       true,
     );
+    // Each problem names the project and document it belongs to, so two
+    // same-named files can never be confused.
+    expect(messages.every((text) => text.includes("Payments ›"))).toBe(true);
+  });
+
+  it("counts an event flow's own problems, not the sequence parser's", async () => {
+    render(<App />);
+    await createProject();
+    await newEventFlow();
+
+    // Valid event-flow text is full of constructs the sequence grammar rejects;
+    // the status bar must not report those as this document's problems.
+    fireEvent.change(screen.getByTestId("dsl-textarea"), {
+      target: { value: FLOW },
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("status-diagnostics").textContent).toBe(
+        "No problems",
+      );
+    });
   });
 
   it("completes event names declared by the flow", async () => {

@@ -7,7 +7,13 @@
  * filtering by label and running a command by id. Keeping these as plain values
  * (no React, no repository) makes the palette logic unit-testable in isolation
  * and lets App compose commands from its current workspace/tab state.
+ *
+ * A command may carry a {@link KeyBinding}. The binding is data, not behavior:
+ * the palette prints its label and the shell's shortcut listener runs the command
+ * when the chord is pressed, so the shortcut and the menu entry cannot drift
+ * apart.
  */
+import type { KeyBinding } from "./shortcuts";
 
 /** A single action the user can invoke from the command palette. */
 export interface Command {
@@ -15,6 +21,8 @@ export interface Command {
   id: string;
   /** Human-readable label shown in the palette; also the filter key. */
   label: string;
+  /** The chord that runs this command, when it has one. */
+  binding?: KeyBinding;
   /** Run the command. */
   execute: () => void;
 }

@@ -4,19 +4,26 @@
   "version": "0.1.0",
   "type": "module",
   "description": "A browser-based, local-first tool for creating, editing, and exporting sequence diagrams with its own DSL.",
+  "bin": {
+    "sequencediagrams-mcp": "dist-mcp/server.mjs"
+  },
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && tsc -p mcp/tsconfig.json && vite build && npm run mcp:build",
+    "build:web": "tsc -b && vite build",
     "preview": "vite preview",
+    "mcp:build": "node scripts/build-mcp.mjs",
+    "mcp": "npm run mcp:build --silent && node dist-mcp/server.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "test:e2e": "npm run build && node scripts/e2e-smoke.mjs",
+    "test:e2e": "npm run build:web && node scripts/e2e-smoke.mjs",
+    "test:mcp": "npm run mcp:build && node scripts/mcp-smoke.mjs",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "typecheck": "tsc -b --noEmit"
+    "typecheck": "tsc -b --noEmit && tsc -p mcp/tsconfig.json --noEmit"
   },
   "dependencies": {
     "react": "^18.3.1",
@@ -38,6 +45,7 @@
     "eslint-plugin-react": "^7.37.2",
     "eslint-plugin-react-hooks": "^4.6.2",
     "eslint-plugin-react-refresh": "^0.4.14",
+    "esbuild": "^0.21.5",
     "jsdom": "^25.0.1",
     "playwright": "^1.63.0",
     "prettier": "^3.3.3",

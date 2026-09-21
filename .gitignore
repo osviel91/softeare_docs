@@ -7,6 +7,8 @@ node_modules/
 # Build output
 dist/
 build/
+# The bundled MCP server (see scripts/build-mcp.mjs)
+dist-mcp/
 
 # Test coverage
 coverage/

@@ -2,17 +2,21 @@
  * Project explorer (Phase 4; notes added with the documentation layer).
  *
  * Renders the workspace tree: projects, each with its diagrams and markdown
- * notes. Creating, deleting, renaming, and selecting all flow through callbacks
+ * notes. Creating, renaming, deleting, and selecting all flow through callbacks
  * so the component stays a pure function of its props; {@link useWorkspace}
  * supplies them. Selection is driven by the parent (it owns the editor buffer),
  * so clicking a row just reports the file.
  *
- * Every diagram and note row offers three affordances: the row itself opens the
- * document, a `✕` asks to delete it (the shell confirms), and a `⋯` opens the
- * context menu (rename, change title, duplicate, delete). Right-clicking the row
- * opens the same menu, and the menu position is reported so the shell can place
- * it. Each project header carries a `＋` that opens the same kind of menu to
- * choose what to add: a diagram or a markdown note.
+ * Every project header offers three affordances: a `▾`/`▸` that collapses the
+ * project to its header, a `＋` that opens the add menu (diagram, note, event
+ * flow), and a `⋯` that opens the project's own actions menu (rename, delete).
+ * Right-clicking the header opens the same actions menu. Project and file
+ * deletion therefore live in menus, never on a bare row button.
+ *
+ * Every diagram and note row offers two affordances: the row itself opens the
+ * document and a `⋯` opens its actions menu (rename, change title, duplicate,
+ * delete). Right-clicking the row opens the same menu, and the menu position is
+ * reported so the shell can place it.
  */
 import { useState, type MouseEvent as ReactMouseEvent } from "react";
 import type {
@@ -53,21 +57,11 @@ export interface ExplorerProps {
   isLoading: boolean;
   /** Called with a proposed project name when the user creates one. */
   onCreateProject: (name: string) => void;
-  /** Called with a project id when the user deletes it. */
-  onDeleteProject: (id: string) => void;
   /**
    * Called when the user asks to add a file to a project. The shell opens a menu
    * offering a new diagram or a new markdown note, anchored at the position.
    */
   onAddMenu?: (project: Project, position: MenuPosition) => void;
-  /**
-   * Called when the user asks to delete a diagram. The shell opens a
-   * confirmation dialog before anything is removed. Optional so the explorer
-   * stays usable as a pure list in tests.
-   */
-  onDeleteDiagram?: (diagram: DiagramFile) => void;
-  /** Called when the user asks to delete a note (confirmed by the shell). */
-  onDeleteNote?: (note: NoteFile) => void;
   /** Called when the user selects a diagram to load it into the editor. */
   onLoadDiagram: (diagram: DiagramFile) => void;
   /** Called when the user selects a note to load it into the editor. */
@@ -76,8 +70,21 @@ export interface ExplorerProps {
   onDiagramMenu?: (diagram: DiagramFile, position: MenuPosition) => void;
   /** Open the actions menu for a note at the reported position. */
   onNoteMenu?: (note: NoteFile, position: MenuPosition) => void;
-  /** Open the actions menu for a project at the reported position. */
+  /**
+   * Open the actions menu for a project (rename, delete) at the reported
+   * position. Right-clicking the header requests the same menu.
+   */
   onProjectMenu?: (project: Project, position: MenuPosition) => void;
+  /**
+   * Ids of the projects currently collapsed to their header. Optional so the
+   * explorer still renders as a plain, always-expanded list in tests.
+   */
+  collapsedProjectIds?: string[];
+  /**
+   * Toggle one project between collapsed and expanded. When it is absent no
+   * chevron is rendered, which keeps the explorer usable without collapse state.
+   */
+  onToggleProjectCollapse?: (projectId: string) => void;
   /**
    * How many paths the user has removed from the app but left on disk. When
    * greater than zero the header offers to restore them, so a "remove from app"
@@ -117,15 +124,14 @@ export default function Explorer({
   selectedNoteId = null,
   isLoading,
   onCreateProject,
-  onDeleteProject,
   onAddMenu,
-  onDeleteDiagram,
-  onDeleteNote,
   onLoadDiagram,
   onLoadNote,
   onDiagramMenu,
   onNoteMenu,
   onProjectMenu,
+  collapsedProjectIds = [],
+  onToggleProjectCollapse,
   hiddenCount = 0,
   onUnhideAll,
   onOpenFolder,
@@ -145,6 +151,8 @@ export default function Explorer({
     }
   };
 
+  const collapsed = new Set(collapsedProjectIds);
+
   // With a non-empty query, match names across every project; otherwise keep the
   // normal view of the selected project's files. Matching is a case-insensitive
   // substring test on the trimmed query. A diagram's name is the `title` in its
@@ -161,10 +169,35 @@ export default function Explorer({
   const matchesNote = (note: NoteFile): boolean =>
     query === "" ||
     `${noteName(note)} ${note.name}`.toLowerCase().includes(query);
-  const displayDiagrams =
-    query === "" ? diagrams : allDiagrams.filter(matchesDiagram);
-  const displayNotes = query === "" ? notes : allNotes.filter(matchesNote);
-  const noMatches = displayDiagrams.length === 0 && displayNotes.length === 0;
+  // Matches are computed across every project only while searching. With an
+  // empty query each project shows its own files: the selected project's lists
+  // preserve their display order, and every other project reads the
+  // workspace-wide lists. Without that second half a non-selected project's row
+  // would always look empty, even when expanded.
+  //
+  // The projectId filter is applied even to the selected project's own lists.
+  // They are loaded per project, but a filter here means a transient mismatch
+  // can never draw one project's file under another project's header.
+  const matchedDiagrams =
+    query === "" ? null : allDiagrams.filter(matchesDiagram);
+  const matchedNotes = query === "" ? null : allNotes.filter(matchesNote);
+  const noMatches =
+    matchedDiagrams !== null &&
+    matchedDiagrams.length === 0 &&
+    (matchedNotes?.length ?? 0) === 0;
+
+  const diagramsOf = (projectId: string): DiagramFile[] =>
+    matchedDiagrams
+      ? matchedDiagrams.filter((diagram) => diagram.projectId === projectId)
+      : projectId === selectedProjectId
+        ? diagrams.filter((diagram) => diagram.projectId === projectId)
+        : allDiagrams.filter((diagram) => diagram.projectId === projectId);
+  const notesOf = (projectId: string): NoteFile[] =>
+    matchedNotes
+      ? matchedNotes.filter((note) => note.projectId === projectId)
+      : projectId === selectedProjectId
+        ? notes.filter((note) => note.projectId === projectId)
+        : allNotes.filter((note) => note.projectId === projectId);
 
   const modeLabel = folderName ? `“${folderName}”` : "In-browser projects";
 
@@ -267,12 +300,12 @@ export default function Explorer({
       ) : (
         <ul className="explorer__projects" data-testid="explorer-projects">
           {projects.map((project) => {
-            const projectDiagrams = displayDiagrams.filter(
-              (diagram) => diagram.projectId === project.id,
-            );
-            const projectNotes = displayNotes.filter(
-              (note) => note.projectId === project.id,
-            );
+            const projectDiagrams = diagramsOf(project.id);
+            const projectNotes = notesOf(project.id);
+            // A collapsed project hides its file lists, but a search always wins:
+            // the point of searching is to see matches wherever they live.
+            const isCollapsed = collapsed.has(project.id);
+            const showFiles = query !== "" || !isCollapsed;
             return (
               <li
                 key={project.id}
@@ -280,7 +313,7 @@ export default function Explorer({
                   project.id === selectedProjectId
                     ? " explorer__project--selected"
                     : ""
-                }`}
+                }${isCollapsed ? " explorer__project--collapsed" : ""}`}
                 data-testid="explorer-project"
                 aria-current={
                   project.id === selectedProjectId ? "true" : undefined
@@ -318,185 +351,195 @@ export default function Explorer({
                       ＋
                     </button>
                   )}
-                  <button
-                    type="button"
-                    className="explorer__delete-button"
-                    data-testid="delete-project-button"
-                    aria-label={`Delete project ${project.name}`}
-                    onClick={() => onDeleteProject(project.id)}
-                  >
-                    ✕
-                  </button>
+                  {onToggleProjectCollapse && (
+                    <button
+                      type="button"
+                      className="explorer__project-collapse"
+                      data-testid="project-collapse-button"
+                      aria-expanded={!isCollapsed}
+                      aria-label={`${
+                        isCollapsed ? "Expand" : "Collapse"
+                      } project ${project.name}`}
+                      title={
+                        isCollapsed ? "Expand project" : "Collapse project"
+                      }
+                      onClick={() => onToggleProjectCollapse(project.id)}
+                    >
+                      <span aria-hidden="true">{isCollapsed ? "▸" : "▾"}</span>
+                    </button>
+                  )}
+                  {onProjectMenu && (
+                    <button
+                      type="button"
+                      className="explorer__project-menu"
+                      data-testid="project-menu-button"
+                      aria-label={`Actions for project ${project.name}`}
+                      aria-haspopup="menu"
+                      title="Project actions…"
+                      onClick={(event) =>
+                        onProjectMenu(
+                          project,
+                          positionBelow(event.currentTarget),
+                        )
+                      }
+                    >
+                      ⋯
+                    </button>
+                  )}
                 </div>
 
-                <ul
-                  className="explorer__diagrams"
-                  data-testid="explorer-diagrams"
-                >
-                  {projectDiagrams.length === 0 &&
-                  query === "" &&
-                  selectedProjectId === project.id ? (
-                    <li
-                      className="explorer__diagram-empty"
-                      data-testid="explorer-diagram-empty"
-                    >
-                      No diagrams.
-                    </li>
-                  ) : (
-                    projectDiagrams.map((diagram) => (
+                {showFiles && (
+                  <ul
+                    className="explorer__diagrams"
+                    data-testid="explorer-diagrams"
+                  >
+                    {projectDiagrams.length === 0 &&
+                    query === "" &&
+                    selectedProjectId === project.id ? (
                       <li
-                        key={diagram.id}
-                        className={`explorer__diagram${
-                          diagram.id === selectedDiagramId
-                            ? " explorer__diagram--selected"
-                            : ""
-                        }`}
-                        data-testid="explorer-diagram"
-                        aria-current={
-                          diagram.id === selectedDiagramId ? "true" : undefined
-                        }
-                        onContextMenu={(
-                          event: ReactMouseEvent<HTMLLIElement>,
-                        ) => {
-                          if (!onDiagramMenu) return;
-                          event.preventDefault();
-                          onDiagramMenu(diagram, {
-                            x: event.clientX,
-                            y: event.clientY,
-                          });
-                        }}
+                        className="explorer__diagram-empty"
+                        data-testid="explorer-diagram-empty"
                       >
-                        <button
-                          type="button"
-                          className="explorer__diagram-button"
-                          data-testid="select-diagram-button"
-                          aria-label={`Load diagram ${diagramName(diagram)}`}
-                          onClick={() => onLoadDiagram(diagram)}
+                        No diagrams.
+                      </li>
+                    ) : (
+                      projectDiagrams.map((diagram) => (
+                        <li
+                          key={diagram.id}
+                          className={`explorer__diagram${
+                            diagram.id === selectedDiagramId
+                              ? " explorer__diagram--selected"
+                              : ""
+                          }`}
+                          data-testid="explorer-diagram"
+                          aria-current={
+                            diagram.id === selectedDiagramId
+                              ? "true"
+                              : undefined
+                          }
+                          onContextMenu={(
+                            event: ReactMouseEvent<HTMLLIElement>,
+                          ) => {
+                            if (!onDiagramMenu) return;
+                            event.preventDefault();
+                            onDiagramMenu(diagram, {
+                              x: event.clientX,
+                              y: event.clientY,
+                            });
+                          }}
                         >
-                          <span
-                            className="explorer__item-icon"
-                            aria-hidden="true"
-                          >
-                            ▦
-                          </span>
-                          {diagramName(diagram)}
-                        </button>
-                        {onDeleteDiagram && (
                           <button
                             type="button"
-                            className="explorer__diagram-delete"
-                            data-testid="delete-diagram-button"
-                            aria-label={`Delete diagram ${diagramName(diagram)}`}
-                            title="Delete diagram…"
-                            onClick={() => onDeleteDiagram(diagram)}
+                            className="explorer__diagram-button"
+                            data-testid="select-diagram-button"
+                            aria-label={`Load diagram ${diagramName(diagram)}`}
+                            onClick={() => onLoadDiagram(diagram)}
                           >
-                            ✕
+                            <span
+                              className="explorer__item-icon"
+                              aria-hidden="true"
+                            >
+                              ▦
+                            </span>
+                            {diagramName(diagram)}
                           </button>
-                        )}
-                        {onDiagramMenu && (
-                          <button
-                            type="button"
-                            className="explorer__diagram-menu"
-                            data-testid="diagram-menu-button"
-                            aria-label={`Actions for diagram ${diagramName(diagram)}`}
-                            title="More actions…"
-                            onClick={(event) =>
-                              onDiagramMenu(
+                          {onDiagramMenu && (
+                            <button
+                              type="button"
+                              className="explorer__diagram-menu"
+                              data-testid="diagram-menu-button"
+                              aria-label={`Actions for diagram ${diagramName(
                                 diagram,
-                                positionBelow(event.currentTarget),
-                              )
-                            }
-                          >
-                            ⋯
-                          </button>
-                        )}
-                      </li>
-                    ))
-                  )}
-                </ul>
+                              )}`}
+                              title="More actions…"
+                              onClick={(event) =>
+                                onDiagramMenu(
+                                  diagram,
+                                  positionBelow(event.currentTarget),
+                                )
+                              }
+                            >
+                              ⋯
+                            </button>
+                          )}
+                        </li>
+                      ))
+                    )}
+                  </ul>
+                )}
 
-                <ul className="explorer__notes" data-testid="explorer-notes">
-                  {projectNotes.length === 0 &&
-                  query === "" &&
-                  selectedProjectId === project.id ? (
-                    <li
-                      className="explorer__diagram-empty"
-                      data-testid="explorer-note-empty"
-                    >
-                      No notes.
-                    </li>
-                  ) : (
-                    projectNotes.map((note) => (
+                {showFiles && (
+                  <ul className="explorer__notes" data-testid="explorer-notes">
+                    {projectNotes.length === 0 &&
+                    query === "" &&
+                    selectedProjectId === project.id ? (
                       <li
-                        key={note.id}
-                        className={`explorer__note${
-                          note.id === selectedNoteId
-                            ? " explorer__note--selected"
-                            : ""
-                        }`}
-                        data-testid="explorer-note"
-                        aria-current={
-                          note.id === selectedNoteId ? "true" : undefined
-                        }
-                        onContextMenu={(
-                          event: ReactMouseEvent<HTMLLIElement>,
-                        ) => {
-                          if (!onNoteMenu) return;
-                          event.preventDefault();
-                          onNoteMenu(note, {
-                            x: event.clientX,
-                            y: event.clientY,
-                          });
-                        }}
+                        className="explorer__diagram-empty"
+                        data-testid="explorer-note-empty"
                       >
-                        <button
-                          type="button"
-                          className="explorer__note-button"
-                          data-testid="select-note-button"
-                          aria-label={`Open note ${noteName(note)}`}
-                          onClick={() => onLoadNote?.(note)}
-                        >
-                          <span
-                            className="explorer__item-icon"
-                            aria-hidden="true"
-                          >
-                            ¶
-                          </span>
-                          {noteName(note)}
-                        </button>
-                        {onDeleteNote && (
-                          <button
-                            type="button"
-                            className="explorer__note-delete"
-                            data-testid="delete-note-button"
-                            aria-label={`Delete note ${noteName(note)}`}
-                            title="Delete note…"
-                            onClick={() => onDeleteNote(note)}
-                          >
-                            ✕
-                          </button>
-                        )}
-                        {onNoteMenu && (
-                          <button
-                            type="button"
-                            className="explorer__note-menu"
-                            data-testid="note-menu-button"
-                            aria-label={`Actions for note ${noteName(note)}`}
-                            title="More actions…"
-                            onClick={(event) =>
-                              onNoteMenu(
-                                note,
-                                positionBelow(event.currentTarget),
-                              )
-                            }
-                          >
-                            ⋯
-                          </button>
-                        )}
+                        No notes.
                       </li>
-                    ))
-                  )}
-                </ul>
+                    ) : (
+                      projectNotes.map((note) => (
+                        <li
+                          key={note.id}
+                          className={`explorer__note${
+                            note.id === selectedNoteId
+                              ? " explorer__note--selected"
+                              : ""
+                          }`}
+                          data-testid="explorer-note"
+                          aria-current={
+                            note.id === selectedNoteId ? "true" : undefined
+                          }
+                          onContextMenu={(
+                            event: ReactMouseEvent<HTMLLIElement>,
+                          ) => {
+                            if (!onNoteMenu) return;
+                            event.preventDefault();
+                            onNoteMenu(note, {
+                              x: event.clientX,
+                              y: event.clientY,
+                            });
+                          }}
+                        >
+                          <button
+                            type="button"
+                            className="explorer__note-button"
+                            data-testid="select-note-button"
+                            aria-label={`Open note ${noteName(note)}`}
+                            onClick={() => onLoadNote?.(note)}
+                          >
+                            <span
+                              className="explorer__item-icon"
+                              aria-hidden="true"
+                            >
+                              ¶
+                            </span>
+                            {noteName(note)}
+                          </button>
+                          {onNoteMenu && (
+                            <button
+                              type="button"
+                              className="explorer__note-menu"
+                              data-testid="note-menu-button"
+                              aria-label={`Actions for note ${noteName(note)}`}
+                              title="More actions…"
+                              onClick={(event) =>
+                                onNoteMenu(
+                                  note,
+                                  positionBelow(event.currentTarget),
+                                )
+                              }
+                            >
+                              ⋯
+                            </button>
+                          )}
+                        </li>
+                      ))
+                    )}
+                  </ul>
+                )}
               </li>
             );
           })}

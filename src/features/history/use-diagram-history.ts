@@ -33,6 +33,11 @@ import type { VersionHistoryStore } from "../../workspace/version-history";
 export interface DiagramHistoryHook {
   /** The active diagram's timeline, newest first. */
   versions: DiagramVersion[];
+  /**
+   * Every version in the selected project, across all of its diagrams, newest
+   * first. The panel renders this as a tree of branches.
+   */
+  projectVersions: DiagramVersion[];
   /** True while a timeline load is in flight. */
   isLoading: boolean;
   /**
@@ -62,13 +67,17 @@ export interface DiagramHistoryHook {
  *   buffer is loaded yet. Passing `null` suppresses automatic checkpoints, which
  *   is what prevents a stale buffer from another tab being recorded against the
  *   newly selected diagram during the render that switches between them.
+ * @param projectId - The selected project, whose whole history the panel shows
+ *   as a tree. `null` while no project is selected.
  */
 export function useDiagramHistory(
   store: VersionHistoryStore,
   diagram: DiagramFile | null,
   source: string | null,
+  projectId: string | null = null,
 ): DiagramHistoryHook {
   const [versions, setVersions] = useState<DiagramVersion[]>([]);
+  const [projectVersions, setProjectVersions] = useState<DiagramVersion[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const diagramId = diagram?.id ?? null;
 
@@ -80,6 +89,32 @@ export function useDiagramHistory(
     },
     [store],
   );
+
+  /** Re-read the selected project's whole history into state. */
+  const refreshProject = useCallback(
+    async (id: string): Promise<void> => {
+      const result = await store.listProjectVersions(id);
+      if (isOk(result)) setProjectVersions(result.value);
+    },
+    [store],
+  );
+
+  // Load the project-wide tree whenever the selected project changes, so the
+  // panel shows every diagram's branch even before one of them is opened.
+  useEffect(() => {
+    if (!projectId) {
+      setProjectVersions((current) => (current.length === 0 ? current : []));
+      return;
+    }
+    let active = true;
+    void (async () => {
+      const result = await store.listProjectVersions(projectId);
+      if (active && isOk(result)) setProjectVersions(result.value);
+    })();
+    return () => {
+      active = false;
+    };
+  }, [store, projectId]);
 
   // Load the timeline whenever the selected diagram changes, seeding the very
   // first version from the diagram's saved source so the trajectory has a
@@ -107,7 +142,10 @@ export function useDiagramHistory(
             source: opened.source,
             label: INITIAL_VERSION_LABEL,
           });
-          if (active) await refresh(opened.id);
+          if (active) {
+            await refresh(opened.id);
+            await refreshProject(opened.projectId);
+          }
         }
       }
       if (active) setIsLoading(false);
@@ -117,7 +155,7 @@ export function useDiagramHistory(
     };
     // The diagram's own fields are read from the captured `opened` value; only
     // its identity should reload the timeline.
-  }, [store, diagramId, refresh]);
+  }, [store, diagramId, refresh, refreshProject]);
 
   // Automatic checkpoint: after the buffer has been quiet for the debounce
   // window, record it. The cleanup clears the pending timer on every keystroke,
@@ -139,11 +177,12 @@ export function useDiagramHistory(
         // returns the existing newest version and needs no re-render.
         if (isOk(result) && result.value.source === pending) {
           await refresh(target.id);
+          await refreshProject(target.projectId);
         }
       })();
     }, AUTO_CHECKPOINT_DEBOUNCE_MS);
     return () => clearTimeout(timer);
-  }, [store, diagram, source, refresh]);
+  }, [store, diagram, source, refresh, refreshProject]);
 
   const saveVersion = useCallback(
     async (
@@ -158,44 +197,52 @@ export function useDiagramHistory(
         source: nextSource,
         label,
       });
-      if (isOk(result)) await refresh(diagram.id);
+      if (isOk(result)) {
+        await refresh(diagram.id);
+        await refreshProject(diagram.projectId);
+      }
     },
-    [store, diagram, refresh],
+    [store, diagram, refresh, refreshProject],
   );
 
   const removeVersion = useCallback(
     async (versionId: string): Promise<void> => {
       await store.deleteVersion(versionId);
       if (diagramId) await refresh(diagramId);
+      if (projectId) await refreshProject(projectId);
     },
-    [store, diagramId, refresh],
+    [store, diagramId, projectId, refresh, refreshProject],
   );
 
   const clearDiagram = useCallback(
     async (targetId: string): Promise<void> => {
       await store.clearDiagram(targetId);
       if (diagramId === targetId) setVersions([]);
+      if (projectId) await refreshProject(projectId);
     },
-    [store, diagramId],
+    [store, diagramId, projectId, refreshProject],
   );
 
   const clearProject = useCallback(
-    async (projectId: string): Promise<void> => {
-      await store.clearProject(projectId);
-      if (diagram && diagram.projectId === projectId) setVersions([]);
+    async (targetProjectId: string): Promise<void> => {
+      await store.clearProject(targetProjectId);
+      if (diagram && diagram.projectId === targetProjectId) setVersions([]);
+      if (projectId === targetProjectId) setProjectVersions([]);
     },
-    [store, diagram],
+    [store, diagram, projectId],
   );
 
   const renameDiagram = useCallback(
     async (fromDiagramId: string, toDiagramId: string): Promise<void> => {
       await store.renameDiagram(fromDiagramId, toDiagramId);
+      if (projectId) await refreshProject(projectId);
     },
-    [store],
+    [store, projectId, refreshProject],
   );
 
   return {
     versions,
+    projectVersions,
     isLoading,
     saveVersion,
     removeVersion,

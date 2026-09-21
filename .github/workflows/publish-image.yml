@@ -65,6 +65,12 @@ jobs:
       - name: Unit tests
         run: npm test
 
+      # The MCP server is a Node bundle, not part of the web image, so it has no
+      # place in the browser smoke job — but the bundled server is what clients
+      # launch, so it is exercised here where the source it wraps has just passed.
+      - name: MCP server smoke test
+        run: npm run test:mcp
+
   browser-smoke:
     name: Browser smoke test
     runs-on: ubuntu-latest

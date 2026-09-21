@@ -68,6 +68,38 @@ describe("IndexedDB workspace repository", () => {
     }
   });
 
+  it("renames a project in place and keeps its files", async () => {
+    const created = await repo.createProject("Onboarding");
+    if (!isOk(created)) throw created.error;
+    const project = created.value;
+    await repo.createEmptyDiagram(project.id);
+
+    const renamed = await repo.renameProject(project.id, "Getting started");
+    if (!isOk(renamed)) throw renamed.error;
+    // The generated id is what the files point at, so it must not move.
+    expect(renamed.value).toMatchObject({
+      id: project.id,
+      name: "Getting started",
+    });
+
+    const listed = await repo.listProjects();
+    if (isOk(listed)) {
+      expect(listed.value[0].name).toBe("Getting started");
+    }
+    const files = await repo.listDiagramFiles(project.id);
+    if (isOk(files)) {
+      expect(files.value).toHaveLength(1);
+    }
+  });
+
+  it("refuses a blank rename and reports an unknown project", async () => {
+    const created = await repo.createProject("Onboarding");
+    if (!isOk(created)) throw created.error;
+
+    expect(isOk(await repo.renameProject(created.value.id, "   "))).toBe(false);
+    expect(isOk(await repo.renameProject("missing", "Anything"))).toBe(false);
+  });
+
   it("stores a diagram and links it to the project", async () => {
     const created = await repo.createProject("Onboarding");
     if (!isOk(created)) throw created.error;

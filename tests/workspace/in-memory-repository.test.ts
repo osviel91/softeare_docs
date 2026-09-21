@@ -41,6 +41,42 @@ describe("In-memory workspace repository", () => {
     }
   });
 
+  it("renames a project without changing its id or files", async () => {
+    const created = await repo.createProject("Onboarding");
+    if (!isOk(created)) throw created.error;
+    const project = created.value;
+    await repo.createEmptyDiagram(project.id);
+
+    const renamed = await repo.renameProject(project.id, "  Getting started  ");
+    expect(isOk(renamed)).toBe(true);
+    if (!isOk(renamed)) return;
+    // The stored name is trimmed; the generated id is untouched.
+    expect(renamed.value).toMatchObject({
+      id: project.id,
+      name: "Getting started",
+    });
+
+    const listed = await repo.listProjects();
+    if (isOk(listed)) {
+      expect(listed.value[0].name).toBe("Getting started");
+    }
+    const files = await repo.listDiagramFiles(project.id);
+    if (isOk(files)) {
+      expect(files.value).toHaveLength(1);
+    }
+  });
+
+  it("refuses to rename a project to a blank name or one that is missing", async () => {
+    const created = await repo.createProject("Onboarding");
+    if (!isOk(created)) throw created.error;
+
+    const blank = await repo.renameProject(created.value.id, "   ");
+    expect(isOk(blank)).toBe(false);
+
+    const missing = await repo.renameProject("proj-missing", "Anything");
+    expect(isOk(missing)).toBe(false);
+  });
+
   it("creates an empty diagram in a project with a fresh id", async () => {
     const created = await repo.createProject("Onboarding");
     if (!isOk(created)) throw created.error;

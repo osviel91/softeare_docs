@@ -38,6 +38,14 @@ export interface VersionHistoryStore {
   /** Every version of a diagram, newest first. */
   listVersions(diagramId: string): Promise<Result<DiagramVersion[], Error>>;
   /**
+   * Every version belonging to a project, across all of its diagrams, newest
+   * first. This is what lets the panel show the project's history as a tree
+   * rather than one branch at a time.
+   */
+  listProjectVersions(
+    projectId: string,
+  ): Promise<Result<DiagramVersion[], Error>>;
+  /**
    * Capture a version. A source identical to the newest recorded one is not
    * re-recorded; the existing newest version is returned instead.
    */
@@ -67,6 +75,20 @@ export function latestVersion(
   versions: DiagramVersion[],
 ): DiagramVersion | null {
   return versions.length > 0 ? versions[0] : null;
+}
+
+/**
+ * Order versions newest first by the time they were recorded.
+ *
+ * A store's own return order is a storage detail — the in-memory fake returns
+ * insertion order, IndexedDB returns key order — so recency has to come from
+ * `createdAt`. The sort is stable, which keeps versions recorded in the same
+ * millisecond in the per-diagram order the timeline already established.
+ */
+export function newestVersionsFirst(
+  versions: DiagramVersion[],
+): DiagramVersion[] {
+  return [...versions].sort((a, b) => b.createdAt - a.createdAt);
 }
 
 /**
@@ -132,6 +154,22 @@ export function createInMemoryVersionHistory(): VersionHistoryStore {
       try {
         // Copy so callers cannot mutate the stored timeline in place.
         return ok([...(byDiagram.get(diagramId) ?? [])]);
+      } catch (error) {
+        return err(error instanceof Error ? error : new Error(String(error)));
+      }
+    },
+
+    async listProjectVersions(
+      projectId: string,
+    ): Promise<Result<DiagramVersion[], Error>> {
+      try {
+        const all: DiagramVersion[] = [];
+        for (const versions of byDiagram.values()) {
+          for (const version of versions) {
+            if (version.projectId === projectId) all.push(version);
+          }
+        }
+        return ok(newestVersionsFirst(all));
       } catch (error) {
         return err(error instanceof Error ? error : new Error(String(error)));
       }

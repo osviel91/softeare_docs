@@ -10,6 +10,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import type { Command, CommandRegistry } from "./command";
+import { bindingLabel } from "./shortcuts";
 
 export interface CommandPaletteProps {
   /** The commands to filter and run. */
@@ -18,6 +19,11 @@ export interface CommandPaletteProps {
   onRun: (command: Command) => void;
   /** Dismiss the palette without running a command. */
   onClose: () => void;
+  /**
+   * The chord that opens the palette. Shown in the footer so the shortcut is
+   * discoverable from inside the thing it opens.
+   */
+  openShortcut?: string;
 }
 
 /** The command palette modal: a filter input over a registry of commands. */
@@ -25,6 +31,7 @@ export default function CommandPalette({
   registry,
   onRun,
   onClose,
+  openShortcut,
 }: CommandPaletteProps) {
   const [query, setQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -130,7 +137,15 @@ export default function CommandPalette({
                   aria-label={command.label}
                   onClick={() => onRun(command)}
                 >
-                  {command.label}
+                  <span className="palette__item-label">{command.label}</span>
+                  {command.binding && (
+                    <kbd
+                      className="palette__shortcut"
+                      data-testid="palette-shortcut"
+                    >
+                      {bindingLabel(command.binding)}
+                    </kbd>
+                  )}
                 </button>
               </li>
             ))
@@ -140,6 +155,14 @@ export default function CommandPalette({
           <span className="palette__hint">
             ↑↓ navigate · Enter run · Esc close
           </span>
+          {openShortcut && (
+            <span
+              className="palette__hint palette__open-hint"
+              data-testid="palette-open-hint"
+            >
+              Open with <kbd className="palette__shortcut">{openShortcut}</kbd>
+            </span>
+          )}
         </div>
       </div>
     </div>

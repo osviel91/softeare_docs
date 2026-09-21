@@ -50,7 +50,10 @@ export interface FsDirectoryHandle {
     options?: { createIfNotExists?: boolean },
   ): Promise<FsFileHandle>;
   /** Fetch a subdirectory handle by name, creating it lazily on first access. */
-  getDirectoryHandle(name: string): Promise<FsDirectoryHandle>;
+  getDirectoryHandle(
+    name: string,
+    options?: { createIfNotExists?: boolean },
+  ): Promise<FsDirectoryHandle>;
   /** Remove a file or subdirectory by name (no-op when absent). */
   removeEntry(name: string): Promise<void>;
 }

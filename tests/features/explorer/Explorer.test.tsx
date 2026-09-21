@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
-import type { DiagramFile, Project } from "../../../src/domain/workspace/types";
+import type {
+  DiagramFile,
+  NoteFile,
+  Project,
+} from "../../../src/domain/workspace/types";
 import Explorer from "../../../src/features/explorer/Explorer";
 
 const project: Project = {
@@ -14,6 +18,12 @@ const diagram: DiagramFile = {
   source: "title Welcome\nA -> B: hi",
   projectId: "proj-1",
 };
+const note: NoteFile = {
+  id: "note-1",
+  name: "Intro.md",
+  markdown: "# Intro",
+  projectId: "proj-1",
+};
 
 describe("Explorer", () => {
   it("shows an empty hint when there are no projects", () => {
@@ -25,7 +35,6 @@ describe("Explorer", () => {
         selectedDiagramId={null}
         isLoading={false}
         onCreateProject={vi.fn()}
-        onDeleteProject={vi.fn()}
         onLoadDiagram={vi.fn()}
       />,
     );
@@ -41,7 +50,6 @@ describe("Explorer", () => {
         selectedDiagramId={null}
         isLoading={true}
         onCreateProject={vi.fn()}
-        onDeleteProject={vi.fn()}
         onLoadDiagram={vi.fn()}
       />,
     );
@@ -57,7 +65,6 @@ describe("Explorer", () => {
         selectedDiagramId={diagram.id}
         isLoading={false}
         onCreateProject={vi.fn()}
-        onDeleteProject={vi.fn()}
         onLoadDiagram={vi.fn()}
       />,
     );
@@ -82,7 +89,6 @@ describe("Explorer", () => {
         selectedDiagramId={null}
         isLoading={false}
         onCreateProject={vi.fn()}
-        onDeleteProject={vi.fn()}
         onLoadDiagram={vi.fn()}
       />,
     );
@@ -108,7 +114,6 @@ describe("Explorer", () => {
         selectedDiagramId={null}
         isLoading={false}
         onCreateProject={vi.fn()}
-        onDeleteProject={vi.fn()}
         onLoadDiagram={vi.fn()}
       />,
     );
@@ -134,7 +139,6 @@ describe("Explorer", () => {
         selectedDiagramId={null}
         isLoading={false}
         onCreateProject={vi.fn()}
-        onDeleteProject={vi.fn()}
         onLoadDiagram={vi.fn()}
       />,
     );
@@ -153,7 +157,6 @@ describe("Explorer", () => {
         selectedDiagramId={null}
         isLoading={false}
         onCreateProject={vi.fn()}
-        onDeleteProject={vi.fn()}
         onLoadDiagram={onLoadDiagram}
       />,
     );
@@ -161,8 +164,8 @@ describe("Explorer", () => {
     expect(onLoadDiagram).toHaveBeenCalledWith(diagram);
   });
 
-  it("deletes a project through the delete button", () => {
-    const onDeleteProject = vi.fn();
+  it("opens the project actions menu from the ⋯ button", () => {
+    const onProjectMenu = vi.fn();
     render(
       <Explorer
         projects={[project]}
@@ -171,12 +174,32 @@ describe("Explorer", () => {
         selectedDiagramId={diagram.id}
         isLoading={false}
         onCreateProject={vi.fn()}
-        onDeleteProject={onDeleteProject}
+        onProjectMenu={onProjectMenu}
         onLoadDiagram={vi.fn()}
       />,
     );
-    fireEvent.click(screen.getByLabelText("Delete project Onboarding"));
-    expect(onDeleteProject).toHaveBeenCalledWith(project.id);
+    fireEvent.click(screen.getByTestId("project-menu-button"));
+    expect(onProjectMenu).toHaveBeenCalledWith(
+      project,
+      expect.objectContaining({ x: expect.any(Number), y: expect.any(Number) }),
+    );
+  });
+
+  it("offers no bare delete button on a project header", () => {
+    render(
+      <Explorer
+        projects={[project]}
+        diagrams={[diagram]}
+        selectedProjectId={project.id}
+        selectedDiagramId={diagram.id}
+        isLoading={false}
+        onCreateProject={vi.fn()}
+        onProjectMenu={vi.fn()}
+        onLoadDiagram={vi.fn()}
+      />,
+    );
+    // Delete lives in the ⋯ menu, which the shell builds, not on the header.
+    expect(screen.queryByTestId("delete-project-button")).toBeNull();
   });
 
   it("opens the add menu for a project instead of creating straight away", () => {
@@ -189,7 +212,6 @@ describe("Explorer", () => {
         selectedDiagramId={diagram.id}
         isLoading={false}
         onCreateProject={vi.fn()}
-        onDeleteProject={vi.fn()}
         onAddMenu={onAddMenu}
         onLoadDiagram={vi.fn()}
       />,
@@ -210,7 +232,6 @@ describe("Explorer", () => {
         selectedDiagramId={diagram.id}
         isLoading={false}
         onCreateProject={vi.fn()}
-        onDeleteProject={vi.fn()}
         onLoadDiagram={vi.fn()}
       />,
     );
@@ -227,7 +248,6 @@ describe("Explorer", () => {
         selectedDiagramId={null}
         isLoading={false}
         onCreateProject={onCreateProject}
-        onDeleteProject={vi.fn()}
         onLoadDiagram={vi.fn()}
       />,
     );
@@ -253,7 +273,6 @@ describe("Explorer", () => {
         selectedDiagramId={null}
         isLoading={false}
         onCreateProject={vi.fn()}
-        onDeleteProject={vi.fn()}
         onLoadDiagram={vi.fn()}
         onOpenFolder={vi.fn()}
         folderSupported={true}
@@ -274,7 +293,6 @@ describe("Explorer", () => {
         selectedDiagramId={null}
         isLoading={false}
         onCreateProject={vi.fn()}
-        onDeleteProject={vi.fn()}
         onLoadDiagram={vi.fn()}
         onOpenFolder={onOpenFolder}
         folderSupported={true}
@@ -293,7 +311,6 @@ describe("Explorer", () => {
         selectedDiagramId={null}
         isLoading={false}
         onCreateProject={vi.fn()}
-        onDeleteProject={vi.fn()}
         onLoadDiagram={vi.fn()}
         onOpenFolder={vi.fn()}
         folderName="My Diagrams"
@@ -317,7 +334,6 @@ describe("Explorer", () => {
         selectedDiagramId={null}
         isLoading={false}
         onCreateProject={vi.fn()}
-        onDeleteProject={vi.fn()}
         onLoadDiagram={vi.fn()}
         onOpenFolder={vi.fn()}
         folderSupported={false}
@@ -335,7 +351,6 @@ describe("Explorer", () => {
         selectedDiagramId={null}
         isLoading={false}
         onCreateProject={vi.fn()}
-        onDeleteProject={vi.fn()}
         onLoadDiagram={vi.fn()}
       />,
     );
@@ -358,7 +373,6 @@ describe("Explorer", () => {
         selectedDiagramId={null}
         isLoading={false}
         onCreateProject={vi.fn()}
-        onDeleteProject={vi.fn()}
         onLoadDiagram={vi.fn()}
       />,
     );
@@ -397,19 +411,19 @@ describe("Explorer", () => {
         selectedDiagramId={null}
         isLoading={false}
         onCreateProject={vi.fn()}
-        onDeleteProject={vi.fn()}
         onLoadDiagram={onLoadDiagram}
       />,
     );
 
-    // The Report diagram lives in a different project; it is not listed without
-    // a search, but the search box surfaces it across projects.
-    expect(screen.queryByLabelText("Load diagram Report")).toBeNull();
+    // Every expanded project lists its own files, so Work's Report is visible
+    // without a search; the search box then narrows the list across projects.
+    expect(screen.getByLabelText("Load diagram Report")).toBeInTheDocument();
 
     fireEvent.change(screen.getByTestId("diagram-search-input"), {
       target: { value: "report" },
     });
     expect(screen.getByLabelText("Load diagram Report")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Load diagram Welcome")).toBeNull();
 
     fireEvent.click(screen.getByLabelText("Load diagram Report"));
     expect(onLoadDiagram).toHaveBeenCalledWith(otherDiagram);
@@ -425,7 +439,6 @@ describe("Explorer", () => {
         selectedDiagramId={null}
         isLoading={false}
         onCreateProject={vi.fn()}
-        onDeleteProject={vi.fn()}
         onLoadDiagram={vi.fn()}
       />,
     );
@@ -446,7 +459,6 @@ describe("Explorer", () => {
         selectedDiagramId={null}
         isLoading={false}
         onCreateProject={vi.fn()}
-        onDeleteProject={vi.fn()}
         onLoadDiagram={vi.fn()}
       />,
     );
@@ -454,9 +466,9 @@ describe("Explorer", () => {
   });
 });
 
-describe("Explorer — deleting diagrams", () => {
-  it("offers a delete button per diagram when a handler is provided", () => {
-    const onDeleteDiagram = vi.fn();
+describe("Explorer — file actions menu", () => {
+  it("opens a diagram's actions menu from its ⋯ button", () => {
+    const onDiagramMenu = vi.fn();
     render(
       <Explorer
         projects={[project]}
@@ -465,33 +477,40 @@ describe("Explorer — deleting diagrams", () => {
         selectedDiagramId={diagram.id}
         isLoading={false}
         onCreateProject={vi.fn()}
-        onDeleteProject={vi.fn()}
-        onDeleteDiagram={onDeleteDiagram}
+        onDiagramMenu={onDiagramMenu}
         onLoadDiagram={vi.fn()}
       />,
     );
-    fireEvent.click(screen.getByTestId("delete-diagram-button"));
-    expect(onDeleteDiagram).toHaveBeenCalledWith(diagram);
+    fireEvent.click(screen.getByTestId("diagram-menu-button"));
+    expect(onDiagramMenu).toHaveBeenCalledWith(
+      diagram,
+      expect.objectContaining({ x: expect.any(Number), y: expect.any(Number) }),
+    );
   });
 
-  it("omits the delete button when no handler is provided", () => {
+  it("never renders a bare delete button on a diagram or note row", () => {
     render(
       <Explorer
         projects={[project]}
         diagrams={[diagram]}
+        notes={[note]}
+        allNotes={[note]}
         selectedProjectId={project.id}
         selectedDiagramId={diagram.id}
         isLoading={false}
         onCreateProject={vi.fn()}
-        onDeleteProject={vi.fn()}
+        onDiagramMenu={vi.fn()}
+        onNoteMenu={vi.fn()}
         onLoadDiagram={vi.fn()}
       />,
     );
+    // Delete is a menu item, so the row itself carries no destructive affordance.
     expect(screen.queryByTestId("delete-diagram-button")).toBeNull();
+    expect(screen.queryByTestId("delete-note-button")).toBeNull();
   });
 
-  it("does not load the diagram when its delete button is clicked", () => {
-    const onDeleteDiagram = vi.fn();
+  it("does not load the diagram when its actions menu button is clicked", () => {
+    const onDiagramMenu = vi.fn();
     const onLoadDiagram = vi.fn();
     render(
       <Explorer
@@ -501,13 +520,133 @@ describe("Explorer — deleting diagrams", () => {
         selectedDiagramId={diagram.id}
         isLoading={false}
         onCreateProject={vi.fn()}
-        onDeleteProject={vi.fn()}
-        onDeleteDiagram={onDeleteDiagram}
+        onDiagramMenu={onDiagramMenu}
         onLoadDiagram={onLoadDiagram}
       />,
     );
-    fireEvent.click(screen.getByTestId("delete-diagram-button"));
+    fireEvent.click(screen.getByTestId("diagram-menu-button"));
     expect(onLoadDiagram).not.toHaveBeenCalled();
+  });
+});
+
+describe("Explorer — collapsing projects", () => {
+  it("shows an expanded project's files while another project is selected", () => {
+    const other: Project = { id: "proj-2", name: "Other", datasetIds: [] };
+    render(
+      <Explorer
+        projects={[project, other]}
+        // The selected project's own lists are empty; the workspace-wide list
+        // still carries `Onboarding`'s file, which is what an expanded row shows.
+        diagrams={[]}
+        notes={[]}
+        allDiagrams={[diagram]}
+        allNotes={[]}
+        selectedProjectId={other.id}
+        selectedDiagramId={null}
+        isLoading={false}
+        onCreateProject={vi.fn()}
+        onLoadDiagram={vi.fn()}
+      />,
+    );
+    expect(screen.getByLabelText("Load diagram Welcome")).toBeInTheDocument();
+  });
+
+  it("hides a collapsed project's files behind its header", () => {
+    render(
+      <Explorer
+        projects={[project]}
+        diagrams={[diagram]}
+        selectedProjectId={project.id}
+        selectedDiagramId={diagram.id}
+        isLoading={false}
+        onCreateProject={vi.fn()}
+        collapsedProjectIds={[project.id]}
+        onToggleProjectCollapse={vi.fn()}
+        onLoadDiagram={vi.fn()}
+      />,
+    );
+    // The header stays; the file lists are gone.
+    expect(screen.getByTestId("project-name")).toHaveTextContent("Onboarding");
+    expect(screen.queryByTestId("explorer-diagrams")).toBeNull();
+    expect(screen.queryByTestId("select-diagram-button")).toBeNull();
+  });
+
+  it("reports a collapse toggle with the project id", () => {
+    const onToggleProjectCollapse = vi.fn();
+    render(
+      <Explorer
+        projects={[project]}
+        diagrams={[diagram]}
+        selectedProjectId={project.id}
+        selectedDiagramId={diagram.id}
+        isLoading={false}
+        onCreateProject={vi.fn()}
+        collapsedProjectIds={[]}
+        onToggleProjectCollapse={onToggleProjectCollapse}
+        onLoadDiagram={vi.fn()}
+      />,
+    );
+    const toggle = screen.getByTestId("project-collapse-button");
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    fireEvent.click(toggle);
+    expect(onToggleProjectCollapse).toHaveBeenCalledWith(project.id);
+  });
+
+  it("reports a collapsed project as collapsed to assistive tech", () => {
+    render(
+      <Explorer
+        projects={[project]}
+        diagrams={[diagram]}
+        selectedProjectId={project.id}
+        selectedDiagramId={diagram.id}
+        isLoading={false}
+        onCreateProject={vi.fn()}
+        collapsedProjectIds={[project.id]}
+        onToggleProjectCollapse={vi.fn()}
+        onLoadDiagram={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId("project-collapse-button")).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+  });
+
+  it("shows matching files even while a project is collapsed", () => {
+    render(
+      <Explorer
+        projects={[project]}
+        diagrams={[diagram]}
+        allDiagrams={[diagram]}
+        selectedProjectId={project.id}
+        selectedDiagramId={diagram.id}
+        isLoading={false}
+        onCreateProject={vi.fn()}
+        collapsedProjectIds={[project.id]}
+        onToggleProjectCollapse={vi.fn()}
+        onLoadDiagram={vi.fn()}
+      />,
+    );
+    fireEvent.change(screen.getByTestId("diagram-search-input"), {
+      target: { value: "welcome" },
+    });
+    // Searching is how a collapsed file is found, so the match must be visible.
+    expect(screen.getByLabelText("Load diagram Welcome")).toBeInTheDocument();
+  });
+
+  it("omits the chevron when no toggle handler is provided", () => {
+    render(
+      <Explorer
+        projects={[project]}
+        diagrams={[diagram]}
+        selectedProjectId={project.id}
+        selectedDiagramId={diagram.id}
+        isLoading={false}
+        onCreateProject={vi.fn()}
+        onLoadDiagram={vi.fn()}
+      />,
+    );
+    expect(screen.queryByTestId("project-collapse-button")).toBeNull();
   });
 });
 
@@ -522,7 +661,6 @@ describe("Explorer — paths removed from the app", () => {
         selectedDiagramId={diagram.id}
         isLoading={false}
         onCreateProject={vi.fn()}
-        onDeleteProject={vi.fn()}
         onLoadDiagram={vi.fn()}
         hiddenCount={2}
         onUnhideAll={onUnhideAll}
@@ -544,7 +682,6 @@ describe("Explorer — paths removed from the app", () => {
         selectedDiagramId={diagram.id}
         isLoading={false}
         onCreateProject={vi.fn()}
-        onDeleteProject={vi.fn()}
         onLoadDiagram={vi.fn()}
       />,
     );

@@ -283,13 +283,12 @@ describe("App — local folder (Phase 5)", () => {
       expect(screen.getAllByTestId("explorer-project")).toHaveLength(2);
     });
 
-    // The Onboarding project (first in the tree) loads first; its Welcome
-    // diagram is not searchable by "report". The Work file is named
-    // "report.seq" but titled "Report", so it is listed and matched by its
-    // title (and its file name remains searchable too).
-    expect(screen.queryByLabelText("Load diagram Report")).toBeNull();
+    // The Onboarding project (first in the tree) loads first. The Work file is
+    // named "report.seq" but titled "Report", so its own expanded project lists
+    // it by title even though Onboarding is the selection.
+    expect(screen.getByLabelText("Load diagram Report")).toBeInTheDocument();
 
-    // Searching "report" surfaces the Work project's diagram across projects.
+    // Searching "report" keeps the Work project's diagram across projects.
     await act(async () => {
       fireEvent.change(screen.getByTestId("diagram-search-input"), {
         target: { value: "report" },
@@ -330,7 +329,8 @@ describe("App — safe delete in a folder", () => {
   it("confirms before removing a diagram", async () => {
     await openFolderWithDiagram();
 
-    fireEvent.click(screen.getByTestId("delete-diagram-button"));
+    fireEvent.click(screen.getByTestId("diagram-menu-button"));
+    fireEvent.click(screen.getByTestId("context-menu-delete"));
     expect(screen.getByTestId("confirm-dialog")).toHaveTextContent(
       "Delete diagram",
     );
@@ -345,7 +345,8 @@ describe("App — safe delete in a folder", () => {
   it("removes a diagram from the app but keeps the file on disk", async () => {
     await openFolderWithDiagram();
 
-    fireEvent.click(screen.getByTestId("delete-diagram-button"));
+    fireEvent.click(screen.getByTestId("diagram-menu-button"));
+    fireEvent.click(screen.getByTestId("context-menu-delete"));
     await act(async () => {
       fireEvent.click(screen.getByTestId("confirm-dialog-alternative"));
     });
@@ -371,7 +372,8 @@ describe("App — safe delete in a folder", () => {
   it("deletes a diagram from disk when that scope is chosen", async () => {
     await openFolderWithDiagram();
 
-    fireEvent.click(screen.getByTestId("delete-diagram-button"));
+    fireEvent.click(screen.getByTestId("diagram-menu-button"));
+    fireEvent.click(screen.getByTestId("context-menu-delete"));
     await act(async () => {
       fireEvent.click(screen.getByTestId("confirm-dialog-confirm"));
     });
@@ -387,7 +389,8 @@ describe("App — safe delete in a folder", () => {
   it("removes a whole project from the app without deleting its directory", async () => {
     await openFolderWithDiagram();
 
-    fireEvent.click(screen.getByTestId("delete-project-button"));
+    fireEvent.click(screen.getByTestId("project-menu-button"));
+    fireEvent.click(screen.getByTestId("context-menu-delete-project"));
     expect(screen.getByTestId("confirm-dialog")).toHaveTextContent(
       "Delete project",
     );

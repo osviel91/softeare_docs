@@ -287,6 +287,55 @@ describe("File System workspace repository", () => {
     }
   });
 
+  it("renames a project by moving its directory, files and all", async () => {
+    const renamed = await repo.renameProject("onboarding", "Getting started");
+    expect(isOk(renamed)).toBe(true);
+    if (!isOk(renamed)) return;
+    // The path is the id, so the new project gets a new id.
+    expect(renamed.value).toMatchObject({
+      id: "Getting started",
+      name: "Getting started",
+    });
+
+    expect(root.children.has("onboarding")).toBe(false);
+    const moved = root.children.get(
+      "Getting started",
+    ) as unknown as FakeDirectory;
+    expect(moved.children.has("welcome.seq")).toBe(true);
+    expect(moved.children.has("signup.seq")).toBe(true);
+    // The file contents travelled with the directory.
+    const files = await repo.listDiagramFiles("Getting started");
+    if (isOk(files)) {
+      expect(files.value.map((file) => file.name).sort()).toEqual([
+        "signup.seq",
+        "welcome.seq",
+      ]);
+    }
+  });
+
+  it("refuses to rename a project onto an existing sibling", async () => {
+    const result = await repo.renameProject("onboarding", "team");
+    expect(isOk(result)).toBe(false);
+    // Both directories are untouched.
+    expect(root.children.has("onboarding")).toBe(true);
+    expect(root.children.has("team")).toBe(true);
+  });
+
+  it("treats renaming a project to the same name as a no-op", async () => {
+    const result = await repo.renameProject("onboarding", "onboarding");
+    expect(isOk(result)).toBe(true);
+    if (isOk(result)) {
+      expect(result.value.id).toBe("onboarding");
+    }
+    expect(root.children.has("onboarding")).toBe(true);
+  });
+
+  it("refuses an empty project name and a name with a path separator", async () => {
+    expect(isOk(await repo.renameProject("onboarding", "   "))).toBe(false);
+    expect(isOk(await repo.renameProject("onboarding", "a/b"))).toBe(false);
+    expect(root.children.has("onboarding")).toBe(true);
+  });
+
   it("deletes a project directory and its files", async () => {
     await repo.saveDiagramFile("onboarding", {
       id: "onboarding/gone.seq",

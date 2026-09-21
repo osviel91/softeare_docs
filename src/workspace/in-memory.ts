@@ -113,6 +113,24 @@ export function createInMemoryWorkspaceRepository(): WorkspaceRepository {
       }
     },
 
+    async renameProject(
+      id: ProjectId,
+      newName: string,
+    ): Promise<Result<Project, Error>> {
+      try {
+        const project = projects.get(id);
+        if (!project) return err(new Error(`Unknown project: ${id}`));
+        const name = newName.trim();
+        if (name === "") return err(new Error("A project name is required"));
+        // The id is independent of the name here, so nothing else moves.
+        const renamed: Project = { ...project, name };
+        projects.set(id, renamed);
+        return ok(renamed);
+      } catch (error) {
+        return err(toError(error));
+      }
+    },
+
     async deleteProject(id: ProjectId): Promise<Result<void, Error>> {
       try {
         const project = projects.get(id);

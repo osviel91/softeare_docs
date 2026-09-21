@@ -29,7 +29,7 @@ import {
 import Preview from "./features/preview/Preview";
 import Explorer, { type MenuPosition } from "./features/explorer/Explorer";
 import TabBar from "./features/tabs/TabBar";
-import DslReference from "./features/docs/DslReference";
+import DocsPage from "./features/docs/DocsPage";
 import ConfirmDialog from "./features/ui/ConfirmDialog";
 import ContextMenu, { type ContextMenuItem } from "./features/ui/ContextMenu";
 import PromptDialog from "./features/ui/PromptDialog";
@@ -77,13 +77,18 @@ import {
 import { useDiagram } from "./features/preview/use-diagram";
 import { useCommandPalette } from "./features/commands/use-command-palette";
 import { useCommands } from "./features/commands/use-commands";
+import { useShortcuts } from "./features/commands/use-shortcuts";
+import {
+  COMMAND_PALETTE_BINDING,
+  bindingLabel,
+} from "./features/commands/shortcuts";
 import CommandPalette from "./features/commands/CommandPalette";
 import SearchPanel from "./features/search/SearchPanel";
 import { useProjectSearch } from "./features/search/use-project-search";
 import { buildSearchDocuments } from "./features/search/search-documents";
 import type { EditorReveal } from "./features/editor/reveal";
 import type { SearchMatch } from "./domain/search/project-search";
-import type { Command } from "./features/commands/command";
+import type { Command, CommandRegistry } from "./features/commands/command";
 import OutlinePanel from "./features/outline/OutlinePanel";
 import EventFlowPreview from "./features/preview/EventFlowPreview";
 import { renderEventFlowDocument } from "./features/preview/eventflow-to-svg";
@@ -148,9 +153,16 @@ import type { WorkspaceRepository } from "./workspace/WorkspaceRepository";
 
 const PRODUCT_NAME = "SequenceDiagrams Manager";
 
-/** Which view the editor pane shows. */
-type EditorView =
-  "code" | "outline" | "problems" | "overview" | "docs" | "history";
+/** Which panel the editor pane shows. */
+type EditorView = "code" | "outline" | "problems" | "overview" | "history";
+
+/**
+ * Which page the shell shows. The editor, explorer and preview make up the
+ * workspace; the documentation is a page of its own rather than a panel inside
+ * the editor pane, because it is reference material about the tools rather than
+ * something you edit alongside a diagram.
+ */
+type AppPage = "workspace" | "docs";
 
 /**
  * A destructive action waiting for confirmation. The dialog is opened when the
@@ -165,11 +177,13 @@ type PendingDelete =
 type MenuTarget =
   | ({ kind: "diagram"; diagram: DiagramFile } & MenuPosition)
   | ({ kind: "note"; note: NoteFile } & MenuPosition)
+  | ({ kind: "project"; project: Project } & MenuPosition)
   | ({ kind: "project-add"; project: Project } & MenuPosition);
 
 /** The rename/title prompt currently open, if any. */
 type PromptTarget =
   | { kind: "rename-symbol"; name: string }
+  | { kind: "rename-project"; project: Project }
   | { kind: "rename-diagram"; diagram: DiagramFile }
   | { kind: "rename-note"; note: NoteFile }
   | { kind: "title-diagram"; diagram: DiagramFile }
@@ -200,6 +214,7 @@ function wordCount(markdown: string): number {
 export default function App() {
   const defaultRepo = useWorkspaceRepository();
   const [openedFolder, setOpenedFolder] = useState<OpenedFolder | null>(null);
+  const [page, setPage] = useState<AppPage>("workspace");
   const [view, setView] = useState<EditorView>("code");
   const [autoUpdate, setAutoUpdate] = useState(true);
   // The source the preview is actually showing. While auto-update is on this
@@ -224,6 +239,11 @@ export default function App() {
   // Quick open, and the caret/preview-sync state that drives the outline
   // highlight, hover cards and source↔diagram selection.
   const [quickOpenOpen, setQuickOpenOpen] = useState(false);
+  // Projects the user has collapsed to their header in the explorer. Session
+  // state, like the explorer's search box: a reload starts fully expanded.
+  const [collapsedProjects, setCollapsedProjects] = useState<
+    ReadonlySet<string>
+  >(() => new Set<string>());
   const [caretOffset, setCaretOffset] = useState(0);
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
   // A find-references result, shown in the same overlay the project search uses
@@ -234,6 +254,12 @@ export default function App() {
   const [referenceTitle, setReferenceTitle] = useState("");
   // The diagram export dialog, opened from the palette or the toolbar.
   const [exportDiagramOpen, setExportDiagramOpen] = useState(false);
+  // A restore that has to open another diagram's tab first; applied once that
+  // document is the one on screen.
+  const [pendingRestore, setPendingRestore] = useState<{
+    diagramId: string;
+    source: string;
+  } | null>(null);
 
   /**
    * Open a local folder (replacing the active repository) or, when a folder is
@@ -348,14 +374,15 @@ export default function App() {
       ? activeTab.source
       : null;
 
-  // Version history ("Trajectory") for the selected diagram. Recording is
-  // automatic (debounced) and content-aware; the panel lets the user capture and
-  // restore explicit checkpoints.
+  // Version history ("Trajectory") for the selected diagram and the project it
+  // lives in. Recording is automatic (debounced) and content-aware; the panel
+  // shows the project as a tree of per-diagram branches.
   const versionStore = useVersionHistory();
   const history = useDiagramHistory(
     versionStore,
     selectedDiagram,
     historySource,
+    selectedProjectId,
   );
 
   const { ast, diagnostics } = useDiagram(source);
@@ -377,8 +404,6 @@ export default function App() {
       messages: ast.statements.filter((s) => s.type === "message").length,
     };
   }, [ast]);
-
-  const errorCount = diagnostics.filter((d) => d.severity === "error").length;
 
   // Resolve `[[Diagram]]` links in a note against the workspace's diagrams.
   const resolveWikiLink = useCallback(
@@ -632,22 +657,23 @@ export default function App() {
     void exportActiveProject();
   }, [exportActiveProject]);
 
-  // Quick open: Ctrl/Cmd+P. Bound here rather than inside the overlay so the
-  // shortcut works wherever focus is, and so there is a single place that knows
-  // which shortcuts the shell owns.
-  useEffect(() => {
-    function onKeydown(event: KeyboardEvent): void {
-      if (
-        (event.metaKey || event.ctrlKey) &&
-        !event.shiftKey &&
-        event.key.toLowerCase() === "p"
-      ) {
-        event.preventDefault();
-        setQuickOpenOpen(true);
-      }
-    }
-    document.addEventListener("keydown", onKeydown);
-    return () => document.removeEventListener("keydown", onKeydown);
+  // Collapse is a property of one project's header; the shell owns the set so
+  // the palette's "Collapse/Expand All Projects" commands can drive it too.
+  const toggleProjectCollapse = useCallback((projectId: string): void => {
+    setCollapsedProjects((current) => {
+      const next = new Set(current);
+      if (next.has(projectId)) next.delete(projectId);
+      else next.add(projectId);
+      return next;
+    });
+  }, []);
+
+  const collapseAllProjects = useCallback((): void => {
+    setCollapsedProjects(new Set(projects.map((project) => project.id)));
+  }, [projects]);
+
+  const expandAllProjects = useCallback((): void => {
+    setCollapsedProjects(new Set<string>());
   }, []);
 
   // Project-wide search. The searchable set is built only while the overlay is
@@ -677,6 +703,7 @@ export default function App() {
   const openSearchMatch = useCallback(
     (match: SearchMatch) => {
       closeSearch();
+      setPage("workspace");
       setView("code");
       if (match.kind === "note") {
         const note = allNotes.find((entry) => entry.id === match.id);
@@ -760,6 +787,20 @@ export default function App() {
       range: diagnostic.range,
     }));
   }, [isEventFlow, diagnostics, eventFlowAnalysis]);
+
+  /**
+   * The active document's own problems. A markdown note has no DSL to diagnose,
+   * and an event flow must be diagnosed by its own parser — counting the
+   * sequence analysis of event-flow text is what made the status bar report
+   * problems the editor and the Problems panel did not have.
+   */
+  const activeDiagnostics = useMemo(
+    () => (noteMode ? [] : editorDiagnostics),
+    [noteMode, editorDiagnostics],
+  );
+  const errorCount = activeDiagnostics.filter(
+    (diagnostic) => diagnostic.severity === "error",
+  ).length;
 
   // The outline of the active document: a statement tree for a sequence diagram,
   // a declaration-and-flow tree for an event flow, headings for a document.
@@ -942,17 +983,46 @@ export default function App() {
   /** The project's problems, as the index already computed them. */
   const projectDiagnostics = index?.diagnostics ?? [];
 
-  /** Open the document a problem or reference points at, and reveal it. */
+  /**
+   * A problem's human-readable home: the project and the document it lives in.
+   *
+   * A project can hold two files with the same name, so a bare path is not
+   * enough to say which diagram a problem belongs to.
+   */
+  const resourceLabel = useCallback(
+    (resourceId: string): string => {
+      const resource = index?.resources.find(
+        (entry) => entry.id === resourceId,
+      );
+      if (!resource) return resourceId;
+      const project = projects.find((entry) => entry.id === resource.projectId);
+      const name = resource.title || resource.path;
+      return project ? `${project.name} › ${name}` : name;
+    },
+    [index, projects],
+  );
+
+  /**
+   * Open the document a problem or reference points at, and reveal it.
+   *
+   * The resource's own project picks the file: matching by name alone would open
+   * the wrong document as soon as two projects hold a file with the same name.
+   */
   const openProjectLocation = useCallback(
     (resourceId: string, position?: { line: number; column: number }) => {
       const resource = index?.resources.find(
         (entry) => entry.id === resourceId,
       );
       if (!resource) return;
-      const diagram = allDiagrams.find((entry) => entry.name === resource.path);
-      if (diagram) loadDiagram(diagram);
-      const note = allNotes.find((entry) => entry.name === resource.path);
+      const inProject = (entry: { projectId: string; name: string }): boolean =>
+        entry.projectId === resource.projectId && entry.name === resource.path;
+      const note =
+        resource.type === "markdown-document"
+          ? allNotes.find(inProject)
+          : undefined;
+      const diagram = note ? undefined : allDiagrams.find(inProject);
       if (note) loadNote(note);
+      if (diagram) loadDiagram(diagram);
       if (!position) return;
       // The target document's own text is needed to turn a line/column into the
       // offset the editor selects; take it from whichever list holds the file.
@@ -1024,6 +1094,7 @@ export default function App() {
   const openQuickOpenItem = useCallback(
     (item: QuickOpenItem) => {
       setQuickOpenOpen(false);
+      setPage("workspace");
       setView("code");
       const [resourceId, fragment] = item.id.split("#");
       const resource = index?.resources.find(
@@ -1263,6 +1334,21 @@ export default function App() {
   // workspace + tab state. `runCommand` runs the selected command through the
   // registry (single choke point) and dismisses the palette.
   const { isOpen, open, close } = useCommandPalette();
+  /**
+   * Return to the workspace and show one of the editor pane's panels.
+   *
+   * Every command that reveals a panel goes through here, so running "Toggle
+   * Outline" from a chord while the documentation page is open cannot act on a
+   * pane the user cannot see.
+   */
+  const showView = useCallback((next: EditorView): void => {
+    setPage("workspace");
+    setView(next);
+  }, []);
+
+  /** Open the documentation page. */
+  const openDocs = useCallback((): void => setPage("docs"), []);
+
   const registry = useCommands({
     createEmptyDiagram: workspace.createEmptyDiagram,
     createEmptyNote: createNote,
@@ -1272,7 +1358,8 @@ export default function App() {
     closeActiveTab: closeActiveDocument,
     openSearch,
     openQuickOpen: () => setQuickOpenOpen(true),
-    showView: setView,
+    showView,
+    openDocs,
     findReferences,
     renameSymbol: () => {
       const name = symbolAtCaret();
@@ -1285,14 +1372,50 @@ export default function App() {
     openFolder,
     folderOpen: openedFolder !== null,
     folderSupported: supportsFileSystemAccess(),
+    collapseAllProjects,
+    expandAllProjects,
   });
+
+  /**
+   * The registry the palette and the shortcut listener actually run.
+   *
+   * Running any command except opening the documentation first returns to the
+   * workspace, so a chord pressed over the docs page acts on something the user
+   * can see. `open-docs` sets the page itself; both updates batch, so the last
+   * one wins.
+   */
+  const runnableRegistry = useMemo<CommandRegistry>(
+    () => ({
+      commands: registry.commands,
+      filter: (query) => registry.filter(query),
+      run: (id) => {
+        if (id !== "open-docs") setPage("workspace");
+        return registry.run(id);
+      },
+    }),
+    [registry],
+  );
+
+  // Every command's shortcut is honoured from one listener. While a modal owns
+  // the screen (the palette, quick open, project search, a prompt/confirm, or the
+  // export dialog) the listener stands down, so a chord cannot act on the
+  // document behind it.
+  useShortcuts(
+    runnableRegistry,
+    !isOpen &&
+      !quickOpenOpen &&
+      !searchOpen &&
+      !prompt &&
+      !pendingDelete &&
+      !exportDiagramOpen,
+  );
 
   const runCommand = useCallback(
     (command: Command) => {
-      registry.run(command.id);
+      runnableRegistry.run(command.id);
       close();
     },
-    [registry, close],
+    [runnableRegistry, close],
   );
 
   // Deletes never fire straight from a click: the request opens a confirmation
@@ -1360,6 +1483,30 @@ export default function App() {
         return;
       }
 
+      if (target.kind === "rename-project") {
+        const previousId = target.project.id;
+        // A folder rename moves the project directory, so every file path — and
+        // therefore every tab and version timeline key — changes with it. Capture
+        // the files before the workspace re-prefixes them.
+        const movedDiagrams = allDiagrams.filter(
+          (diagram) => diagram.projectId === previousId,
+        );
+        const renamed = await workspace.renameProject(previousId, value);
+        if (!renamed) return;
+        if (renamed.id !== previousId) {
+          for (const tab of tabs) {
+            if (tab.projectId === previousId) closeTab(tab.id);
+          }
+          for (const diagram of movedDiagrams) {
+            await history.renameDiagram(
+              diagram.id,
+              `${renamed.id}/${diagram.name}`,
+            );
+          }
+        }
+        return;
+      }
+
       if (target.kind === "rename-diagram") {
         const previousId = target.diagram.id;
         const renamed = await workspace.renameDiagram(
@@ -1417,11 +1564,29 @@ export default function App() {
       loadNote,
       tabsHook,
       applySymbolRename,
+      tabs,
+      allDiagrams,
     ],
   );
 
   const menuItems = useMemo<ContextMenuItem[]>(() => {
     if (!menu) return [];
+    if (menu.kind === "project") {
+      const { project } = menu;
+      return [
+        {
+          id: "rename-project",
+          label: "Rename project…",
+          onSelect: () => setPrompt({ kind: "rename-project", project }),
+        },
+        {
+          id: "delete-project",
+          label: "Delete project",
+          danger: true,
+          onSelect: () => requestDeleteProject(project.id),
+        },
+      ];
+    }
     if (menu.kind === "project-add") {
       const { project } = menu;
       return [
@@ -1511,15 +1676,65 @@ export default function App() {
     createEventFlow,
     duplicateDiagram,
     duplicateNote,
+    requestDeleteProject,
   ]);
 
-  /** Load a version back into the editor and record the restore itself. */
+  /**
+   * Load a version back into the editor and record the restore itself.
+   *
+   * A version may belong to a different diagram in the project, so the document
+   * is opened first and the source applied once its tab is active — the buffer,
+   * the tab and the saved file then all agree on the restored content.
+   */
   const restoreVersion = useCallback(
     (version: DiagramVersion): void => {
+      if (selectedDiagram?.id !== version.diagramId) {
+        const target = allDiagrams.find(
+          (diagram) => diagram.id === version.diagramId,
+        );
+        if (!target) return;
+        setPendingRestore({
+          diagramId: version.diagramId,
+          source: version.source,
+        });
+        loadDiagram(target);
+        return;
+      }
       updateActiveSource(version.source);
       void history.saveVersion(version.source, RESTORED_VERSION_LABEL);
     },
-    [updateActiveSource, history],
+    [selectedDiagram, allDiagrams, loadDiagram, updateActiveSource, history],
+  );
+
+  // Apply a restore that had to switch documents first.
+  useEffect(() => {
+    if (!pendingRestore) return;
+    if (selectedDiagram?.id !== pendingRestore.diagramId) return;
+    const restored = pendingRestore.source;
+    setPendingRestore(null);
+    updateActiveSource(restored);
+    void history.saveVersion(restored, RESTORED_VERSION_LABEL);
+  }, [pendingRestore, selectedDiagram, updateActiveSource, history]);
+
+  /** The name and kind a history branch header shows for its diagram. */
+  const diagramLabel = useCallback(
+    (diagramId: string): string => {
+      const resource = index?.resources.find((entry) => entry.id === diagramId);
+      if (resource) return resource.title || resource.path;
+      const file = allDiagrams.find((entry) => entry.id === diagramId);
+      return file ? diagramDisplayName(file.name, file.source) : diagramId;
+    },
+    [index, allDiagrams],
+  );
+
+  const diagramKind = useCallback(
+    (diagramId: string): string => {
+      const resource = index?.resources.find((entry) => entry.id === diagramId);
+      if (resource) return resource.type;
+      const file = allDiagrams.find((entry) => entry.id === diagramId);
+      return resourceTypeOfName(file?.name ?? "");
+    },
+    [index, allDiagrams],
   );
 
   const unhideAll = useCallback((): void => {
@@ -1538,373 +1753,415 @@ export default function App() {
           {PRODUCT_NAME}
         </span>
 
-        <div
-          className="segmented"
-          role="tablist"
-          aria-label="Editor view"
-          data-testid="editor-view-toggle"
-        >
-          <button
-            type="button"
-            role="tab"
-            className={`segmented__option${view === "code" ? " segmented__option--active" : ""}`}
-            data-testid="view-code"
-            aria-selected={view === "code"}
-            onClick={() => setView("code")}
-          >
-            <span aria-hidden="true">{"</>"}</span> Code
-          </button>
-          <button
-            type="button"
-            role="tab"
-            className={`segmented__option${view === "outline" ? " segmented__option--active" : ""}`}
-            data-testid="view-outline"
-            aria-selected={view === "outline"}
-            onClick={() => setView("outline")}
-          >
-            <span aria-hidden="true">≡</span> Outline
-          </button>
-          <button
-            type="button"
-            role="tab"
-            className={`segmented__option${view === "problems" ? " segmented__option--active" : ""}`}
-            data-testid="view-problems"
-            aria-selected={view === "problems"}
-            onClick={() => setView("problems")}
-          >
-            <span aria-hidden="true">⚠</span> Problems
-            {projectDiagnostics.length > 0
-              ? ` (${projectDiagnostics.length})`
-              : ""}
-          </button>
-          <button
-            type="button"
-            role="tab"
-            className={`segmented__option${view === "overview" ? " segmented__option--active" : ""}`}
-            data-testid="view-overview"
-            aria-selected={view === "overview"}
-            onClick={() => setView("overview")}
-          >
-            <span aria-hidden="true">◫</span> Overview
-          </button>
-          <button
-            type="button"
-            role="tab"
-            className={`segmented__option${view === "docs" ? " segmented__option--active" : ""}`}
-            data-testid="view-docs"
-            aria-selected={view === "docs"}
-            onClick={() => setView("docs")}
-          >
-            <span aria-hidden="true">▤</span> Docs
-          </button>
-          <button
-            type="button"
-            role="tab"
-            className={`segmented__option${view === "history" ? " segmented__option--active" : ""}`}
-            data-testid="view-history"
-            aria-selected={view === "history"}
-            onClick={() => setView("history")}
-          >
-            <span aria-hidden="true">⟲</span> History
-          </button>
-        </div>
+        {page === "workspace" ? (
+          <>
+            <div
+              className="segmented"
+              role="tablist"
+              aria-label="Editor view"
+              data-testid="editor-view-toggle"
+            >
+              <button
+                type="button"
+                role="tab"
+                className={`segmented__option${view === "code" ? " segmented__option--active" : ""}`}
+                data-testid="view-code"
+                aria-selected={view === "code"}
+                onClick={() => setView("code")}
+              >
+                <span aria-hidden="true">{"</>"}</span> Code
+              </button>
+              <button
+                type="button"
+                role="tab"
+                className={`segmented__option${view === "outline" ? " segmented__option--active" : ""}`}
+                data-testid="view-outline"
+                aria-selected={view === "outline"}
+                onClick={() => setView("outline")}
+              >
+                <span aria-hidden="true">≡</span> Outline
+              </button>
+              <button
+                type="button"
+                role="tab"
+                className={`segmented__option${view === "problems" ? " segmented__option--active" : ""}`}
+                data-testid="view-problems"
+                aria-selected={view === "problems"}
+                onClick={() => setView("problems")}
+              >
+                <span aria-hidden="true">⚠</span> Problems
+                {projectDiagnostics.length > 0
+                  ? ` (${projectDiagnostics.length})`
+                  : ""}
+              </button>
+              <button
+                type="button"
+                role="tab"
+                className={`segmented__option${view === "overview" ? " segmented__option--active" : ""}`}
+                data-testid="view-overview"
+                aria-selected={view === "overview"}
+                onClick={() => setView("overview")}
+              >
+                <span aria-hidden="true">◫</span> Overview
+              </button>
+              <button
+                type="button"
+                role="tab"
+                className={`segmented__option${view === "history" ? " segmented__option--active" : ""}`}
+                data-testid="view-history"
+                aria-selected={view === "history"}
+                onClick={() => setView("history")}
+              >
+                <span aria-hidden="true">⟲</span> History
+              </button>
+            </div>
 
-        <label className="switch" title="Re-render the diagram as you type">
-          <input
-            type="checkbox"
-            className="switch__input"
-            data-testid="auto-update-toggle"
-            checked={autoUpdate}
-            onChange={(event) => setAutoUpdate(event.target.checked)}
-          />
-          <span
-            className="switch__track"
-            data-testid="auto-update-switch"
-            aria-hidden="true"
-          >
-            <span className="switch__thumb" />
+            <button
+              type="button"
+              className="button app__docs-button"
+              data-testid="open-docs"
+              title="Open the documentation page"
+              onClick={openDocs}
+            >
+              <span aria-hidden="true">▤</span> Docs
+            </button>
+
+            <label className="switch" title="Re-render the diagram as you type">
+              <input
+                type="checkbox"
+                className="switch__input"
+                data-testid="auto-update-toggle"
+                checked={autoUpdate}
+                onChange={(event) => setAutoUpdate(event.target.checked)}
+              />
+              <span
+                className="switch__track"
+                data-testid="auto-update-switch"
+                aria-hidden="true"
+              >
+                <span className="switch__thumb" />
+              </span>
+              <span className="switch__label">Auto-update</span>
+            </label>
+          </>
+        ) : (
+          <span className="app__page-title" data-testid="docs-page-title">
+            Documentation
           </span>
-          <span className="switch__label">Auto-update</span>
-        </label>
+        )}
 
         <button
           type="button"
           className="button app__command-button"
           data-testid="command-palette-button"
           aria-label="Open command palette"
+          title={`Open command palette (${bindingLabel(COMMAND_PALETTE_BINDING)})`}
           onClick={open}
         >
           Commands…
+          <kbd className="app__command-shortcut" data-testid="palette-hint">
+            {bindingLabel(COMMAND_PALETTE_BINDING)}
+          </kbd>
         </button>
       </header>
 
-      <main className="app__workspace">
-        <section
-          className="app__pane app__pane--explorer"
-          aria-label="Project explorer"
-        >
-          <Explorer
-            projects={projects}
-            diagrams={diagrams}
-            notes={notes}
-            allDiagrams={allDiagrams}
-            allNotes={allNotes}
-            selectedProjectId={selectedProjectId}
-            selectedDiagramId={selectedDiagramId}
-            selectedNoteId={selectedNoteId}
-            isLoading={isLoading}
-            onCreateProject={createProject}
-            onAddMenu={(project, position) =>
-              setMenu({ kind: "project-add", project, ...position })
-            }
-            onDeleteProject={requestDeleteProject}
-            onDeleteDiagram={requestDeleteDiagram}
-            onDeleteNote={requestDeleteNote}
-            onLoadDiagram={loadDiagram}
-            onLoadNote={loadNote}
-            onDiagramMenu={(diagram, position) =>
-              setMenu({ kind: "diagram", diagram, ...position })
-            }
-            onNoteMenu={(note, position) =>
-              setMenu({ kind: "note", note, ...position })
-            }
-            hiddenCount={hiddenPaths.size}
-            onUnhideAll={unhideAll}
-            onOpenFolder={openFolder}
-            folderName={openedFolder?.folderName ?? null}
-            folderSupported={supportsFileSystemAccess()}
-          />
-        </section>
+      {page === "docs" ? (
+        <DocsPage onBack={() => setPage("workspace")} />
+      ) : (
+        <>
+          <main className="app__workspace">
+            <section
+              className="app__pane app__pane--explorer"
+              aria-label="Project explorer"
+            >
+              <Explorer
+                projects={projects}
+                diagrams={diagrams}
+                notes={notes}
+                allDiagrams={allDiagrams}
+                allNotes={allNotes}
+                selectedProjectId={selectedProjectId}
+                selectedDiagramId={selectedDiagramId}
+                selectedNoteId={selectedNoteId}
+                isLoading={isLoading}
+                onCreateProject={createProject}
+                onAddMenu={(project, position) =>
+                  setMenu({ kind: "project-add", project, ...position })
+                }
+                onLoadDiagram={loadDiagram}
+                onLoadNote={loadNote}
+                onDiagramMenu={(diagram, position) =>
+                  setMenu({ kind: "diagram", diagram, ...position })
+                }
+                onNoteMenu={(note, position) =>
+                  setMenu({ kind: "note", note, ...position })
+                }
+                onProjectMenu={(project, position) =>
+                  setMenu({ kind: "project", project, ...position })
+                }
+                collapsedProjectIds={[...collapsedProjects]}
+                onToggleProjectCollapse={toggleProjectCollapse}
+                hiddenCount={hiddenPaths.size}
+                onUnhideAll={unhideAll}
+                onOpenFolder={openFolder}
+                folderName={openedFolder?.folderName ?? null}
+                folderSupported={supportsFileSystemAccess()}
+              />
+            </section>
 
-        <section
-          className="app__pane app__pane--editor"
-          aria-label={
-            noteMode
-              ? "Markdown note editor"
-              : isEventFlow
-                ? "Event flow editor"
-                : "DSL editor"
-          }
-        >
-          {view === "outline" ? (
-            <OutlinePanel
-              nodes={outlineNodes}
-              activeLine={offsetToPosition(source, caretOffset).line + 1}
-              onNavigate={(node) => {
-                if (!node.range) return;
-                setView("code");
-                const offsets = rangeToOffsets(source, node.range);
-                revealToken.current += 1;
-                setReveal({
-                  start: offsets.start,
-                  end: offsets.end,
-                  text: source.slice(offsets.start, offsets.end),
-                  line: node.range.start.line + 1,
-                  token: revealToken.current,
-                });
-              }}
-              emptyHint={
+            <section
+              className="app__pane app__pane--editor"
+              aria-label={
                 noteMode
-                  ? "This document has no headings."
-                  : "This diagram has nothing to outline."
+                  ? "Markdown note editor"
+                  : isEventFlow
+                    ? "Event flow editor"
+                    : "DSL editor"
               }
-            />
-          ) : view === "problems" ? (
-            <ProblemsPanel
-              diagnostics={projectDiagnostics}
-              labelFor={(resourceId) =>
-                index?.resources.find((entry) => entry.id === resourceId)
-                  ?.path ?? resourceId
-              }
-              onOpen={(diagnostic) =>
-                openProjectLocation(
-                  diagnostic.resourceId,
-                  diagnostic.sourceRange?.start,
-                )
-              }
-            />
-          ) : view === "overview" ? (
-            <ProjectOverview index={index} />
-          ) : view === "docs" ? (
-            <DslReference />
-          ) : view === "history" ? (
-            <HistoryPanel
-              versions={history.versions}
-              isLoading={history.isLoading}
-              hasDiagram={selectedDiagram !== null}
-              currentSource={historySource ?? ""}
-              onSaveVersion={() => {
-                void history.saveVersion(source);
-              }}
-              onRestore={restoreVersion}
-              onDeleteVersion={(versionId) => {
-                void history.removeVersion(versionId);
-              }}
-            />
-          ) : error ? (
-            <p className="editor__error" data-testid="workspace-error">
-              Could not load your local projects: {error.message}
-            </p>
-          ) : noteMode && selectedNote ? (
-            <>
-              <TabBar
-                tabs={tabs}
-                activeTabId={activeTabId}
-                onActivateTab={activateTabAndDocument}
-                onCloseTab={closeTabAndFollow}
-              />
-              <div className="note-header" data-testid="note-header">
-                <span className="note-header__icon" aria-hidden="true">
-                  ¶
-                </span>
-                <span className="note-header__title" data-testid="note-title">
-                  {noteDisplayName(selectedNote.name, source)}
-                </span>
-                <span className="note-header__name" data-testid="note-filename">
-                  {selectedNote.name}
-                </span>
-              </div>
-              <MarkdownEditor
-                value={source}
-                onChange={updateActiveSource}
-                reveal={reveal}
-              />
-            </>
-          ) : (
-            <>
-              <TabBar
-                tabs={tabs}
-                activeTabId={activeTabId}
-                onActivateTab={activateTabAndDocument}
-                onCloseTab={closeTabAndFollow}
-              />
-              <Editor
-                value={source}
-                onChange={updateActiveSource}
-                diagnostics={editorDiagnostics}
-                reveal={reveal}
-                complete={complete}
-                describe={describe}
-                onCaretChange={onCaretChange}
-                snippets={isEventFlow ? EVENT_FLOW_SNIPPETS : SEQUENCE_SNIPPETS}
-                lineBadges={lineBadges}
-                mentions={mentions}
-              />
-            </>
-          )}
-        </section>
+            >
+              {view === "outline" ? (
+                <OutlinePanel
+                  nodes={outlineNodes}
+                  activeLine={offsetToPosition(source, caretOffset).line + 1}
+                  onNavigate={(node) => {
+                    if (!node.range) return;
+                    setView("code");
+                    const offsets = rangeToOffsets(source, node.range);
+                    revealToken.current += 1;
+                    setReveal({
+                      start: offsets.start,
+                      end: offsets.end,
+                      text: source.slice(offsets.start, offsets.end),
+                      line: node.range.start.line + 1,
+                      token: revealToken.current,
+                    });
+                  }}
+                  emptyHint={
+                    noteMode
+                      ? "This document has no headings."
+                      : "This diagram has nothing to outline."
+                  }
+                />
+              ) : view === "problems" ? (
+                <ProblemsPanel
+                  diagnostics={projectDiagnostics}
+                  labelFor={resourceLabel}
+                  onOpen={(diagnostic) =>
+                    openProjectLocation(
+                      diagnostic.resourceId,
+                      diagnostic.sourceRange?.start,
+                    )
+                  }
+                />
+              ) : view === "overview" ? (
+                <ProjectOverview index={index} />
+              ) : view === "history" ? (
+                <HistoryPanel
+                  versions={history.projectVersions}
+                  isLoading={history.isLoading}
+                  hasDiagram={selectedDiagram !== null}
+                  currentSource={historySource ?? ""}
+                  activeDiagramId={selectedDiagram?.id ?? null}
+                  labelForDiagram={diagramLabel}
+                  kindForDiagram={diagramKind}
+                  projectName={
+                    projects.find((project) => project.id === selectedProjectId)
+                      ?.name ?? null
+                  }
+                  onSaveVersion={() => {
+                    void history.saveVersion(source);
+                  }}
+                  onRestore={restoreVersion}
+                  onDeleteVersion={(versionId) => {
+                    void history.removeVersion(versionId);
+                  }}
+                />
+              ) : error ? (
+                <p className="editor__error" data-testid="workspace-error">
+                  Could not load your local projects: {error.message}
+                </p>
+              ) : noteMode && selectedNote ? (
+                <>
+                  <TabBar
+                    tabs={tabs}
+                    activeTabId={activeTabId}
+                    onActivateTab={activateTabAndDocument}
+                    onCloseTab={closeTabAndFollow}
+                  />
+                  <div className="note-header" data-testid="note-header">
+                    <span className="note-header__icon" aria-hidden="true">
+                      ¶
+                    </span>
+                    <span
+                      className="note-header__title"
+                      data-testid="note-title"
+                    >
+                      {noteDisplayName(selectedNote.name, source)}
+                    </span>
+                    <span
+                      className="note-header__name"
+                      data-testid="note-filename"
+                    >
+                      {selectedNote.name}
+                    </span>
+                  </div>
+                  <MarkdownEditor
+                    value={source}
+                    onChange={updateActiveSource}
+                    reveal={reveal}
+                  />
+                </>
+              ) : (
+                <>
+                  <TabBar
+                    tabs={tabs}
+                    activeTabId={activeTabId}
+                    onActivateTab={activateTabAndDocument}
+                    onCloseTab={closeTabAndFollow}
+                  />
+                  <Editor
+                    value={source}
+                    onChange={updateActiveSource}
+                    diagnostics={editorDiagnostics}
+                    reveal={reveal}
+                    complete={complete}
+                    describe={describe}
+                    onCaretChange={onCaretChange}
+                    snippets={
+                      isEventFlow ? EVENT_FLOW_SNIPPETS : SEQUENCE_SNIPPETS
+                    }
+                    lineBadges={lineBadges}
+                    mentions={mentions}
+                  />
+                </>
+              )}
+            </section>
 
-        <section
-          className="app__pane app__pane--preview"
-          aria-label={
-            noteMode
-              ? "Note preview"
-              : isEventFlow
-                ? "Event flow preview"
-                : "Diagram preview"
-          }
-        >
-          {noteMode ? (
-            <MarkdownView
-              markdown={source}
-              resolveWikiLink={resolveWikiLink}
-              resolveResourceLink={resolveResourceLink}
-              renderEmbed={renderEmbed}
-              onOpenDiagramLink={openDiagramLink}
-              onOpenResourceLink={openResourceLink}
-            />
-          ) : isEventFlow ? (
-            <EventFlowPreview
-              source={source}
-              onNodeSelect={onNodeSelect}
-              activeNodeId={activeNodeId}
-            />
-          ) : (
-            <Preview
-              source={renderedSource || source}
-              autoUpdate={autoUpdate}
-              isStale={isStale}
-              onRender={() => setRenderedSource(source)}
-              onNodeSelect={onNodeSelect}
-              activeNodeId={activeNodeId}
-            />
-          )}
-        </section>
-      </main>
+            <section
+              className="app__pane app__pane--preview"
+              aria-label={
+                noteMode
+                  ? "Note preview"
+                  : isEventFlow
+                    ? "Event flow preview"
+                    : "Diagram preview"
+              }
+            >
+              {noteMode ? (
+                <MarkdownView
+                  markdown={source}
+                  resolveWikiLink={resolveWikiLink}
+                  resolveResourceLink={resolveResourceLink}
+                  renderEmbed={renderEmbed}
+                  onOpenDiagramLink={openDiagramLink}
+                  onOpenResourceLink={openResourceLink}
+                />
+              ) : isEventFlow ? (
+                <EventFlowPreview
+                  source={source}
+                  onNodeSelect={onNodeSelect}
+                  activeNodeId={activeNodeId}
+                />
+              ) : (
+                <Preview
+                  source={renderedSource || source}
+                  autoUpdate={autoUpdate}
+                  isStale={isStale}
+                  onRender={() => setRenderedSource(source)}
+                  onNodeSelect={onNodeSelect}
+                  activeNodeId={activeNodeId}
+                />
+              )}
+            </section>
+          </main>
 
-      <footer className="app__statusbar">
-        <span className="app__status-item">{PRODUCT_NAME}</span>
-        {noteMode ? (
-          <>
+          <footer className="app__statusbar">
+            <span className="app__status-item">{PRODUCT_NAME}</span>
+            {noteMode ? (
+              <>
+                <span
+                  className="app__status-item"
+                  data-testid="status-participants"
+                >
+                  {wordCount(source)} words
+                </span>
+                <span
+                  className="app__status-item"
+                  data-testid="status-messages"
+                >
+                  Markdown note
+                </span>
+              </>
+            ) : isEventFlow ? (
+              <>
+                <span
+                  className="app__status-item"
+                  data-testid="status-participants"
+                >
+                  {index?.eventFlows.find(
+                    (entry) => entry.id === activeResourceId,
+                  )?.events ?? 0}{" "}
+                  event
+                  {(index?.eventFlows.find(
+                    (entry) => entry.id === activeResourceId,
+                  )?.events ?? 0) === 1
+                    ? ""
+                    : "s"}
+                </span>
+                <span
+                  className="app__status-item"
+                  data-testid="status-messages"
+                >
+                  Event flow
+                </span>
+              </>
+            ) : (
+              <>
+                <span
+                  className="app__status-item"
+                  data-testid="status-participants"
+                >
+                  {counts.participants} participant
+                  {counts.participants === 1 ? "" : "s"}
+                </span>
+                <span
+                  className="app__status-item"
+                  data-testid="status-messages"
+                >
+                  {counts.messages} message{counts.messages === 1 ? "" : "s"}
+                </span>
+              </>
+            )}
             <span
-              className="app__status-item"
-              data-testid="status-participants"
+              className={`app__status-item app__status-item--${errorCount > 0 ? "error" : "ok"}`}
+              data-testid="status-diagnostics"
             >
-              {wordCount(source)} words
+              {errorCount === 0
+                ? "No problems"
+                : `${errorCount} problem${errorCount === 1 ? "" : "s"}`}
             </span>
-            <span className="app__status-item" data-testid="status-messages">
-              Markdown note
+            {transferError && (
+              <span
+                className="app__status-item app__status-item--error"
+                data-testid="transfer-error"
+              >
+                {transferError}
+              </span>
+            )}
+            <span className="app__status-spacer" />
+            <span className="app__status-item app__status-item--muted">
+              {noteMode ? "Note" : autoUpdate ? "Live" : "Paused"}
             </span>
-          </>
-        ) : isEventFlow ? (
-          <>
-            <span
-              className="app__status-item"
-              data-testid="status-participants"
-            >
-              {index?.eventFlows.find((entry) => entry.id === activeResourceId)
-                ?.events ?? 0}{" "}
-              event
-              {(index?.eventFlows.find((entry) => entry.id === activeResourceId)
-                ?.events ?? 0) === 1
-                ? ""
-                : "s"}
-            </span>
-            <span className="app__status-item" data-testid="status-messages">
-              Event flow
-            </span>
-          </>
-        ) : (
-          <>
-            <span
-              className="app__status-item"
-              data-testid="status-participants"
-            >
-              {counts.participants} participant
-              {counts.participants === 1 ? "" : "s"}
-            </span>
-            <span className="app__status-item" data-testid="status-messages">
-              {counts.messages} message{counts.messages === 1 ? "" : "s"}
-            </span>
-          </>
-        )}
-        <span
-          className={`app__status-item app__status-item--${errorCount > 0 ? "error" : "ok"}`}
-          data-testid="status-diagnostics"
-        >
-          {errorCount === 0
-            ? "No problems"
-            : `${errorCount} problem${errorCount === 1 ? "" : "s"}`}
-        </span>
-        {transferError && (
-          <span
-            className="app__status-item app__status-item--error"
-            data-testid="transfer-error"
-          >
-            {transferError}
-          </span>
-        )}
-        <span className="app__status-spacer" />
-        <span className="app__status-item app__status-item--muted">
-          {noteMode ? "Note" : autoUpdate ? "Live" : "Paused"}
-        </span>
-      </footer>
+          </footer>
+        </>
+      )}
 
       {isOpen && (
         <CommandPalette
-          registry={registry}
+          registry={runnableRegistry}
           onRun={runCommand}
           onClose={close}
+          openShortcut={bindingLabel(COMMAND_PALETTE_BINDING)}
         />
       )}
 
@@ -1981,7 +2238,9 @@ export default function App() {
               ? "Diagram actions"
               : menu.kind === "note"
                 ? "Note actions"
-                : "Add to project"
+                : menu.kind === "project"
+                  ? "Project actions"
+                  : "Add to project"
           }
         />
       )}
@@ -2023,6 +2282,8 @@ function promptTitle(target: PromptTarget): string {
   switch (target.kind) {
     case "rename-symbol":
       return `Rename ${target.name}`;
+    case "rename-project":
+      return "Rename project";
     case "rename-diagram":
       return "Rename diagram";
     case "rename-note":
@@ -2037,6 +2298,7 @@ function promptTitle(target: PromptTarget): string {
 /** The input label for a rename/title prompt. */
 function promptLabel(target: PromptTarget): string {
   if (target.kind === "rename-symbol") return "New name";
+  if (target.kind === "rename-project") return "Project name";
   return target.kind.startsWith("rename") ? "File name" : "Title";
 }
 
@@ -2045,6 +2307,8 @@ function promptInitial(target: PromptTarget): string {
   switch (target.kind) {
     case "rename-symbol":
       return target.name;
+    case "rename-project":
+      return target.project.name;
     case "rename-diagram":
       return target.diagram.name;
     case "rename-note":

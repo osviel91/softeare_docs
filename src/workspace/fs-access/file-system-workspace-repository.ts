@@ -102,6 +102,63 @@ function toRepoError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error));
 }
 
+/** One shared encoder so repeated file writes stay cheap. */
+const utf8 = new TextEncoder();
+
+/**
+ * Recursively copy every file and subdirectory of `source` into `target`.
+ *
+ * The File System Access API has no portable move/rename, so both a file rename
+ * and a project rename are expressed as copy-then-delete; this is the directory
+ * half of that. Text is preserved exactly because resources are UTF-8 text.
+ */
+async function copyDirTree(
+  source: FsDirectoryHandle,
+  target: FsDirectoryHandle,
+): Promise<void> {
+  for (const [name, entry] of await source.entries()) {
+    if (entry.kind === "directory") {
+      const child = await target.getDirectoryHandle(name, {
+        createIfNotExists: true,
+      });
+      await copyDirTree(entry, child);
+      continue;
+    }
+    const text = await entry.getFile();
+    const file = await target.getFileHandle(name, {
+      createIfNotExists: true,
+    });
+    const writable = await file.createWritable();
+    try {
+      await writable.write(utf8.encode(text));
+    } finally {
+      await writable.close();
+    }
+  }
+}
+
+/**
+ * Remove a subdirectory and everything in it.
+ *
+ * The real API only removes an empty directory without its own `recursive`
+ * option, so the tree is emptied depth first and the directory itself removed
+ * last. That keeps the delete working on every implementation of the adapter.
+ */
+async function removeDirTree(
+  parent: FsDirectoryHandle,
+  name: string,
+): Promise<void> {
+  const dir = await parent.getDirectoryHandle(name);
+  for (const [childName, child] of await dir.entries()) {
+    if (child.kind === "directory") {
+      await removeDirTree(dir, childName);
+    } else {
+      await dir.removeEntry(childName);
+    }
+  }
+  await parent.removeEntry(name);
+}
+
 /**
  * Build a {@link WorkspaceRepository} over a single opened folder.
  *
@@ -229,13 +286,68 @@ export function createFileSystemWorkspaceRepository(
         return err(new Error("Cannot delete the folder root"));
       const segments = normalized.split("/");
       if (segments.length === 1) {
-        await root.removeEntry(segments[0]);
+        await removeDirTree(root, segments[0]);
         return ok(undefined);
       }
       // Navigate to the parent directory, then remove the final segment.
       const { dir, name } = await resolveParent(normalized);
-      await dir.removeEntry(name);
+      await removeDirTree(dir, name);
       return ok(undefined);
+    } catch (error) {
+      return err(toRepoError(error));
+    }
+  }
+
+  /**
+   * Rename a project by copying its directory to the new name and removing the
+   * old one. The File System Access API has no portable move, so — exactly as
+   * {@link renameDiagramFile} does for a single file — the repository copies and
+   * deletes. A project's id is its path, so the returned project carries a new
+   * id and the files beneath it move with the directory.
+   */
+  async function renameProject(
+    id: string,
+    newName: string,
+  ): Promise<Result<Project, Error>> {
+    try {
+      const normalized = normalize(id);
+      const name = newName.trim();
+      if (normalized === "") return err(new Error("Unknown project"));
+      if (name === "") return err(new Error("A project name is required"));
+      if (name.includes("/") || name.includes("\\")) {
+        return err(
+          new Error("A project name must not contain a path separator"),
+        );
+      }
+
+      const segments = normalized.split("/");
+      const oldName = segments[segments.length - 1];
+      const parentPath = segments.slice(0, -1).join("/");
+      const parent = parentPath === "" ? root : await resolveDir(parentPath);
+
+      if (oldName === name) {
+        return ok({ id: normalized, name, datasetIds: [], noteIds: [] });
+      }
+
+      // Never overwrite a sibling: a name collision is the user's to resolve.
+      const siblings = await parent.entries();
+      if (siblings.some(([entryName]) => entryName === name)) {
+        return err(new Error(`A folder named "${name}" already exists`));
+      }
+
+      const source = await parent.getDirectoryHandle(oldName);
+      const target = await parent.getDirectoryHandle(name, {
+        createIfNotExists: true,
+      });
+      await copyDirTree(source, target);
+      await removeDirTree(parent, oldName);
+
+      return ok({
+        id: joinRel(parentPath, name),
+        name,
+        datasetIds: [],
+        noteIds: [],
+      });
     } catch (error) {
       return err(toRepoError(error));
     }
@@ -796,6 +908,7 @@ export function createFileSystemWorkspaceRepository(
     listProjects,
     getProject,
     createProject,
+    renameProject,
     deleteProject,
     readProjectMetadata,
     writeProjectMetadata,

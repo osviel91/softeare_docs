@@ -126,6 +126,12 @@ export interface WorkspaceHook {
   /** Create a new empty project and select it. */
   createProject(name: string): Promise<void>;
   /**
+   * Change a project's name. A local-folder project's id is its directory path,
+   * so the returned project may carry a new id and every file beneath it moves
+   * with it; the workspace's lists and selection follow the move in place.
+   */
+  renameProject(id: string, newName: string): Promise<Project | null>;
+  /**
    * Recreate a project from a portable archive and select it.
    *
    * Files are written with fresh ids — the archive's ids belong to the exporting
@@ -567,6 +573,25 @@ export function useWorkspace(
     [repo, mergeDiagrams, mergeNotes],
   );
 
+  /**
+   * Make sure `projectId`'s files are the ones held in state, loading them when
+   * another project's are.
+   *
+   * The explorer renders every project's files and offers each header its own
+   * `＋` menu, so a create or duplicate can target a project that is not the
+   * selected one. `diagrams`/`notes` describe exactly one project at a time, so
+   * appending to them without reloading first would mix two projects' files —
+   * the new file would appear beneath a list that still belonged to the project
+   * that was selected.
+   *
+   * Deliberately does not touch the selection: the caller picks the new document
+   * itself, so the tab strip never opens a tab for the project's first file.
+   */
+  const loadProjectFiles = useCallback(
+    (projectId: string): Promise<void> => refreshProjectFiles(projectId),
+    [refreshProjectFiles],
+  );
+
   const loadDiagram = useCallback(
     (diagram: DiagramFile) => {
       // Ensure the clicked diagram is part of the workspace-wide list so it
@@ -666,6 +691,86 @@ export function useWorkspace(
       }
     },
     [repo, mergeDiagrams, mergeNotes],
+  );
+
+  /**
+   * Rename a project.
+   *
+   * An in-browser project keeps its generated id, so only the label changes. A
+   * local-folder project's id *is* its directory path, so a rename moves every
+   * file beneath it: the file ids (paths) are re-prefixed and the selection is
+   * carried across, which keeps the explorer, search and links consistent without
+   * a reload. Re-selecting the renamed project makes the metadata effect re-read
+   * the sidecar from its new directory.
+   */
+  const renameProject = useCallback(
+    async (id: string, newName: string): Promise<Project | null> => {
+      const result: Result<Project, Error> = await repo.renameProject(
+        id,
+        newName,
+      );
+      if (!isOk(result)) {
+        setError(result.error);
+        return null;
+      }
+      const renamed = result.value;
+
+      setProjects((current: Project[]) =>
+        current.map((project) => (project.id === id ? renamed : project)),
+      );
+
+      if (renamed.id !== id) {
+        // The id changed (a folder path), so re-prefix every file that lived
+        // under it: id and projectId both follow the directory.
+        const prefix = `${id}/`;
+        const move = <T extends { id: string; projectId: string }>(
+          file: T,
+        ): T =>
+          file.projectId === id
+            ? {
+                ...file,
+                id: `${renamed.id}/${file.id.slice(prefix.length)}`,
+                projectId: renamed.id,
+              }
+            : file;
+        const moveAll = <T extends { id: string; projectId: string }>(
+          current: T[],
+        ): T[] => current.map(move);
+        setDiagrams(moveAll);
+        setAllDiagrams(moveAll);
+        setNotes(moveAll);
+        setAllNotes(moveAll);
+        if (selectedProjectId === id) {
+          // The file lists already describe the renamed project, so record that
+          // before the selection change so reconciliation does not re-list them.
+          filesProject.current = renamed.id;
+          setSelectedProjectId(renamed.id);
+        }
+        if (selectedDiagramId && selectedDiagramId.startsWith(prefix)) {
+          setSelectedDiagramId(
+            `${renamed.id}/${selectedDiagramId.slice(prefix.length)}`,
+          );
+        }
+        if (selectedNoteId && selectedNoteId.startsWith(prefix)) {
+          setSelectedNoteId(
+            `${renamed.id}/${selectedNoteId.slice(prefix.length)}`,
+          );
+        }
+      }
+
+      return renamed;
+    },
+    [
+      repo,
+      selectedProjectId,
+      selectedDiagramId,
+      selectedNoteId,
+      setProjects,
+      setDiagrams,
+      setAllDiagrams,
+      setNotes,
+      setAllNotes,
+    ],
   );
 
   /**
@@ -861,7 +966,10 @@ export function useWorkspace(
       }
       const diagram = result.value;
       // Add it to the explorer's list for this project (when it is the selected
-      // one) and select it, so the new file appears and is ready to edit.
+      // one) and select it, so the new file appears and is ready to edit. The
+      // project's existing files are loaded first when it was not the selected
+      // one, so the list never mixes two projects.
+      await loadProjectFiles(projectId);
       setDiagrams((current: DiagramFile[]) =>
         current.some((item) => item.id === diagram.id)
           ? current
@@ -875,7 +983,7 @@ export function useWorkspace(
       setters.setNoteMarkdown("");
       return diagram;
     },
-    [repo, setters, mergeDiagrams],
+    [repo, loadProjectFiles, setters, mergeDiagrams],
   );
 
   const createEmptyNote = useCallback(
@@ -887,6 +995,7 @@ export function useWorkspace(
         return null;
       }
       const note = result.value;
+      await loadProjectFiles(projectId);
       setNotes((current: NoteFile[]) =>
         current.some((item) => item.id === note.id)
           ? current
@@ -900,7 +1009,7 @@ export function useWorkspace(
       setters.setSource("");
       return note;
     },
-    [repo, setters, mergeNotes],
+    [repo, loadProjectFiles, setters, mergeNotes],
   );
 
   const createEmptyEventFlow = useCallback(
@@ -912,6 +1021,7 @@ export function useWorkspace(
         return null;
       }
       const flow = result.value;
+      await loadProjectFiles(projectId);
       setDiagrams((current: DiagramFile[]) =>
         current.some((item) => item.id === flow.id)
           ? current
@@ -925,7 +1035,7 @@ export function useWorkspace(
       setters.setNoteMarkdown("");
       return flow;
     },
-    [repo, setters, mergeDiagrams],
+    [repo, loadProjectFiles, setters, mergeDiagrams],
   );
 
   const duplicateDiagram = useCallback(
@@ -938,7 +1048,9 @@ export function useWorkspace(
       }
       const copy = result.value;
       // Show the copy next to its original and make it the active document, so
-      // the user lands on what they just created.
+      // the user lands on what they just created. The original's project may not
+      // be the selected one, so its files are loaded first.
+      await loadProjectFiles(copy.projectId);
       setDiagrams((current: DiagramFile[]) =>
         current.some((item) => item.id === copy.id)
           ? current
@@ -952,7 +1064,7 @@ export function useWorkspace(
       setters.setNoteMarkdown("");
       return copy;
     },
-    [repo, setters, mergeDiagrams],
+    [repo, loadProjectFiles, setters, mergeDiagrams],
   );
 
   const duplicateNote = useCallback(
@@ -966,6 +1078,7 @@ export function useWorkspace(
         return null;
       }
       const copy = result.value;
+      await loadProjectFiles(copy.projectId);
       setNotes((current: NoteFile[]) =>
         current.some((item) => item.id === copy.id)
           ? current
@@ -979,7 +1092,7 @@ export function useWorkspace(
       setters.setSource("");
       return copy;
     },
-    [repo, setters, mergeNotes],
+    [repo, loadProjectFiles, setters, mergeNotes],
   );
 
   /**
@@ -1001,6 +1114,39 @@ export function useWorkspace(
       return next;
     },
     [],
+  );
+
+  /**
+   * Move a resource's identity record for one project, whichever project it is.
+   *
+   * The in-memory record describes only the selected project, so it is used —
+   * and returned for the caller to commit beside the new file list — only when
+   * that is the project being renamed. For any other project the record is read
+   * from and written back to *that* project's own document; writing the selected
+   * project's record under another project's id would overwrite its identities.
+   */
+  const moveMetadataRecordFor = useCallback(
+    async (
+      projectId: string,
+      previousPath: string,
+      nextPath: string,
+    ): Promise<ProjectMetadata | null> => {
+      if (metadataProject.current === projectId) {
+        return moveMetadataRecord(previousPath, nextPath);
+      }
+      const read = await repo.readProjectMetadata(projectId);
+      if (!isOk(read)) {
+        setError(read.error);
+        return null;
+      }
+      if (!read.value) return null;
+      const next = renameResourcePath(read.value, previousPath, nextPath);
+      if (next === read.value) return null;
+      const written = await repo.writeProjectMetadata(projectId, next);
+      if (!isOk(written)) setError(written.error);
+      return null;
+    },
+    [repo, moveMetadataRecord],
   );
 
   const renameDiagram = useCallback(
@@ -1025,10 +1171,18 @@ export function useWorkspace(
       //
       // The record is keyed by *path*, and only a folder-backed project uses the
       // path as the file id — an in-browser diagram's id is generated — so the
-      // old name has to come from the file list, not from `diagramId`.
+      // old name has to come from the file list, not from `diagramId`. The
+      // workspace-wide list is what knows a file in a project that is not
+      // selected.
       const previousName =
-        diagrams.find((diagram) => diagram.id === diagramId)?.name ?? diagramId;
-      const nextMetadata = moveMetadataRecord(previousName, renamed.name);
+        allDiagrams.find((diagram) => diagram.id === diagramId)?.name ??
+        diagrams.find((diagram) => diagram.id === diagramId)?.name ??
+        diagramId;
+      const nextMetadata = await moveMetadataRecordFor(
+        projectId,
+        previousName,
+        renamed.name,
+      );
       // A local-folder rename changes the id (the path *is* the id), so replace
       // the old entry wherever it appears instead of updating it in place.
       const swap = (current: DiagramFile[]): DiagramFile[] => {
@@ -1051,7 +1205,7 @@ export function useWorkspace(
       }
       return renamed;
     },
-    [repo, diagrams, selectedDiagramId, moveMetadataRecord],
+    [repo, diagrams, allDiagrams, selectedDiagramId, moveMetadataRecordFor],
   );
 
   const renameNote = useCallback(
@@ -1071,8 +1225,14 @@ export function useWorkspace(
       }
       const renamed = result.value;
       const previousName =
-        notes.find((note) => note.id === noteId)?.name ?? noteId;
-      const nextMetadata = moveMetadataRecord(previousName, renamed.name);
+        allNotes.find((note) => note.id === noteId)?.name ??
+        notes.find((note) => note.id === noteId)?.name ??
+        noteId;
+      const nextMetadata = await moveMetadataRecordFor(
+        projectId,
+        previousName,
+        renamed.name,
+      );
       const swap = (current: NoteFile[]): NoteFile[] => {
         const mapped = current.map((note) =>
           note.id === noteId ? renamed : note,
@@ -1091,7 +1251,7 @@ export function useWorkspace(
       }
       return renamed;
     },
-    [repo, notes, selectedNoteId, moveMetadataRecord],
+    [repo, notes, allNotes, selectedNoteId, moveMetadataRecordFor],
   );
 
   const setDiagramTitle = useCallback(
@@ -1211,6 +1371,7 @@ export function useWorkspace(
     saveCurrentDiagram,
     saveCurrentNote,
     createProject,
+    renameProject,
     importProject,
     deleteProject,
     deleteDiagram,

@@ -283,6 +283,30 @@ export function createIndexedDbRepository(
       }
     },
 
+    async renameProject(id, newName): Promise<Result<Project, Error>> {
+      try {
+        const name = newName.trim();
+        if (name === "") return err(new Error("A project name is required"));
+        const renamed = await withTx<Project | null>(
+          [STORE_PROJECTS],
+          "readwrite",
+          async (stores) => {
+            const project = await readProject(stores, id);
+            if (!project) return null;
+            // The id is generated, not derived from the name, so only the label
+            // changes; the project's files keep pointing at the same id.
+            const next: Project = { ...project, name };
+            await stores[STORE_PROJECTS].put(next);
+            return next;
+          },
+        );
+        if (!renamed) return err(new Error(`Unknown project: ${id}`));
+        return ok(renamed);
+      } catch (error) {
+        return err(toRepoError(error));
+      }
+    },
+
     async deleteProject(id): Promise<Result<void, Error>> {
       try {
         await withTx<void>(

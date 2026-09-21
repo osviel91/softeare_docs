@@ -25,6 +25,7 @@ module.exports = {
   },
   ignorePatterns: [
     "dist/",
+    "dist-mcp/",
     "node_modules/",
     "coverage/",
     "vite.config.ts",

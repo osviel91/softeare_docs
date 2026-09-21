@@ -31,12 +31,12 @@ validation → layout → render model → SVG`. The UI consumes this engine; it
 npm install   # installs dependencies (uses a project-local cache)
 npm run dev   # start the Vite dev server at http://localhost:5173/
 npm test      # run the test suite once
-npm run build # type-check and produce a production build in dist/
+npm run build # type-check, build dist/, and bundle the MCP server
 ```
 
 Other scripts: `npm run preview`, `npm run lint`, `npm run lint:fix`,
 `npm run format`, `npm run format:check`, `npm run typecheck`,
-`npm run test:e2e`.
+`npm run test:e2e`, `npm run mcp`, `npm run test:mcp`.
 
 ## Testing in a real browser
 
@@ -68,13 +68,23 @@ over a status bar. Everything is themed from one set of CSS custom properties in
 `src/styles.css`, so the dark surface stack and the single accent are defined in
 one place rather than per component.
 
-- **Editor views.** A `Code` / `Docs` / `History` segmented control switches the
-  middle pane between the DSL source, a reference for every construct both
-  documentation languages support (`src/features/docs`), and the open diagram's
-  version timeline (`src/features/history`). The reference is split into a
-  sequence-diagram section and an event-flow section, and tests assert each
-  documented keyword really lexes as a keyword — or, for an event flow, is
-  accepted by its parser — so it cannot drift behind the grammar.
+- **Editor views.** A `Code` / `Outline` / `Problems` / `Overview` / `History`
+  segmented control switches the middle pane between the DSL source, the open
+  document's outline, the project's diagnostics, a dashboard over the project
+  index, and the open diagram's version timeline (`src/features/history`).
+- **The documentation page.** **Docs** in the toolbar — also `mod+alt+D`, or
+  **Documentation** in the palette — opens a page of its own rather than a panel
+  in that control, because the reference has outgrown a middle-pane tab. It
+  holds a section for each diagram language (rendered from
+  `src/language/dsl-reference.ts`, the same data the MCP server serves as a
+  resource), a reference for every command and the chord that runs it
+  (generated from `src/features/commands/command-catalog.ts`, so a command
+  cannot exist undocumented), and a guide to the MCP server. The page replaces
+  the workspace while it is open and any command or search result returns to it.
+  Tests assert each documented language keyword really lexes as a keyword — or,
+  for an event flow, is accepted by its parser — so the language reference
+  cannot drift behind the grammar, and that the command reference lists the
+  whole catalog.
 - **Editing.** The editor has a line-number gutter synced to the textarea's scroll
   position, and a **Snippets** menu (`src/features/editor/snippets.ts`) that
   inserts a construct at the caret, starting it on its own line unless it is
@@ -158,18 +168,32 @@ one place rather than per component.
   paths are remembered per folder and the explorer offers to restore them, so a
   mistaken delete is recoverable; in-browser projects (which have no disk copy)
   offer the single permanent delete.
+- **Project header actions.** Every project header carries a small `▾`/`▸`
+  collapse toggle — which folds the project's files away to a single row — and a
+  `⋯` menu with **Rename project…** and **Delete project**; right-clicking the
+  header opens that same menu. A file row likewise offers only its `⋯` menu, so
+  rename and delete are always one deliberate step away instead of a bare `✕`
+  beside the name. Project rename uses the same prompt dialog as a file rename,
+  and the same repository rule: an in-browser project keeps its generated id,
+  while a folder project's directory is moved so its path (and its files' ids)
+  change with it — the shell then follows the renamed project, closing the tabs
+  that pointed at the old paths and moving their version timelines.
 - **Trajectory history.** Every diagram keeps a timeline of the sources it has
   been through (`src/domain/workspace/version.ts`,
   `src/workspace/version-history.ts`). The first version is captured when a
   diagram is opened, further versions are checkpointed automatically once edits
-  settle, and **Save version** captures one on demand. Each entry shows when it
-  was taken, why, and a one-line summary, and can be restored into the editor or
-  forgotten. Restoring records the restored content as a new checkpoint, so the
-  timeline is append-only.
+  settle, and **Save version** captures one on demand. The panel draws the
+  **whole project as a tree**: one branch per diagram, each version hanging off
+  the document it belongs to, so the history answers "what changed across this
+  project?" without opening every file. Each entry shows when it was taken, why
+  (its label), and a one-line summary, and can be restored into the editor or
+  forgotten — restoring a version from another branch opens that diagram first,
+  so the buffer, the tab and the saved file agree. Restoring records the restored
+  content as a new checkpoint, so the timeline is append-only.
 - **Projects as documentation.** A project holds diagrams _and_ markdown
   documents, so it can document a system rather than only draw it. A project's
-  `＋` button opens a menu to add either kind — **New diagram** or **New note** —
-  so the choice is explicit. Both kinds open into **one tab strip** (see
+  `＋` button opens a menu to add a file — **New diagram**, **New note**, or
+  **New event flow** — so the choice is explicit. Both kinds open into **one tab strip** (see
   _Documentation workspace_ below), and selecting a markdown document shows the
   markdown editor (`src/features/notes`) beside its rendered output, with
   headings, lists, tables, images, code, emphasis, and links. A document links to
@@ -223,6 +247,206 @@ about diagram semantics — it receives finished SVG markup plus its pixel size,
 panning and zooming never re-render the diagram or re-parse the DSL. The minimap
 embeds that SVG as an image rather than inline markup, so a diagram's labels are
 not duplicated in the document.
+
+## MCP server (for coding agents)
+
+The project ships a **Model Context Protocol** server, so a coding agent —
+OpenCode, Hermes, Claude, Cursor, or anything else that speaks MCP — can
+document an application with the same engine the editor uses. An agent can
+create and edit sequence diagrams, event flows and markdown documents, validate
+them, render them to SVG, search a project, and audit what is still missing.
+
+No diagram logic lives in the server. It links the _same_ modules the browser
+app links — the lexer/parser/validator, the layout and SVG renderer, the project
+indexer, the search scan, the outline builders — over a Node filesystem
+`WorkspaceRepository`, which is the interface the File System Access
+implementation already satisfies. A document an agent writes is therefore a
+document the editor opens unchanged, and a diagnostic the agent sees is the one
+the Problems panel shows (ADR-037). The same overview, with the client configs
+below, is available inside the app under **Docs → MCP server**.
+
+### Build and run
+
+```bash
+npm run mcp:build   # bundle mcp/ into dist-mcp/server.mjs (esbuild)
+node dist-mcp/server.mjs --workspace ./docs
+```
+
+`npm run mcp` builds and runs it in one step. The bundle is self-contained — it
+has no runtime dependencies — so a client only needs `node` on its `PATH`.
+
+| Flag / argument            | Meaning                                                         |
+| -------------------------- | --------------------------------------------------------------- |
+| `--workspace <dir>` (`-w`) | The documentation workspace. Defaults to the current directory. |
+| `--project <name>` (`-p`)  | Default project for tool calls that omit one.                   |
+| `--help` (`-h`)            | Print the usage summary.                                        |
+| `--version` (`-V`)         | Print the server version.                                       |
+
+### The workspace it edits
+
+The server uses the same model as a folder opened in the app (ADR-005), so a
+documentation repository it writes is one the app can open:
+
+- a **subdirectory** of the workspace is a **project**;
+- inside it, `.md` is a markdown document, `.eventseq` an event flow, and
+  anything else a sequence diagram;
+- `project.json` records each file's stable id, so `resource://` links survive
+  renaming and moving.
+
+The tools take an optional `project`; when the workspace has exactly one
+project, or `--project` was given, it may be omitted.
+
+### Client configuration
+
+**OpenCode** — add to `opencode.json` (or `opencode.jsonc`):
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "sequencediagrams": {
+      "type": "local",
+      "command": [
+        "node",
+        "/absolute/path/to/SecuenceDiagrams/dist-mcp/server.mjs",
+        "--workspace",
+        "/absolute/path/to/docs"
+      ],
+      "enabled": true
+    }
+  }
+}
+```
+
+**Hermes** — add to the `mcp_servers` block of `~/.hermes/config.yaml`:
+
+```yaml
+mcp_servers:
+  sequencediagrams:
+    command: "node"
+    args:
+      - "/absolute/path/to/SecuenceDiagrams/dist-mcp/server.mjs"
+      - "--workspace"
+      - "/absolute/path/to/docs"
+    tools:
+      resources: true
+      prompts: true
+    # trust: untrusted   # require approval before every write (see Safety)
+```
+
+**Claude Desktop, Cursor, and other `mcpServers` clients** use the same command
+and arguments under the `mcpServers` key:
+
+```json
+{
+  "mcpServers": {
+    "sequencediagrams": {
+      "command": "node",
+      "args": [
+        "/absolute/path/to/SecuenceDiagrams/dist-mcp/server.mjs",
+        "--workspace",
+        "/absolute/path/to/docs"
+      ]
+    }
+  }
+}
+```
+
+`npm link` puts `sequencediagrams-mcp` on the `PATH` (the package's `bin`), so
+`"command": "sequencediagrams-mcp"` also works.
+
+The server implements both protocol eras: the legacy `initialize` handshake and
+the stateless `2026-07-28` revision (`server/discover`, per-request `_meta`,
+`resultType`), so a client of either generation connects without configuration.
+
+### Tools
+
+| Tool                   | What it does                                                                                      |
+| ---------------------- | ------------------------------------------------------------------------------------------------- |
+| `list_projects`        | Projects in the workspace, with resource and diagnostic counts.                                   |
+| `create_project`       | Create a project (a workspace subdirectory) and its `project.json`.                               |
+| `get_project_overview` | One project's counts, symbols by kind, and resources — the best first call.                       |
+| `list_resources`       | Every resource with its stable id, path, type, title and shape metrics.                           |
+| `read_resource`        | The full text of one resource, by stable id, path, file name, or title.                           |
+| `get_outline`          | A diagram's statement tree, an event flow's groups, or a document's headings.                     |
+| `search_documentation` | Text search with `kind:`, `project:` and `participant:` scopes.                                   |
+| `find_references`      | Every declaration and usage of a symbol name in a project.                                        |
+| `create_resource`      | Create a diagram (`.seq`), event flow (`.eventseq`) or document (`.md`); validates what it wrote. |
+| `update_resource`      | Replace, append to, or prepend to a resource's text.                                              |
+| `rename_resource`      | Move a file while keeping its stable id, so links survive.                                        |
+| `delete_resource`      | Delete a resource; requires `confirm: true`.                                                      |
+| `validate_source`      | Validate text before writing it — the self-correction loop.                                       |
+| `validate_resource`    | Diagnostics for one resource, semantic checks included.                                           |
+| `validate_project`     | Every diagnostic in a project, addressed to its resource and line.                                |
+| `render_diagram`       | The SVG for a diagram or event flow, inline or written to a path.                                 |
+| `audit_documentation`  | Documentation gaps: broken links, untitled or empty files, unlinked resources, thin prose.        |
+
+### Resources and prompts
+
+Resources are context the host can attach before the model acts; prompts are
+reusable workflows the user can invoke:
+
+| Resource / prompt                                      | What it gives the model                                                            |
+| ------------------------------------------------------ | ---------------------------------------------------------------------------------- |
+| `sequencediagrams://reference/sequence-dsl`            | Every sequence-language construct, generated from the editor's own reference data. |
+| `sequencediagrams://reference/event-flow-dsl`          | Every event-flow construct.                                                        |
+| `sequencediagrams://reference/markdown`                | The markdown dialect, wiki-links, relative links and `{{diagram:…}}` embeds.       |
+| `sequencediagrams://guide/documenting-an-application`  | A workflow for turning a system into a navigable documentation set.                |
+| `sequencediagrams://guide/tool-workflow`               | What each tool does, plus a worked create → validate → audit loop.                 |
+| `sequencediagrams://project/{project}/resource/{path}` | A resource template for reading one project file directly.                         |
+| Prompt `document-application`                          | Document a system end to end: overview, diagrams, event flows, links.              |
+| Prompt `improve-documentation`                         | Audit a project and fix what the audit finds.                                      |
+| Prompt `diagram-interaction-flow`                      | Turn one described flow into a focused sequence diagram.                           |
+| Prompt `model-event-driven-architecture`               | Turn a broker topology into an event flow.                                         |
+
+The DSL references are generated from `src/language/dsl-reference.ts` — the same
+data the editor's **Docs** view renders and its tests assert against the grammar
+— so the reference an agent reads cannot drift behind the parser.
+
+### What a session looks like
+
+An agent asked to "document the checkout flow" typically runs:
+
+```text
+list_projects
+create_project            { name: "Payments" }                 # if none exists
+get_project_overview      { project: "Payments" }
+# read sequencediagrams://reference/sequence-dsl, then:
+create_resource           { project: "Payments", kind: "diagram",
+                            name: "checkout-flow", title: "Checkout flow",
+                            content: "..." }
+validate_resource         { project: "Payments", resource: "checkout-flow" }
+create_resource           { project: "Payments", kind: "note",
+                            name: "architecture", title: "Payments architecture",
+                            content: "… [[Checkout flow]] …" }
+validate_project          { project: "Payments" }
+audit_documentation       { project: "Payments" }
+```
+
+Every write returns the diagnostics for what was written, so the model can fix a
+document before moving on instead of reporting a broken one as done.
+
+### Safety
+
+- **The workspace root is a hard boundary.** Every file name is validated as a
+  single path segment, so `..`, separators and NUL are rejected before they
+  reach the filesystem; the only files written are project resources and an
+  explicit `render_diagram` output path inside the root.
+- **Deletion is confirmed.** `delete_resource` fails unless it is called with
+  `confirm: true`, and the refusal explains what would have been removed.
+- **Reads and writes are annotated.** Every tool carries MCP
+  `readOnlyHint`/`destructiveHint` annotations, so a host that treats the server
+  as untrusted (Hermes' `trust: untrusted`) can require approval for the tools
+  that write and auto-approve the ones that only read.
+- **Local only.** The server opens no network sockets; it reads and writes the
+  workspace directory it was pointed at.
+
+### Verifying it
+
+`npm run test:mcp` builds the bundle and drives it over real stdio — the same
+approach `npm run test:e2e` takes for the browser bundle — checking the
+handshake, the tool catalog, a full create → validate → audit loop against a
+temporary workspace, and the protocol/tool error channels.
 
 ## Docker
 
@@ -306,11 +530,18 @@ src/
                     explorer, editor, preview (+ viewport), tabs, commands, docs,
                     notes (markdown editor/view), history (version timeline),
                     search (project find-in-files), ui (dialogs, context menu)
+mcp/              MCP server for coding agents: a Node filesystem workspace
+                  adapter, the two-era protocol layer, the tool catalog, the
+                  reference resources, the workflow prompts, and its tests
+scripts/          Repo scripts: the MCP bundle, and the MCP/browser smoke tests
 tests/            Browser-independent and workflow tests
 docs/plan/        Mission plans: intent, deliverables, and verification
 deploy/           Portainer stack for the published image
 .github/          CI: the image publish workflow
 ```
+
+The `dist-mcp/` directory is the bundled server `npm run mcp:build` produces; it
+is build output, not source.
 
 The early structure is intentionally small; layers are added as phases demand
 them while keeping the boundaries above intact.
@@ -333,13 +564,23 @@ deliverables and boundaries — is recorded under [`docs/plan/`](./docs/plan/).
 9. Documentation workspace (mixed document tabs, project-wide search, portable project archives)
 10. Project intelligence (stable resource ids, project index, diagnostics, outline, completion, quick open, find/references, rename)
 11. Event-driven modeling (`*.eventseq`: events, producers, consumers, brokers, channels, fan-out, causal chains)
+12. MCP server (agent-facing tools, resources, and prompts over the same engine)
 
 ## Status
 
-**Phases 0–11 are implemented** on this branch. `npm test` runs 1200+ tests,
+**Phases 0–11 are implemented** on this branch. `npm test` runs 1350+ tests,
 `npm run test:e2e` drives 85 checks against the production bundle in Chromium,
 and `npm run typecheck`, `npm run lint`, `npm run build` and
 `npm run format:check` are clean.
+
+**Phase 12 (MCP server) is implemented.** A coding agent can now document an
+application through the Model Context Protocol: 17 tools cover orientation,
+reading, authoring, validation, rendering and a documentation audit; five
+reference and guide resources carry both DSLs and the workflow; and four prompts
+package the common jobs. The server links the browser engine's own modules over
+a Node filesystem repository, so an agent's diagrams and diagnostics are exactly
+the editor's. `npm run test:mcp` drives the bundled server over real stdio. See
+[MCP server](#mcp-server-for-coding-agents) above.
 
 **Phase 11 (event-driven modeling).** A project can now document an
 event-driven architecture in its own language, `*.eventseq`:
@@ -416,7 +657,12 @@ files and became a project-aware IDE:
 - **Problems panel.** Project-wide diagnostics from one UI-independent service:
   parse errors, unresolved participants, unused participants, duplicate resource
   ids, duplicate titles, broken stable references, broken embeds and unresolved
-  links. Clicking a problem opens the file and selects the range.
+  links. Every row names the **project and the document** it belongs to
+  (`Payments › Order flow:4`), and clicking it opens that exact file and selects
+  the range — a project can hold two files with the same name, so the row carries
+  the identity rather than a bare path. The status bar counts the **open
+  document's** problems, diagnosed by that document's own language: an event flow
+  is never checked against the sequence grammar.
 - **Outline panel.** A statement tree for a diagram (title, participants, flow,
   fragments and their branches) and a heading tree for a document. Clicking a row
   selects the corresponding source.
@@ -431,8 +677,12 @@ files and became a project-aware IDE:
   typed, or a position that names participants or events, does. Hover answers
   "what is this?" with the declaration site and how many interactions use it.
 - **Quick open (`Ctrl/Cmd+P`)** over resources, participant symbols and document
-  headings, with fuzzy ranking. The command palette moved to `Ctrl/Cmd+Shift+P` so
-  the two overlays do not fight over one shortcut.
+  headings, with fuzzy ranking. The command palette is `Ctrl/Cmd+Shift+P`, and
+  **every command carries its own shortcut** — printed beside its palette entry,
+  shown on the toolbar button, and honoured wherever focus is by one listener
+  (`src/features/commands/shortcuts.ts`). Chords pair the platform modifier with
+  `Alt` (for example `Ctrl/Cmd+Alt+N` for New Diagram, `F2` for Rename Symbol) so
+  they never collide with the browser's own bindings.
 - **Source ↔ diagram selection.** Every addressable AST node gets a deterministic
   id from its source range; the layout carries it and the SVG exposes it as
   `data-node-id`. Clicking a rendered message, participant, note, activation or
@@ -617,3 +867,11 @@ name while a query is present, so a diagram from another project resolves even
 after navigating away. These stay testable in isolation: the command and tab logic
 drive pure state reducers, and the explorer search is covered with the component
 rendered against the same folder-backed repository the app uses.
+
+On top of the palette, the interface was tightened around management. Explorer
+rows are menu-first — a project folds to its header with a `▾`/`▸` and both
+projects and files keep rename and delete in a `⋯` menu rather than on a bare
+button (see **Project header actions** and **File actions** above). Projects
+gained `renameProject` across all three repositories, and commands gained
+data-driven shortcuts (`src/features/commands/shortcuts.ts`) that the palette
+prints beside each entry and one listener runs.

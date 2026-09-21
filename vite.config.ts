@@ -12,11 +12,17 @@ export default defineConfig({
     include: [
       "tests/**/*.{test,spec}.{ts,tsx}",
       "src/**/*.{test,spec}.{ts,tsx}",
+      "mcp/**/*.{test,spec}.ts",
     ],
     coverage: {
       provider: "v8",
-      include: ["src/**/*.{ts,tsx}"],
-      exclude: ["src/**/*.d.ts", "src/main.tsx", "src/vite-env.d.ts"],
+      include: ["src/**/*.{ts,tsx}", "mcp/**/*.ts"],
+      exclude: [
+        "src/**/*.d.ts",
+        "src/main.tsx",
+        "src/vite-env.d.ts",
+        "mcp/**/__tests__/**",
+      ],
       reporter: ["text", "json-summary", "html"],
     },
   },

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { MAX_VERSIONS_PER_DIAGRAM } from "../../src/domain/workspace/version";
 import { isOk } from "../../src/shared/result/result";
 import { createIndexedDbVersionHistory } from "../../src/workspace/version-history-idb";
@@ -87,6 +87,28 @@ describe("IndexedDB version history", () => {
     const first = await store.listVersions("diag-1");
     if (!isOk(first)) throw first.error;
     expect(first.value.map((version) => version.source)).toEqual(["one"]);
+  });
+
+  it("lists one project's versions across its diagrams, newest first", async () => {
+    const store = newStore();
+    // Distinct times so "newest first" is unambiguous across diagrams.
+    let now = 1_000;
+    const clock = vi.spyOn(Date, "now").mockImplementation(() => (now += 10));
+    try {
+      await record(store, "diag-1", "first", "proj-1");
+      await record(store, "diag-2", "second", "proj-1");
+      await record(store, "diag-9", "other-project", "proj-2");
+    } finally {
+      clock.mockRestore();
+    }
+
+    const result = await store.listProjectVersions("proj-1");
+    if (!isOk(result)) throw result.error;
+    expect(result.value.map((version) => version.source)).toEqual([
+      "second",
+      "first",
+    ]);
+    expect(result.value.every((v) => v.projectId === "proj-1")).toBe(true);
   });
 
   it("deletes a single version", async () => {

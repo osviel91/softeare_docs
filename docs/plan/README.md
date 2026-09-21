@@ -6,14 +6,14 @@ afterwards as a record of what was asked for and what was delivered — the
 [ADRs](../../ARCHITECTURE.md#7-architectural-decision-records-adrs) explain the
 _decisions_; these explain the _intent_.
 
-| Plan                                                                                                    | Status      | Checkpoint            |
-| ------------------------------------------------------------------------------------------------------- | ----------- | --------------------- |
-| [Phase B — Advanced editor & project intelligence](phase-b-advanced-editor-and-project-intelligence.md) | Implemented | `77e17ef`             |
-| [Phase C — Event-driven modeling](phase-c-event-driven-modeling.md)                                     | Implemented | `99362e6` + follow-up |
-| [Phase 12 — MCP server for coding agents](phase-12-mcp-server.md)                                       | Implemented | working tree          |
-| [Server migration, Phases 0–3](server-migration-0-3.md)                                                 | Implemented | `48242d4` + review    |
-| [Server migration, Phase 4](server-migration-4.md)                                                      | Implemented | `596e265` + `dd44687` |
-| [Server migration, Phase 5 — PATs + remote MCP](server-migration-5.md)                                  | Implemented | `0335271` + `204f385` |
+| Plan                                                                                                    | Status      | Checkpoint                        |
+| ------------------------------------------------------------------------------------------------------- | ----------- | --------------------------------- |
+| [Phase B — Advanced editor & project intelligence](phase-b-advanced-editor-and-project-intelligence.md) | Implemented | `77e17ef`                         |
+| [Phase C — Event-driven modeling](phase-c-event-driven-modeling.md)                                     | Implemented | `99362e6` + follow-up             |
+| [Phase 12 — MCP server for coding agents](phase-12-mcp-server.md)                                       | Implemented | working tree                      |
+| [Server migration, Phases 0–3](server-migration-0-3.md)                                                 | Implemented | `48242d4` + review                |
+| [Server migration, Phase 4](server-migration-4.md)                                                      | Implemented | `596e265` + `dd44687`             |
+| [Server migration, Phase 5 — PATs + remote MCP](server-migration-5.md)                                  | Implemented | `0335271` + `204f385` + `c46b91f` |
 
 ## How a phase is run
 

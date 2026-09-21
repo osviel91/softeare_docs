@@ -36,7 +36,7 @@ Remote MCP ──Bearer PAT──────┘     (project-catalog, …)     
 | 5A         | PAT scope model, storage, lifecycle service and `/api/tokens` routes      | `0335271` |
 | 5B         | Bearer verification, shared principal, scope × role composition and tests | `204f385` |
 | 5C/5D      | Remote MCP Streamable HTTP transport, read and write tools, error model   | `204f385` |
-| 5E         | PAT screen, remote-MCP connection guide, real remote-MCP E2E              | `fdcfa7b` |
+| 5E         | PAT screen, remote-MCP connection guide, real remote-MCP E2E              | `c46b91f` |
 
 ---
 

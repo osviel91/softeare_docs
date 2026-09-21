@@ -40,7 +40,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       # .npmrc points npm's cache at the project-local ./.npm-cache, which is
       # wrong for a fresh checkout. Redirect it to a stable path so it can be
@@ -81,7 +81,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Prepare npm cache
         run: mkdir -p "$RUNNER_TEMP/npm-cache"
@@ -118,7 +118,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Prepare npm cache
         run: mkdir -p "$RUNNER_TEMP/npm-cache"
@@ -138,10 +138,58 @@ jobs:
       - name: Run the container integration test
         run: npm run test:containers
 
+  # Regression guard for the multi-arch build. The non-native leg of a
+  # multi-arch build is emulated, and a build stage that runs `npm ci` there
+  # executes dependency install scripts under QEMU, which dies with "qemu:
+  # uncaught target signal 4 (Illegal instruction)" on some runners — a failure
+  # that only appears in CI, never in a single-arch local build. The Dockerfiles
+  # therefore pin their build stages to `$BUILDPLATFORM`, and this job proves it:
+  # it performs the same two-platform build `publish` does, without pushing, so a
+  # regression fails here instead of at the point where images are meant to ship.
+  #
+  # It populates the same GitHub Actions cache scopes `publish` reads, so the
+  # publish build afterwards is largely a cache hit rather than a second full
+  # build.
+  image-builds:
+    name: Multi-arch build ${{ matrix.service }}
+    runs-on: ubuntu-latest
+    needs: [verify, browser-smoke, container-integration]
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: web
+            dockerfile: Dockerfile
+          - service: api
+            dockerfile: Dockerfile.api
+          - service: mcp
+            dockerfile: Dockerfile.mcp
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-qemu-action@v3
+
+      - uses: docker/setup-buildx-action@v3
+
+      # `type=cacheonly` builds and caches every layer without exporting an
+      # image, which is all this job has to prove: both platforms compile and
+      # link into a runnable image.
+      - name: Build for linux/amd64 and linux/arm64
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64,linux/arm64
+          push: false
+          outputs: type=cacheonly
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
   publish:
     name: Build and push ${{ matrix.service }} image
     runs-on: ubuntu-latest
-    needs: [verify, browser-smoke, container-integration]
+    needs: [verify, browser-smoke, container-integration, image-builds]
     permissions:
       contents: read
       packages: write

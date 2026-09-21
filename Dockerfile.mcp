@@ -18,7 +18,12 @@
 # ---------------------------------------------------------------------------
 
 # ---- Build stage -----------------------------------------------------------
-FROM node:22-alpine AS build
+# Pinned to the builder's architecture, not the image's: `npm ci` runs
+# dependency install scripts with Node, and on the non-native leg of a
+# multi-arch build those run under QEMU emulation where they can die with
+# "qemu: uncaught target signal 4 (Illegal instruction)". The bundle is plain
+# JavaScript, so building it once on the builder is both correct and faster.
+FROM --platform=$BUILDPLATFORM node:22-alpine AS build
 
 WORKDIR /app
 

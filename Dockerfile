@@ -2,7 +2,13 @@
 
 # ---- Build stage -----------------------------------------------------------
 # Compiles the TypeScript + Vite production bundle.
-FROM node:20-alpine AS build
+#
+# Pinned to the builder's architecture, not the image's: `npm ci` runs dependency
+# install scripts with Node, and on the non-native leg of a multi-arch build
+# those run under QEMU emulation where they can die with "qemu: uncaught target
+# signal 4 (Illegal instruction)". The bundle is static files, so building it
+# once on the builder is both correct and faster than emulating the toolchain.
+FROM --platform=$BUILDPLATFORM node:22-alpine AS build
 
 WORKDIR /app
 

@@ -2,7 +2,16 @@
 
 # ---- Build stage -----------------------------------------------------------
 # Compiles the API bundle (apps/api + the shared src/ modules it reaches).
-FROM node:22-alpine AS build
+#
+# `--platform=$BUILDPLATFORM` pins this stage to the *builder's* architecture
+# rather than the architecture of the image being produced. That matters because
+# `npm ci` runs dependency install scripts with Node, and on the non-native leg
+# of a multi-arch build those run under QEMU emulation, where they can die with
+# "qemu: uncaught target signal 4 (Illegal instruction)". Installing and
+# bundling on the builder is also the correct thing to do, not merely the fast
+# one: the output is plain JavaScript, so one bundle is copied into every target
+# image rather than rebuilt per platform.
+FROM --platform=$BUILDPLATFORM node:22-alpine AS build
 
 WORKDIR /app
 

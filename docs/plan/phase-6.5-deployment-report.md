@@ -216,6 +216,42 @@ references **without building on the host** and verified healthy
 (`web` 200, `api /healthz` database ok, `mcp /health` and `/ready` ok,
 unauthenticated MCP 401).
 
+**The arm64 leg of every multi-arch build failed under QEMU.** The first CI run
+after that fix exercised the three-leg matrix for real and the `api` leg died:
+
+```text
+#18 [linux/arm64 build 4/6] RUN npm ci --cache /tmp/.npm-cache
+#18 17.71 qemu: uncaught target signal 4 (Illegal instruction) - core dumped
+```
+
+Only the emulated leg failed. Each Dockerfile ran `npm ci` in a stage whose
+platform was the **image's**, so on the non-native leg every dependency install
+script ran under QEMU emulation; `esbuild`, `playwright` and `pglite` all install
+through Node, and that is where it crashed. A single-arch local build can never
+show this, which is why it survived the earlier verification.
+
+Root cause: the build stages were written before the images were built for two
+platforms, when `FROM node:22-alpine AS build` was unambiguous.
+
+Fixed by pinning each build stage to the **builder's** platform
+(`FROM --platform=$BUILDPLATFORM …`). That is the correct construction and not
+only the faster one: the artefacts are plain JavaScript and static files, so one
+bundle is built and copied into both target images instead of being rebuilt per
+platform. The change is verified by the signature it produces — `npm ci` now runs
+**once** per multi-arch build instead of once per platform — and by the three
+images building for `linux/amd64` and `linux/arm64`. A CI `image-builds` job
+performs that same two-platform build without pushing, so a regression fails
+before images are meant to ship rather than at the moment they do. The web build
+stage was also moved from the end-of-life `node:20-alpine` to `node:22-alpine`,
+matching the other two, and the CI test runtime was aligned from Node 20 to 22 so
+tests and production run the same major.
+
+That Node 22 alignment was checked, not assumed: the full suite passes in the
+containerised run on Node 22 exactly as it does on Node 20, and one
+resource-sensitive test that times out under a CPU-limited container does so
+identically on **both** versions — an artefact of the test harness, not of the
+runtime.
+
 ## Gates run from the pushed commit
 
 All run locally from the committed tree; all green.
@@ -235,19 +271,19 @@ All run locally from the committed tree; all green.
 
 These are stated plainly because the completion gate names them:
 
-1. **Remote CI was not observed.** Neither `gh` nor any GitHub token is
-   available on this machine, so the Actions run for `70ec9ef` could not be read.
-   The equivalent gates were run locally from the pushed tree and all passed, and
-   the workflow was statically validated (YAML parse, three-service matrix, job
-   dependencies), but "remote CI is green" rests on the local run, not on an
-   observed pipeline. This should be confirmed from the repository's Actions tab.
+1. **Remote CI is not readable from this machine.** Neither `gh` nor any GitHub
+   token is available here, so the Actions runs cannot be fetched directly. The
+   first run of the updated workflow has since been reported from the Actions tab
+   and it **failed**, on the arm64 build defect described above; that defect is
+   fixed and the workflow now carries a job that builds both platforms on every
+   push. The remaining gap is only that the green run after this fix has not been
+   observed here — check the repository's Actions tab to confirm it.
 2. **No real HTTPS deployment.** No host, domain or certificate was available.
    Routing, host separation and the auth boundary were verified over HTTP; a
    valid certificate and HTTP→HTTPS redirect remain unverified.
-3. **The new image tags do not exist in GHCR yet.** They are produced on the
-   first successful run of the updated workflow. Until then, a Portainer stack
-   must either build from a Git checkout or pin the previously-published web
-   image only.
+3. **The new image tags appear in GHCR only after a successful workflow run.**
+   Until then, a Portainer stack must either build from a Git checkout or pin the
+   previously-published web image only.
 
 ## Portainer deployment
 
@@ -278,24 +314,25 @@ in `deploy/reverse-proxy/nginx.conf`.
 
 ## Completion gate
 
-| Requirement                           | Status                                                                        |
-| ------------------------------------- | ----------------------------------------------------------------------------- |
-| commit pushed                         | yes — `e7799c7`, `70ec9ef`                                                    |
-| remote CI green                       | **not observed** (no API access); equivalent gates green locally              |
-| production images traceable to commit | local build digests recorded; GHCR tags publish on first updated-workflow run |
-| migrations applied                    | yes — 0003, all required tables                                               |
-| all services healthy                  | yes — web, api, mcp, postgres, proxy                                          |
-| HTTPS MCP reachable                   | reachable over HTTP; **TLS unverified**                                       |
-| unauthenticated MCP refused           | yes — 401                                                                     |
-| PAT MCP succeeds                      | yes — official client, tools and resources                                    |
-| browser sessions refused by MCP       | yes — 401, with the cookie proven valid on the API                            |
-| project restrictions verified         | yes — Alpha visible, Beta invisible and refused by id                         |
-| browser ↔ MCP consistency verified    | yes — real headless browser, both directions                                  |
-| revision conflicts verified           | yes — A succeeds, B conflicts, no lost update                                 |
-| idempotency verified                  | yes — one mutation, one revision, one record                                  |
-| audit attribution verified            | yes — agent + credential + PAT + subject user                                 |
-| restart/stateless behavior verified   | yes — PAT survives, no session state                                          |
-| deployment issues fixed and committed | yes — `70ec9ef`                                                               |
+| Requirement                           | Status                                                                                           |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| commit pushed                         | yes — `e7799c7`, `70ec9ef`, and the multi-arch build fix                                         |
+| remote CI green                       | **first run failed** (arm64 build defect, now fixed); green run not observable from this machine |
+| production images traceable to commit | local build digests recorded; GHCR tags publish on the first successful updated-workflow run     |
+| migrations applied                    | yes — 0003, all required tables                                                                  |
+| all services healthy                  | yes — web, api, mcp, postgres, proxy                                                             |
+| HTTPS MCP reachable                   | reachable over HTTP; **TLS unverified**                                                          |
+| unauthenticated MCP refused           | yes — 401                                                                                        |
+| PAT MCP succeeds                      | yes — official client, tools and resources                                                       |
+| browser sessions refused by MCP       | yes — 401, with the cookie proven valid on the API                                               |
+| project restrictions verified         | yes — Alpha visible, Beta invisible and refused by id                                            |
+| browser ↔ MCP consistency verified    | yes — real headless browser, both directions                                                     |
+| revision conflicts verified           | yes — A succeeds, B conflicts, no lost update                                                    |
+| idempotency verified                  | yes — one mutation, one revision, one record                                                     |
+| audit attribution verified            | yes — agent + credential + PAT + subject user                                                    |
+| restart/stateless behavior verified   | yes — PAT survives, no session state                                                             |
+| multi-arch images build               | yes — web, api, mcp for `linux/amd64` and `linux/arm64`, build stage run once                    |
+| deployment issues fixed and committed | yes — `70ec9ef` (images published) and the multi-arch build fix                                  |
 
-**Phase 7 (MCP OAuth 2.1) must not begin until the two unverified items above are
-closed**: remote CI observed green, and a real TLS deployment exercised.
+**Phase 7 (MCP OAuth 2.1) must not begin until these are closed**: a green CI run
+observed after the multi-arch fix, and a real TLS deployment exercised.

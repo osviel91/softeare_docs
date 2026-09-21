@@ -536,9 +536,15 @@ src/
 mcp/              MCP server for coding agents: a Node filesystem workspace
                   adapter, the two-era protocol layer, the tool catalog, the
                   reference resources, the workflow prompts, and its tests
-apps/             Server hosts. `api` is the authenticated HTTP API; the remote
-                  MCP server moves here in a later phase. Both are adapters over
-                  `src/application` and are never imported by each other.
+  persistence/    Server persistence: the SQL client port (`pg` in production,
+                  PGlite in tests), migrations, repositories, the project
+                  storage volume and the filesystem path boundary (ADR-040)
+apps/api/         The authenticated HTTP API: config, the HTTP transport, the
+                  route table, and the composition root. An adapter over
+                  `src/application`, never imported by the MCP host
+apps/             Server hosts. The remote MCP server moves here in a later
+                  phase. Both are adapters over `src/application` and are never
+                  imported by each other.
 scripts/          Repo scripts: the MCP bundle, and the MCP/browser smoke tests
 tests/            Browser-independent and workflow tests
 docs/plan/        Mission plans: intent, deliverables, and verification

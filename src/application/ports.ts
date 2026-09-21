@@ -23,7 +23,9 @@
  * repository implementation.
  */
 import type { Project } from "../domain/workspace/types";
+import type { ProjectId } from "../domain/workspace/workspace-ids";
 import type { WorkspaceRepository } from "../workspace/WorkspaceRepository";
+import type { Result } from "../shared/result/result";
 
 /** A project and the store its resources live in. */
 export interface ProjectWorkspace {
@@ -40,6 +42,48 @@ export interface ProjectWorkspace {
    * a client-supplied path.
    */
   root: string;
+}
+
+/**
+ * A workspace repository that can enforce optimistic concurrency.
+ *
+ * Only some stores have revisions. Server mode does — the `resources` table
+ * carries one — because a browser and an agent may edit the same document at the
+ * same time, and a silent overwrite is data loss. Local mode does not, and
+ * deliberately does not pretend to: it is one editor on one machine.
+ *
+ * A use case asks the *store* rather than a flag on the project, so the same
+ * `updateResource` implementation is correct in both modes.
+ */
+export interface RevisionedWorkspaceRepository extends WorkspaceRepository {
+  /** The current revision of a resource path, or `null` when it is not stored. */
+  revisionOf(
+    projectId: ProjectId,
+    path: string,
+  ): Promise<Result<number | null, Error>>;
+
+  /**
+   * Refuse the write when the stored revision differs from `expectedRevision`.
+   *
+   * Returns a failure whose message names both revisions; the transport maps it
+   * to a `409 Conflict` (HTTP) or a tool-execution error (MCP).
+   */
+  expectRevision(
+    projectId: ProjectId,
+    path: string,
+    expectedRevision: number,
+  ): Promise<Result<void, Error>>;
+}
+
+/** Whether a store carries revisions. */
+export function isRevisionedRepository(
+  repo: WorkspaceRepository,
+): repo is RevisionedWorkspaceRepository {
+  const candidate = repo as Partial<RevisionedWorkspaceRepository>;
+  return (
+    typeof candidate.revisionOf === "function" &&
+    typeof candidate.expectRevision === "function"
+  );
 }
 
 /**

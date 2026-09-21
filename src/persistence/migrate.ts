@@ -1,0 +1,106 @@
+/**
+ * The migration runner (ADR-040).
+ *
+ * A migration is one SQL string applied inside one transaction together with
+ * the row that records it, so the schema and its history can never disagree: a
+ * failure leaves no partial schema and no entry. Running the migrations twice is
+ * a no-op, which is what makes every process start with `migrate()` rather than
+ * a documented manual step nobody performs.
+ *
+ * The runner splits the SQL on statement boundaries itself. A multi-statement
+ * simple query cannot carry bind parameters, and the transaction wrapper needs
+ * statements it can send individually.
+ */
+import type { SqlClient } from "./sql-client";
+import { up as initialSchema } from "./migrations/0001-initial-schema";
+
+/** One migration: a stable name and the SQL that applies it. */
+export interface Migration {
+  /** Sort key and identity. Applied in ascending order, never reordered. */
+  version: number;
+  /** A short human name, recorded for diagnostics. */
+  name: string;
+  /** The statements to apply, in order. */
+  sql: string;
+}
+
+/** Every migration the server knows, oldest first. */
+export const MIGRATIONS: readonly Migration[] = [
+  { version: 1, name: "initial-schema", sql: initialSchema },
+];
+
+/**
+ * Split a migration into statements.
+ *
+ * Splitting on `;` is safe here because these migrations contain no function
+ * bodies, no dollar-quoted strings and no semicolons inside literals — a
+ * constraint the migration tests assert, so a future migration that breaks it
+ * fails loudly rather than being applied halfway.
+ */
+export function splitStatements(sql: string): string[] {
+  return sql
+    .split(";")
+    .map((statement) => statement.trim())
+    .filter((statement) => statement !== "");
+}
+
+/** The result of a migration run. */
+export interface MigrationReport {
+  /** The versions applied by this run, in order. Empty when already current. */
+  applied: number[];
+  /** The versions already present before this run. */
+  present: number[];
+}
+
+/** Create the history table if this is a fresh database. */
+async function ensureHistoryTable(client: SqlClient): Promise<void> {
+  await client.query(
+    `CREATE TABLE IF NOT EXISTS schema_migrations (
+       version    integer PRIMARY KEY,
+       name       text        NOT NULL,
+       applied_at timestamptz NOT NULL DEFAULT now()
+     )`,
+  );
+}
+
+/** The versions already applied, in ascending order. */
+async function appliedVersions(client: SqlClient): Promise<number[]> {
+  const result = await client.query(
+    "SELECT version FROM schema_migrations ORDER BY version ASC",
+  );
+  return result.rows.map((row) => Number(row.version));
+}
+
+/**
+ * Apply every migration the database is missing.
+ *
+ * @param client - The database to migrate.
+ * @param migrations - The migrations to apply; injectable so a test can prove
+ *   the runner's ordering and idempotence without a second schema.
+ */
+export async function migrate(
+  client: SqlClient,
+  migrations: readonly Migration[] = MIGRATIONS,
+): Promise<MigrationReport> {
+  await ensureHistoryTable(client);
+  const present = await appliedVersions(client);
+  const known = new Set(present);
+  const applied: number[] = [];
+
+  const ordered = [...migrations].sort((a, b) => a.version - b.version);
+  for (const migration of ordered) {
+    if (known.has(migration.version)) continue;
+    await client.transaction(async (tx) => {
+      for (const statement of splitStatements(migration.sql)) {
+        await tx.query(statement);
+      }
+      await tx.query(
+        "INSERT INTO schema_migrations (version, name) VALUES ($1, $2)",
+        [migration.version, migration.name],
+      );
+    });
+    applied.push(migration.version);
+  }
+
+  return { applied, present };
+}

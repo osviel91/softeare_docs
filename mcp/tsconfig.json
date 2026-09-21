@@ -1,21 +1,8 @@
 {
+  "extends": "../tsconfig.src.json",
+  "//": "The stdio MCP host (ADR-039). It compiles its own sources together with every src/ module they reach.",
   "compilerOptions": {
-    "target": "ES2022",
-    "lib": ["ES2023", "DOM"],
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "allowImportingTsExtensions": true,
-    "resolveJsonModule": true,
-    "isolatedModules": true,
-    "moduleDetection": "force",
-    "noEmit": true,
-    "strict": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true,
-    "noImplicitOverride": true,
-    "skipLibCheck": true,
-    "types": ["node", "vitest/globals"]
+    "lib": ["ES2023", "DOM"]
   },
-  "include": ["."]
+  "include": [".", "../src/**/*.ts", "../apps/**/*.ts"]
 }

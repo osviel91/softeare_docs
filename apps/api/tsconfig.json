@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.src.json",
+  "//": "The authenticated HTTP API host (ADR-039). It compiles its own sources together with every src/ module they reach, so a server change cannot quietly break a shared module.",
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    "../../src/**/*.ts",
+    "../../src/**/*.tsx",
+    "../tests/**/*.ts"
+  ]
+}

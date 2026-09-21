@@ -9,7 +9,7 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && tsc -p mcp/tsconfig.json && vite build && npm run mcp:build",
+    "build": "tsc -b && tsc -p mcp/tsconfig.json && tsc -p apps/api/tsconfig.json && vite build && npm run mcp:build && npm run api:build",
     "build:web": "tsc -b && vite build",
     "preview": "vite preview",
     "mcp:build": "node scripts/build-mcp.mjs",
@@ -23,7 +23,9 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "typecheck": "tsc -b --noEmit && tsc -p mcp/tsconfig.json --noEmit"
+    "typecheck": "tsc -b --noEmit && tsc -p mcp/tsconfig.json --noEmit && tsc -p apps/api/tsconfig.json --noEmit",
+    "api:build": "node scripts/build-api.mjs",
+    "api": "npm run api:build --silent && node dist-api/server.mjs"
   },
   "dependencies": {
     "react": "^18.3.1",

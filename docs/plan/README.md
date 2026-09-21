@@ -11,6 +11,7 @@ _decisions_; these explain the _intent_.
 | [Phase B — Advanced editor & project intelligence](phase-b-advanced-editor-and-project-intelligence.md) | Implemented | `77e17ef`             |
 | [Phase C — Event-driven modeling](phase-c-event-driven-modeling.md)                                     | Implemented | `99362e6` + follow-up |
 | [Phase 12 — MCP server for coding agents](phase-12-mcp-server.md)                                       | Implemented | working tree          |
+| [Server migration, Phases 0–3](server-migration-0-3.md)                                                 | In progress | Phase 1               |
 
 ## How a phase is run
 

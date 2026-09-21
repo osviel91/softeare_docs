@@ -25,9 +25,10 @@
  * tool-execution errors.
  */
 import { createLocalWorkspaceProvider } from "../src/application/local-workspace-provider";
-import type {
-  ProjectWorkspace,
-  ProjectWorkspaceProvider,
+import {
+  isRevisionedRepository,
+  type ProjectWorkspace,
+  type ProjectWorkspaceProvider,
 } from "../src/application/ports";
 import {
   loadProjectSnapshot,
@@ -72,6 +73,7 @@ import { renderEventFlowDocument } from "../src/features/preview/eventflow-to-sv
 import type { RenderOptions } from "../src/renderer/svg/sequence-svg-renderer";
 import type { EventFlowRenderOptions } from "../src/renderer/svg/eventflow-svg-renderer";
 import { isOk, type Result } from "../src/shared/result/result";
+import { ApplicationError } from "../src/application/errors";
 import {
   createNodeDirectoryHandle,
   resolveInside,
@@ -191,6 +193,42 @@ export interface DocumentationAudit {
 function unwrap<T>(result: Result<T, Error>): T {
   if (!isOk(result)) throw result.error;
   return result.value;
+}
+
+/**
+ * Enforce an expected revision against a store that has them.
+ *
+ * Three cases, all explicit: no expectation (nothing to check); an expectation
+ * against a store without revisions (a client using the wrong store — refused
+ * rather than silently ignored); and an expectation against a revisioned store
+ * (checked, and a failure aborts the write).
+ */
+async function expectRevision(
+  repo: ProjectWorkspace["repo"],
+  projectId: string,
+  path: string,
+  expectedRevision: number | undefined,
+): Promise<void> {
+  if (expectedRevision === undefined) return;
+  if (!isRevisionedRepository(repo)) {
+    throw new ApplicationError(
+      "invalid",
+      "This workspace does not support revision checks, so an expectedRevision cannot be honoured.",
+    );
+  }
+  const checked = await repo.expectRevision(projectId, path, expectedRevision);
+  if (!isOk(checked)) throw checked.error;
+}
+
+/** The current revision of a resource, when the store carries revisions. */
+async function revisionOfResource(
+  repo: ProjectWorkspace["repo"],
+  projectId: string,
+  path: string,
+): Promise<number | undefined> {
+  if (!isRevisionedRepository(repo)) return undefined;
+  const result = await repo.revisionOf(projectId, path);
+  return isOk(result) ? (result.value ?? undefined) : undefined;
 }
 
 /** The repository id of a file: `<project>/<file name>`. */
@@ -664,18 +702,33 @@ export class DocumentationWorkspace {
     };
   }
 
-  /** Replace, append to, or prepend to a resource's text. */
+  /**
+   * Replace, append to, or prepend to a resource's text.
+   *
+   * The one use case both the HTTP API and the MCP server expose. When the store
+   * carries revisions (server mode) and the caller supplies
+   * `expectedRevision`, a stale write is refused with a 409-mapped conflict
+   * rather than silently overwriting whoever wrote first. A local store has no
+   * revisions and ignores the expectation, which is why local mode behaves
+   * exactly as before.
+   */
   async updateResource(
     project: Project,
     reference: string,
-    input: { content: string; mode?: "replace" | "append" | "prepend" },
+    input: {
+      content: string;
+      mode?: "replace" | "append" | "prepend";
+      expectedRevision?: number;
+    },
   ): Promise<{
     resource: ResourceSummary;
+    revision?: number;
     mode: string;
     bytesBefore: number;
     bytesAfter: number;
     diagnostics: DiagnosticView[];
   }> {
+    const { repo } = await this.workspaceOf(project);
     const snapshot = await this.snapshot(project);
     const index = await this.index(project, snapshot);
     const descriptor = this.resolveResource(index, reference);
@@ -695,7 +748,18 @@ export class DocumentationWorkspace {
         break;
     }
 
-    await this.saveContent(project, descriptor.type, descriptor.path, next);
+    await this.saveContent(
+      project,
+      descriptor.type,
+      descriptor.path,
+      next,
+      input.expectedRevision,
+    );
+    const revision = await revisionOfResource(
+      repo,
+      project.id,
+      descriptor.path,
+    );
     const after = await this.snapshot(project);
     const afterIndex = await this.index(project, after);
     const resource = this.summarize(
@@ -705,6 +769,7 @@ export class DocumentationWorkspace {
     );
     return {
       resource,
+      ...(revision === undefined ? {} : { revision }),
       mode,
       bytesBefore: previous.length,
       bytesAfter: next.length,
@@ -1120,14 +1185,21 @@ export class DocumentationWorkspace {
     );
   }
 
-  /** Write a resource's text through the repository. */
+  /**
+   * Write a resource's text through the repository.
+   *
+   * When the store carries revisions and the caller named one, the expectation
+   * is checked *before* the write, so a stale writer changes nothing at all.
+   */
   private async saveContent(
     project: Project,
     type: ResourceType,
     name: string,
     content: string,
+    expectedRevision?: number,
   ): Promise<void> {
     const { repo } = await this.workspaceOf(project);
+    await expectRevision(repo, project.id, name, expectedRevision);
     if (type === "markdown-document") {
       const note: NoteFile = {
         id: fullPath(project, name),

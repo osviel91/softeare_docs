@@ -562,7 +562,7 @@ export function createTools(): Tool[] {
         name: "update_resource",
         title: "Update a resource",
         description:
-          'Change a resource\'s text. `mode: "replace"` (the default) swaps the whole document; `"append"` adds to the end; `"prepend"` adds to the beginning. Read the resource first when replacing it, so no existing content is lost. Validates the result and returns `{ resource, mode, bytesBefore, bytesAfter, diagnostics }`.',
+          'Change a resource\'s text. `mode: "replace"` (the default) swaps the whole document; `"append"` adds to the end; `"prepend"` adds to the beginning. Read the resource first when replacing it, so no existing content is lost. On a server workspace the resource carries a revision: pass the `expectedRevision` you last read to avoid overwriting a concurrent edit, and the response returns the new `revision`. A stale expectation is refused rather than silently applied. Validates the result and returns `{ resource, revision, mode, bytesBefore, bytesAfter, diagnostics }`.',
         inputSchema: objectSchema(
           {
             project: stringProp(
@@ -575,6 +575,9 @@ export function createTools(): Tool[] {
             mode: enumProp(
               ["replace", "append", "prepend"],
               "How to apply the text. Defaults to replace.",
+            ),
+            expectedRevision: numberProp(
+              "The revision you last read, when the workspace is a server workspace. A stale value is refused with a conflict instead of overwriting a concurrent edit.",
             ),
           },
           ["resource", "content"],
@@ -596,10 +599,15 @@ export function createTools(): Tool[] {
             'The "mode" argument must be "replace", "append", or "prepend".',
           );
         }
+        const expectedRevision = optionalNumber(args, "expectedRevision");
         const result = await context.workspace.updateResource(
           project,
           requiredString(args, "resource"),
-          { content: requiredString(args, "content"), mode },
+          {
+            content: requiredString(args, "content"),
+            mode,
+            ...(expectedRevision === undefined ? {} : { expectedRevision }),
+          },
         );
         return {
           text: [

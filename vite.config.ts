@@ -13,10 +13,11 @@ export default defineConfig({
       "tests/**/*.{test,spec}.{ts,tsx}",
       "src/**/*.{test,spec}.{ts,tsx}",
       "mcp/**/*.{test,spec}.ts",
+      "apps/**/*.{test,spec}.ts",
     ],
     coverage: {
       provider: "v8",
-      include: ["src/**/*.{ts,tsx}", "mcp/**/*.ts"],
+      include: ["src/**/*.{ts,tsx}", "mcp/**/*.ts", "apps/**/*.ts"],
       exclude: [
         "src/**/*.d.ts",
         "src/main.tsx",

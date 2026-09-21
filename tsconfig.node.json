@@ -1,21 +1,29 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "lib": ["ES2023"],
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "skipLibCheck": true,
-
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
     "isolatedModules": true,
     "moduleDetection": "force",
     "noEmit": true,
-
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-
-    "types": ["node"]
+    "types": ["node", "vitest/globals"]
   },
-  "include": ["vite.config.ts", "vitest.setup.ts"]
+  "//": "The server side of the repository: persistence, the two hosts, and the tests that exercise them. Kept apart from the browser project so neither has to compile the other's globals.",
+  "include": [
+    "vite.config.ts",
+    "vitest.setup.ts",
+    "src/**/*.ts",
+    "mcp/**/*.ts",
+    "apps/**/*.ts",
+    "scripts/**/*.mjs",
+    "tests/architecture/**/*.ts",
+    "tests/api/**/*.ts",
+    "tests/persistence/**/*.ts"
+  ]
 }

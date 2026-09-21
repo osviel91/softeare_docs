@@ -19,7 +19,6 @@
 import type { ApplicationContext } from "./context";
 import {
   ApplicationError,
-  forbidden,
   invalid,
   notFound,
   revisionConflict,
@@ -29,7 +28,13 @@ import type {
   ServerProject,
 } from "../domain/project/server-project";
 import { slugify } from "../domain/project/server-project";
-import type { ProjectRole } from "../domain/access/permissions";
+import type { Permission, ProjectRole } from "../domain/access/permissions";
+import {
+  createAuthorizationPolicy,
+  grantedPermissions,
+  restrictionOf,
+  type AuthorizationPolicy,
+} from "./authorization";
 import type {
   ProjectRepository,
   ResourceRecord,
@@ -66,6 +71,12 @@ export interface ProjectCatalogOptions {
   projects: ProjectRepository;
   storage: ProjectStorageFactory;
   audit?: AuditRepository;
+  /**
+   * The authorization policy. Injectable so a test can prove a use case refuses
+   * when the policy does — and so a different deployment can supply a different
+   * policy without any use case changing.
+   */
+  policy?: AuthorizationPolicy<ServerProject>;
 }
 
 /** The server project use cases. */
@@ -84,6 +95,22 @@ export interface ProjectCatalog {
     context: ApplicationContext,
     input: { name: string; slug?: string },
   ): Promise<ProjectListing>;
+
+  /**
+   * What the caller may do in this project.
+   *
+   * A browser needs this to render the right affordances, and an agent uses it
+   * to decide whether a write is worth attempting. It is *advisory*: every
+   * operation re-checks, so a stale or forged answer here grants nothing.
+   */
+  describeAccess(
+    context: ApplicationContext,
+    projectId: string,
+  ): Promise<{
+    projectId: string;
+    role: ProjectRole;
+    permissions: readonly Permission[];
+  }>;
 
   /** Rename a project, or change its slug. */
   updateProject(
@@ -166,23 +193,6 @@ export interface ProjectCatalog {
   ): Promise<void>;
 }
 
-/** The role a caller must hold for a read. */
-const READ_ROLES: readonly ProjectRole[] = ["OWNER", "EDITOR", "VIEWER"];
-/** The role a caller must hold to change resources. */
-const WRITE_ROLES: readonly ProjectRole[] = ["OWNER", "EDITOR"];
-/** The role a caller must hold to change the project or its membership. */
-const ADMIN_ROLES: readonly ProjectRole[] = ["OWNER"];
-
-/** Whether a credential is restricted to a specific set of projects. */
-function restrictionAllows(
-  context: ApplicationContext,
-  projectId: string,
-): boolean {
-  const restricted = context.principal.projectIds;
-  if (restricted === undefined || restricted.length === 0) return true;
-  return restricted.includes(projectId);
-}
-
 /**
  * Run a path-addressed operation, reporting a refused path as `invalid`.
  *
@@ -218,28 +228,29 @@ export function createProjectCatalog(
   options: ProjectCatalogOptions,
 ): ProjectCatalog {
   const { projects, storage, audit } = options;
+  const policy =
+    options.policy ?? createAuthorizationPolicy<ServerProject>(projects);
 
-  /** The caller's role, or a failure that does not leak the project's existence. */
-  const requireRole = async (
+  /**
+   * Authorize an operation, then hand back the project it acted on.
+   *
+   * The permission is named, not a role list: the mapping from role to
+   * capability lives in `src/domain/access/permissions.ts` and is applied by the
+   * policy, so a use case never asks "is this user an editor?".
+   */
+  const requirePermission = async (
     context: ApplicationContext,
     projectId: string,
-    allowed: readonly ProjectRole[],
+    permission: Permission,
   ): Promise<{ project: ServerProject; role: ProjectRole }> => {
-    const project = await projects.findById(projectId);
-    if (!project) throw notFound(`No project with id ${projectId}.`);
-    if (!restrictionAllows(context, projectId)) {
-      // A project-restricted credential addresses another project: report it as
-      // invisible rather than as forbidden, so a token cannot probe for ids.
-      throw notFound(`No project with id ${projectId}.`);
-    }
-    const role = await projects.roleOf(projectId, context.principal.userId);
-    if (!role) throw notFound(`No project with id ${projectId}.`);
-    if (!allowed.includes(role)) {
-      throw forbidden(
-        `Your role in this project (${role}) does not permit that operation.`,
-      );
-    }
-    return { project, role };
+    const grant = await policy.requirePermission(
+      context,
+      projectId,
+      permission,
+    );
+    // The policy resolved the project on the way to its decision, so there is no
+    // second read here and no window in which the row could change underneath it.
+    return { project: grant.project, role: grant.role };
   };
 
   const writeAudit = async (
@@ -277,16 +288,16 @@ export function createProjectCatalog(
   return {
     async listProjects(context) {
       const listings = await projects.listForUser(context.principal.userId);
-      const restricted = context.principal.projectIds;
-      if (restricted === undefined || restricted.length === 0) return listings;
+      const restricted = restrictionOf(context.principal);
+      if (restricted === null) return listings;
       return listings.filter((entry) => restricted.includes(entry.project.id));
     },
 
     async getProject(context, projectId) {
-      const { project, role } = await requireRole(
+      const { project, role } = await requirePermission(
         context,
         projectId,
-        READ_ROLES,
+        "project:read",
       );
       const listing = (
         await projects.listForUser(context.principal.userId)
@@ -296,6 +307,15 @@ export function createProjectCatalog(
         role,
         resourceCount: listing?.resourceCount ?? 0,
       };
+    },
+
+    async describeAccess(context, projectId) {
+      const { role } = await requirePermission(
+        context,
+        projectId,
+        "project:read",
+      );
+      return { projectId, role, permissions: grantedPermissions(role) };
     },
 
     async createProject(context, input) {
@@ -317,7 +337,7 @@ export function createProjectCatalog(
     },
 
     async updateProject(context, projectId, changes) {
-      await requireRole(context, projectId, ADMIN_ROLES);
+      await requirePermission(context, projectId, "project:admin");
       if (
         changes.slug !== undefined &&
         !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(changes.slug)
@@ -335,7 +355,7 @@ export function createProjectCatalog(
     },
 
     async deleteProject(context, projectId) {
-      await requireRole(context, projectId, ADMIN_ROLES);
+      await requirePermission(context, projectId, "project:admin");
       // The database cascades members and resource rows; the files are removed
       // explicitly, because a volume is not part of a transaction.
       const store = storage(projectId);
@@ -351,7 +371,7 @@ export function createProjectCatalog(
     },
 
     async setMember(context, projectId, userId, role) {
-      await requireRole(context, projectId, ADMIN_ROLES);
+      await requirePermission(context, projectId, "project:admin");
       await projects.setMember(projectId, userId, role);
       await writeAudit(context, {
         action: "project.member.added",
@@ -360,7 +380,11 @@ export function createProjectCatalog(
     },
 
     async removeMember(context, projectId, userId) {
-      const { project } = await requireRole(context, projectId, ADMIN_ROLES);
+      const { project } = await requirePermission(
+        context,
+        projectId,
+        "project:admin",
+      );
       if (project.ownerId === userId) {
         throw invalid(
           "The project owner cannot be removed. Transfer ownership first.",
@@ -374,20 +398,20 @@ export function createProjectCatalog(
     },
 
     async listResources(context, projectId) {
-      await requireRole(context, projectId, READ_ROLES);
+      await requirePermission(context, projectId, "project:read");
       const records = await projects.listResources(projectId);
       return records.map(toCatalogResource);
     },
 
     async getResource(context, projectId, resourceId) {
-      await requireRole(context, projectId, READ_ROLES);
+      await requirePermission(context, projectId, "project:read");
       const record = await projects.findResource(projectId, resourceId);
       if (!record) throw notFound(`No resource with id ${resourceId}.`);
       return toCatalogResource(record);
     },
 
     async readResource(context, projectId, resourceId) {
-      await requireRole(context, projectId, READ_ROLES);
+      await requirePermission(context, projectId, "project:read");
       const record = await projects.findResource(projectId, resourceId);
       if (!record) throw notFound(`No resource with id ${resourceId}.`);
       const read = await storage(projectId).read(record.path);
@@ -404,7 +428,7 @@ export function createProjectCatalog(
     },
 
     async createResource(context, projectId, input) {
-      await requireRole(context, projectId, WRITE_ROLES);
+      await requirePermission(context, projectId, "resource:write");
       const existing = await withPath(() =>
         projects.findResourceByPath(projectId, input.path),
       );
@@ -429,7 +453,7 @@ export function createProjectCatalog(
     },
 
     async updateResource(context, projectId, resourceId, input) {
-      await requireRole(context, projectId, WRITE_ROLES);
+      await requirePermission(context, projectId, "resource:write");
       const record = await projects.findResource(projectId, resourceId);
       if (!record) throw notFound(`No resource with id ${resourceId}.`);
 
@@ -464,7 +488,7 @@ export function createProjectCatalog(
     },
 
     async moveResource(context, projectId, resourceId, input) {
-      await requireRole(context, projectId, WRITE_ROLES);
+      await requirePermission(context, projectId, "resource:write");
       const record = await projects.findResource(projectId, resourceId);
       if (!record) throw notFound(`No resource with id ${resourceId}.`);
 
@@ -496,7 +520,7 @@ export function createProjectCatalog(
     },
 
     async deleteResource(context, projectId, resourceId) {
-      await requireRole(context, projectId, WRITE_ROLES);
+      await requirePermission(context, projectId, "resource:write");
       const record = await projects.findResource(projectId, resourceId);
       if (!record) throw notFound(`No resource with id ${resourceId}.`);
       const removed = await storage(projectId).remove(record.path);

@@ -433,6 +433,59 @@ describe("resource routes", () => {
   });
 });
 
+describe("the access endpoint", () => {
+  it("reports the caller's role and capabilities", async () => {
+    const owner = await aProject("Capabilities");
+    const access = await call(
+      "GET",
+      `/api/projects/${owner.projectId}/access`,
+      {
+        cookie: owner.cookie,
+      },
+    );
+    expect(access.status).toBe(200);
+    expect(access.body.role).toBe("OWNER");
+    expect(access.body.permissions).toContain("project:admin");
+  });
+
+  it("tells a viewer exactly what it cannot do", async () => {
+    const owner = await aProject("Viewer capabilities");
+    const viewer = await signIn();
+    await call(
+      "PUT",
+      `/api/projects/${owner.projectId}/members/${viewer.userId}`,
+      {
+        cookie: owner.cookie,
+        body: { role: "VIEWER" },
+      },
+    );
+    const access = await call(
+      "GET",
+      `/api/projects/${owner.projectId}/access`,
+      {
+        cookie: viewer.cookie,
+      },
+    );
+    expect(access.body.role).toBe("VIEWER");
+    expect(access.body.permissions).toContain("resource:read");
+    expect(access.body.permissions).not.toContain("resource:write");
+    expect(access.body.permissions).not.toContain("project:admin");
+  });
+
+  it("is invisible to a non-member", async () => {
+    const owner = await aProject("Private capabilities");
+    const stranger = await signIn();
+    const access = await call(
+      "GET",
+      `/api/projects/${owner.projectId}/access`,
+      {
+        cookie: stranger.cookie,
+      },
+    );
+    expect(access.status).toBe(404);
+  });
+});
+
 describe("the audit trail over HTTP", () => {
   it("records what a session did, with the correlation id and no secrets", async () => {
     const user = await signIn();

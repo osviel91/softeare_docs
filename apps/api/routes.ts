@@ -139,6 +139,21 @@ export function createRouter(dependencies: AppDependencies): Router {
     }),
   );
 
+  /**
+   * What the caller may do in this project.
+   *
+   * Advisory only: it spares the browser a round of failed writes and lets a UI
+   * hide what it cannot do, but every operation re-checks authorization inside
+   * its use case.
+   */
+  router.get("/api/projects/:projectId/access", async (request, params) =>
+    guarded(correlationId(request), async () => {
+      const context = await contextOf(request);
+      const access = await catalog.describeAccess(context, params.projectId);
+      return json(200, access);
+    }),
+  );
+
   // ---- Membership -----------------------------------------------------------
 
   router.put(

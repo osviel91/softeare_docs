@@ -24,6 +24,7 @@ import { correlationId } from "./http/node-server";
 import { requireContext, resolveSession } from "./context";
 import { createAuthRoutes, oidcClientFor } from "./auth/routes";
 import { registerPersonalAccessTokenRoutes } from "./pat/routes";
+import { registerRemoteMcpRoutes } from "./mcp/routes";
 import type { ProjectRole } from "../../src/domain/access/permissions";
 import { isProjectRole } from "../../src/domain/access/permissions";
 import { invalid } from "../../src/application/errors";
@@ -292,6 +293,13 @@ export function createRouter(dependencies: AppDependencies): Router {
   // credentials. The routes live in their own module because the surface has a
   // different threat model from project editing, not merely different URLs.
   registerPersonalAccessTokenRoutes(router, dependencies);
+
+  // ---- Remote MCP -----------------------------------------------------------
+  //
+  // A machine surface, authenticated exclusively by a bearer PAT. It reaches
+  // the same catalog the routes above call, so an agent and a browser cannot
+  // disagree about authorization, isolation or revisions.
+  registerRemoteMcpRoutes(router, dependencies);
 
   return router;
 }

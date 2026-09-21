@@ -19,6 +19,7 @@
 import type { ApplicationContext } from "./context";
 import {
   ApplicationError,
+  forbidden,
   invalid,
   notFound,
   revisionConflict,
@@ -251,7 +252,10 @@ async function withPath<T>(work: () => Promise<T>): Promise<T> {
     return await work();
   } catch (error) {
     if (error instanceof InvalidResourcePathError) {
-      throw invalid(error.message);
+      // The `kind` is machine-readable on purpose: a transport can tell "this
+      // path is not allowed" from an ordinary validation failure without
+      // parsing an English message, and an MCP agent can act on it.
+      throw invalid(error.message, { kind: "invalid_path" });
     }
     throw error;
   }
@@ -388,6 +392,15 @@ export function createProjectCatalog(
     },
 
     async createProject(context, input) {
+      // There is no project to resolve a role in yet, so the credential's own
+      // capability is the whole check. A session carries the full vocabulary; a
+      // read-only machine token does not, which keeps project creation a
+      // privileged act even where a transport exposes it.
+      if (!credentialGrants(context.principal, "project:write")) {
+        throw forbidden(
+          "This credential does not carry the project:write permission.",
+        );
+      }
       const name = input.name.trim();
       if (name === "") throw invalid("A project name is required.");
       const project = await projects.create({

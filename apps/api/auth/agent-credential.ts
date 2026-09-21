@@ -11,85 +11,38 @@
  *   configuration. It is presented explicitly in `Authorization: Bearer …`, and
  *   it is *never* accepted from a cookie or a query parameter.
  *
- * ## Format
+ * ## Phase 6: this module is now an adapter, not an implementation
  *
- * ```
- * sdm_pat_<publicPrefix>.<secret>
- * ```
- *
- * `publicPrefix` is 16 hex characters (64 bits) and is public: it is the
- * indexed key a credential row is found by. `secret` is 43 base64url characters
- * (256 bits of CSPRNG) and is compared only through its digest, in constant
- * time. The `.` separator (rather than the `_` the mission sketches) is chosen
- * because base64url secrets themselves contain `_`, which would make the split
- * ambiguous. Nothing about the secret is logged, returned by a read, or stored.
- *
- * ## Hash-at-rest
- *
- * The digest is `HMAC-SHA-256(server pepper, full token)` — a keyed, reviewed
- * construction, not a custom one. The pepper is a deployment secret
- * (`TOKEN_PEPPER`, defaulting to the cookie secret), so a stolen database alone
- * is not enough to check a guessed token against a stored digest. A slow
- * password hash is unnecessary: the secret is 256 bits of uniform randomness,
- * so there is no dictionary to try and no work factor to buy.
+ * The format, digest, verification and principal construction moved to
+ * `src/persistence/agent-authentication.ts`, because the remote MCP service
+ * needs exactly the same check and hosts may not import each other (ADR-039).
+ * What remains here is the one thing that is genuinely API-shaped: pulling an
+ * `Authorization: Bearer …` value out of this host's {@link ServerRequest}.
+ * There is no second verifier and no second hash — `verifyMcpPat()` does not
+ * exist, which is the mission's item 10.
  */
-import { createHmac, randomBytes } from "node:crypto";
-import type {
-  ApplicationContext,
-  Principal,
-} from "../../../src/application/context";
+import type { ApplicationContext } from "../../../src/application/context";
 import { unauthorized } from "../../../src/application/errors";
 import type { AgentCredentialRepository } from "../../../src/application/ports/agent-repository";
-import type { MintedCredential } from "../../../src/application/agent-service";
-import type {
-  AgentCredential,
-  AgentIdentity,
-} from "../../../src/domain/agent/agent";
-import { isCredentialUsable } from "../../../src/domain/agent/agent";
-import { permissionsOfCredentialScopes } from "../../../src/domain/access/permissions";
-import { constantTimeEquals } from "./secret-compare";
-import type { ServerRequest } from "../http/http";
+import {
+  authenticateBearerToken,
+  createPatBearerVerifier,
+  resolveAgentCredentialToken,
+  type AgentCredentialLookup,
+} from "../../../src/persistence/agent-authentication";
 import { correlationId } from "../http/node-server";
+import type { ServerRequest } from "../http/http";
 
-/** The literal a credential starts with, so a leaked string is recognisable. */
-export const AGENT_TOKEN_PREFIX = "sdm_pat_";
-
-/** The bytes of randomness in a token secret (256 bits). */
-export const AGENT_SECRET_BYTES = 32;
-
-/** The bytes of randomness in the public prefix (64 bits). */
-export const AGENT_PREFIX_BYTES = 8;
-
-/** The regular expression a well-formed credential matches. */
-const AGENT_TOKEN_PATTERN = new RegExp(
-  `^${AGENT_TOKEN_PREFIX}([0-9a-f]{${AGENT_PREFIX_BYTES * 2}})\\.([A-Za-z0-9_-]{20,128})$`,
-);
-
-/** Hash a full token string for storage or verification, keyed by the pepper. */
-export function hashAgentToken(pepper: string, token: string): string {
-  return createHmac("sha256", pepper).update(token, "utf8").digest("hex");
-}
-
-/** The public prefix of a well-formed token, or `null`. */
-export function agentPrefixOf(token: string): string | null {
-  const match = AGENT_TOKEN_PATTERN.exec(token);
-  return match === null ? null : match[1];
-}
-
-/**
- * A minting function bound to the deployment's pepper.
- *
- * The service calls it for each new credential; the returned plaintext is shown
- * once and the digest is what is stored.
- */
-export function createCredentialMint(pepper: string): () => MintedCredential {
-  return () => {
-    const publicPrefix = randomBytes(AGENT_PREFIX_BYTES).toString("hex");
-    const secret = randomBytes(AGENT_SECRET_BYTES).toString("base64url");
-    const token = `${AGENT_TOKEN_PREFIX}${publicPrefix}.${secret}`;
-    return { token, publicPrefix, secretHash: hashAgentToken(pepper, token) };
-  };
-}
+export {
+  AGENT_PREFIX_BYTES,
+  AGENT_SECRET_BYTES,
+  AGENT_TOKEN_PREFIX,
+  agentPrefixOf,
+  createCredentialMint,
+  hashAgentToken,
+  principalFromCredential,
+  type AgentCredentialLookup,
+} from "../../../src/persistence/agent-authentication";
 
 /** What extracting a bearer credential from a request produced. */
 export type BearerExtraction =
@@ -120,19 +73,11 @@ export function hasBearerCredential(request: ServerRequest): boolean {
   return bearerTokenOf(request).state !== "none";
 }
 
-/** What a credential verification found. */
-export type AgentCredentialLookup =
-  | { state: "none" }
-  | { state: "invalid" }
-  | { state: "valid"; credential: AgentCredential; agent: AgentIdentity };
-
 /**
  * Resolve a bearer credential on a request.
  *
- * A row that is missing, revoked, expired, owned by a disabled agent, or whose
- * digest does not match is `invalid` — the same answer in every case.
- * Distinguishing "expired" from "wrong secret" would tell an attacker that a
- * prefix is real, and the client can do nothing different in either case.
+ * Kept with its Phase 5 signature so existing callers and tests are unchanged;
+ * the work is the shared {@link resolveAgentCredentialToken}.
  */
 export async function resolveAgentCredential(
   credentials: AgentCredentialRepository,
@@ -143,63 +88,7 @@ export async function resolveAgentCredential(
   const extracted = bearerTokenOf(request);
   if (extracted.state === "none") return { state: "none" };
   if (extracted.state === "invalid") return { state: "invalid" };
-
-  const prefix = agentPrefixOf(extracted.token);
-  if (prefix === null) return { state: "invalid" };
-
-  const found = await credentials.findByPrefix(prefix);
-  if (!found) return { state: "invalid" };
-  if (
-    !constantTimeEquals(
-      found.credential.secretHash,
-      hashAgentToken(pepper, extracted.token),
-    )
-  ) {
-    return { state: "invalid" };
-  }
-  if (!isCredentialUsable(found.credential, found.agent, now())) {
-    return { state: "invalid" };
-  }
-
-  // Recording use is best-effort: a write failure must not fail a request that
-  // is otherwise authorized, exactly as `sessions.touch` is best-effort.
-  await credentials.touch(found.credential.id).catch(() => {});
-  return {
-    state: "valid",
-    credential: found.credential,
-    agent: found.agent,
-  };
-}
-
-/**
- * The principal a credential produces.
- *
- * The *subject* is the agent's owner: authorization reasons about the owner's
- * live membership and can never be widened by the credential. The *actor* is
- * the agent, so the audit trail can say which automation acted.
- */
-export function principalFromCredential(
-  credential: AgentCredential,
-  agent: AgentIdentity,
-): Principal {
-  const principal: Principal = {
-    subjectUserId: agent.ownerUserId,
-    actor: {
-      kind: "agent",
-      agentId: agent.id,
-      credentialId: credential.id,
-    },
-    authType: "pat",
-    scopes: permissionsOfCredentialScopes(credential.scopes),
-    displayName: agent.name,
-  };
-  if (
-    credential.allowedProjectIds !== null &&
-    credential.allowedProjectIds.length > 0
-  ) {
-    principal.allowedProjectIds = [...credential.allowedProjectIds];
-  }
-  return principal;
+  return resolveAgentCredentialToken(credentials, extracted.token, pepper, now);
 }
 
 /**
@@ -209,6 +98,10 @@ export function principalFromCredential(
  * surface, and letting an ambient browser cookie authenticate it would turn a
  * same-site `fetch` into an agent call.
  *
+ * The token goes through the shared verifier chain — built here with the PAT
+ * verifier alone. Phase 7 appends an OAuth verifier to the same chain and
+ * neither this function's callers nor the application layer change.
+ *
  * @throws {ApplicationError} `unauthorized` when no usable credential was presented.
  */
 export async function requireBearerContext(
@@ -217,20 +110,19 @@ export async function requireBearerContext(
   pepper: string,
   now?: () => Date,
 ): Promise<ApplicationContext> {
-  const lookup = await resolveAgentCredential(
-    credentials,
-    request,
-    pepper,
-    now,
-  );
-  if (lookup.state === "none") {
+  const extracted = bearerTokenOf(request);
+  if (extracted.state === "none") {
     throw unauthorized("A personal access token is required.");
   }
-  if (lookup.state === "invalid") {
+  if (extracted.state === "invalid") {
     throw unauthorized("The personal access token is invalid or has expired.");
   }
-  return {
-    requestId: correlationId(request),
-    principal: principalFromCredential(lookup.credential, lookup.agent),
-  };
+  const verifier = createPatBearerVerifier(credentials, pepper, {
+    ...(now === undefined ? {} : { now }),
+  });
+  const principal = await authenticateBearerToken([verifier], extracted.token);
+  if (principal === null) {
+    throw unauthorized("The personal access token is invalid or has expired.");
+  }
+  return { requestId: correlationId(request), principal };
 }

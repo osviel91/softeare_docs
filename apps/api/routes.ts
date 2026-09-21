@@ -26,7 +26,6 @@ import { hasBearerCredential } from "./auth/agent-credential";
 import { resolveSession } from "./context";
 import { createAuthRoutes, oidcClientFor } from "./auth/routes";
 import { registerAgentRoutes } from "./agents/routes";
-import { registerRemoteMcpRoutes } from "./mcp/routes";
 import type { ProjectRole } from "../../src/domain/access/permissions";
 import { isProjectRole } from "../../src/domain/access/permissions";
 import { invalid } from "../../src/application/errors";
@@ -49,14 +48,24 @@ export function createRouter(dependencies: AppDependencies): Router {
   const contextOf = (request: ServerRequest) =>
     requireApiContext(dependencies, request);
 
-  router.get("/healthz", async () =>
+  /**
+   * Liveness and readiness.
+   *
+   * `/health` is the name the MCP service uses and the one the container
+   * composition probes; `/healthz` is kept because the local server composition
+   * and the E2E harness already use it. Both check the database, so either can
+   * back a readiness probe.
+   */
+  const health = async () =>
     json(200, {
       status: "ok",
       environment: config.environment,
       database: (await dependencies.ping()) ? "ok" : "unavailable",
       signIn: signInConfigured ? "oidc" : "unconfigured",
-    }),
-  );
+    });
+
+  router.get("/health", health);
+  router.get("/healthz", health);
 
   // ---- Authentication -------------------------------------------------------
 
@@ -313,10 +322,12 @@ export function createRouter(dependencies: AppDependencies): Router {
 
   // ---- Remote MCP -----------------------------------------------------------
   //
-  // A machine surface, authenticated exclusively by a bearer PAT. It reaches
-  // the same catalog the routes above call, so an agent and a browser cannot
-  // disagree about authorization, isolation or revisions.
-  registerRemoteMcpRoutes(router, dependencies);
+  // Deliberately absent. Phase 6 made the remote MCP a separate service with its
+  // own image, port and security policy (`apps/mcp`), reachable only over its
+  // own hostname. It shares this host's application layer through
+  // `src/persistence/server-runtime.ts` and calls no API route over HTTP, so
+  // there is nothing to mount here and no second copy of the agent surface on a
+  // browser-facing origin.
 
   return router;
 }

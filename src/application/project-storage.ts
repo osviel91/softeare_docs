@@ -69,6 +69,18 @@ export interface ProjectStorage {
    */
   move(move: ResourceMove): Promise<Result<StoredResource, Error>>;
 
+  /**
+   * Atomically move `from` onto `to`, replacing whatever is at `to`.
+   *
+   * This is the completion step of the workspace operation journal (Phase 6):
+   * the new bytes are written to a hidden staging path first and committed to
+   * the resource's real path only after the database has durably recorded the
+   * intent. Unlike {@link move}, it is *meant* to overwrite — the target is the
+   * document being updated — and the replacement is atomic, so a reader sees the
+   * old bytes or the new ones and never a half-written file.
+   */
+  promote(move: ResourceMove): Promise<Result<StoredResource, Error>>;
+
   /** Whether a document exists at this path. */
   exists(path: string): Promise<boolean>;
 

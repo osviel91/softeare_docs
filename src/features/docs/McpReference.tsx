@@ -175,6 +175,31 @@ npm run mcp         # build, then run it on the current directory`}</CodeBlock>
         </p>
       </Group>
 
+      <Group title="Remote service (Phase 6)" testId="mcp-remote">
+        <p className="ref__summary">
+          The same engine is also served as an <em>independently deployable</em>{" "}
+          HTTPS service for agents that cannot run a local process. It is a
+          separate host with its own image, port and hostname, it shares the
+          API&apos;s application layer rather than calling it over HTTP, and it
+          is stateless: every request carries its own credential, so no sticky
+          session is needed.
+        </p>
+        <CodeBlock>{`npm run mcp:service:build
+DATABASE_URL=postgres://... MCP_PUBLIC_URL=https://mcp.example.com \
+TOKEN_PEPPER="$(openssl rand -base64 48)" \
+node dist-mcp-service/server.mjs`}</CodeBlock>
+        <p className="ref__summary">
+          Every request must present{" "}
+          <code>Authorization: Bearer sdm_pat_…</code>; there are no anonymous
+          tools and a browser session cookie is never accepted. Prefer the
+          semantic tools — <code>upsert_sequence_diagram</code>,{" "}
+          <code>upsert_documentation</code>, <code>validate_project</code> —
+          which parse and validate before they persist and accept an{" "}
+          <code>idempotencyKey</code> so a retry is safe. OAuth-based
+          authorization discovery arrives in a later phase.
+        </p>
+      </Group>
+
       <Group title="Safety" testId="mcp-safety">
         <ul className="ref__list ref__list--bullets">
           <li>

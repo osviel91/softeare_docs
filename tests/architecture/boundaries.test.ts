@@ -123,12 +123,25 @@ describe("dependency rule (ADR-039)", () => {
     expect(found).toEqual([]);
   });
 
-  it("stops the MCP host from importing the API host and vice versa", async () => {
+  /**
+   * Phase 6 split the hosts into `mcp` (the published stdio tool), `apps/api`
+   * and `apps/mcp` (the remote service). None of them may import another: they
+   * meet in `src/`, never by reaching across.
+   */
+  it("stops any host from importing another host", async () => {
     const hosts = [
       ...(await filesUnder(path.join(ROOT, "mcp"))),
       ...(await filesUnder(path.join(ROOT, "apps"))),
     ];
+    const owner = (relative: string): string | null => {
+      if (relative.startsWith("mcp/")) return "mcp";
+      if (relative.startsWith("apps/api/")) return "apps/api";
+      if (relative.startsWith("apps/mcp/")) return "apps/mcp";
+      return null;
+    };
     const found = await violations(hosts, (relative, specifier) => {
+      const mine = owner(relative);
+      if (mine === null) return false;
       const target = path
         .relative(
           ROOT,
@@ -136,9 +149,8 @@ describe("dependency rule (ADR-039)", () => {
         )
         .split(path.sep)
         .join("/");
-      if (relative.startsWith("mcp/")) return target.startsWith("apps/");
-      if (relative.startsWith("apps/")) return target.startsWith("mcp/");
-      return false;
+      const theirs = owner(target);
+      return theirs !== null && theirs !== mine;
     });
     expect(found).toEqual([]);
   });
@@ -202,6 +214,39 @@ describe("the application layer exists and is reachable", () => {
     ]) {
       const info = await stat(path.join(ROOT, "src/application/ports", name));
       expect(info.isFile()).toBe(true);
+    }
+  });
+});
+
+describe("the API and MCP hosts converge on one application stack", () => {
+  /**
+   * Phase 6 §25–26: the two server hosts must share their persistence and
+   * mutation wiring rather than each building their own. The test reads the
+   * composition roots and asserts both go through the shared runtime, which is
+   * the structural half of "no MCP-specific persistence bypass".
+   */
+  it("builds both hosts from the shared server runtime", async () => {
+    for (const file of ["apps/api/app.ts", "apps/mcp/app.ts"]) {
+      const source = await readFile(path.join(ROOT, file), "utf8");
+      expect(source).toContain("createServerRuntime");
+    }
+  });
+
+  it("routes both hosts' resource mutations through the journal", async () => {
+    const catalog = await readFile(
+      path.join(ROOT, "src/application/project-catalog.ts"),
+      "utf8",
+    );
+    // The catalog delegates its resource mutations rather than implementing
+    // them, so every adapter that reaches the catalog gets the journal.
+    expect(catalog).toContain("createWorkspaceMutationService");
+    for (const method of [
+      "createResource",
+      "updateResource",
+      "moveResource",
+      "deleteResource",
+    ]) {
+      expect(catalog).toContain(`requireMutations().${method}`);
     }
   });
 });

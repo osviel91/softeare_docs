@@ -1,0 +1,8 @@
+{
+  "//": "The remote MCP service (Phase 6). It compiles its own sources together with every src/ module they reach, exactly as the API host does.",
+  "extends": "../../tsconfig.src.json",
+  "compilerOptions": {
+    "lib": ["ES2023", "DOM"]
+  },
+  "include": [".", "../src/**/*.ts"]
+}

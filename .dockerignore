@@ -1,6 +1,8 @@
 node_modules
 dist
 dist-mcp
+dist-api
+dist-mcp-service
 coverage
 .npm-cache
 *.log

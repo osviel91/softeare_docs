@@ -25,6 +25,10 @@
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo"
   },
   "include": ["src", "tests"],
-  "exclude": ["tests/architecture", "tests/api", "tests/persistence"],
-  "exclude": ["tests/persistence", "tests/api", "tests/architecture"]
+  "exclude": [
+    "tests/persistence",
+    "tests/api",
+    "tests/architecture",
+    "tests/mcp"
+  ]
 }

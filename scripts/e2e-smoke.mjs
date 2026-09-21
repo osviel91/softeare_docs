@@ -21,6 +21,7 @@
  * `npx playwright install chromium`; see the README "Testing in a real browser".
  */
 import { spawn } from "node:child_process";
+import { pathToFileURL } from "node:url";
 import { existsSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { createServer as createNetServer } from "node:net";
@@ -49,6 +50,7 @@ const UI_TIMEOUT_MS = 10_000;
  */
 const API_PORT = Number(process.env.E2E_API_PORT ?? 8787);
 const IDP_PORT = Number(process.env.E2E_IDP_PORT ?? 8788);
+const MCP_PORT = Number(process.env.E2E_MCP_PORT ?? 8789);
 
 /**
  * The secret the API signs its login-state cookie with.
@@ -217,60 +219,138 @@ async function startApiServer({
   clientId,
   clientSecret,
 }) {
-  const entry = join(ROOT, "dist-api", "server.mjs");
-  if (!existsSync(entry)) {
-    throw new Error(
-      "dist-api/server.mjs is missing; run `npm run api:build` first (npm run test:e2e does it for you).",
-    );
-  }
-
-  const child = trackChild(
-    spawn(process.execPath, [entry], {
-      cwd: ROOT,
-      stdio: ["ignore", "pipe", "pipe"],
-      env: {
-        ...process.env,
-        NODE_ENV: "test",
-        HOST: "127.0.0.1",
-        PORT: String(port),
-        PUBLIC_URL: BASE_URL,
-        PROJECT_VOLUME: projectVolume,
-        PGLITE_DIR: "memory://",
-        COOKIE_SECRET,
-        OIDC_ISSUER: issuer,
-        OIDC_CLIENT_ID: clientId,
-        OIDC_CLIENT_SECRET: clientSecret,
-      },
-    }),
+  const apiBundle = await import(
+    pathToFileURL(join(ROOT, "dist-api", "server.mjs")).href
   );
 
-  let log = "";
-  child.stdout.on("data", (chunk) => (log += chunk));
-  child.stderr.on("data", (chunk) => (log += chunk));
+  const config = apiBundle.loadConfig({
+    NODE_ENV: "test",
+    HOST: "127.0.0.1",
+    PORT: String(port),
+    PUBLIC_URL: BASE_URL,
+    PROJECT_VOLUME: projectVolume,
+    PGLITE_DIR: "memory://",
+    COOKIE_SECRET,
+    OIDC_ISSUER: issuer,
+    OIDC_CLIENT_ID: clientId,
+    OIDC_CLIENT_SECRET: clientSecret,
+  });
+
+  // The runtime is built here and *shared* with the MCP service below, so both
+  // hosts read and write one database and one project volume. That is the only
+  // way the browser↔MCP scenario can prove consistency with an in-process
+  // PGlite, which no second process can open.
+  const runtime = await apiBundle.createServerRuntime({
+    database: config.database,
+    projectVolume: config.projectVolume,
+    tokenPepper: config.tokenPepper,
+  });
+  const dependencies = await apiBundle.createApp(config, { runtime });
+  const server = apiBundle.createHttpServer({
+    router: apiBundle.createRouter(dependencies),
+    expectedOrigin: config.publicUrl,
+    onError(error, requestId) {
+      process.stderr.write(
+        `${requestId} unhandled error: ${error?.stack ?? error}\n`,
+      );
+    },
+  });
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(port, "127.0.0.1", () => resolve());
+  });
 
   const apiBase = `http://127.0.0.1:${port}`;
   const deadline = Date.now() + READY_TIMEOUT_MS;
   while (Date.now() < deadline) {
-    if (child.exitCode !== null) {
-      throw new Error(
-        `the API exited with code ${child.exitCode}:\n${log.trim()}`,
-      );
-    }
     try {
       const response = await fetch(`${apiBase}/healthz`);
       if (response.ok) {
         const health = await response.json();
-        if (health.status === "ok" && health.signIn === "oidc") return child;
+        if (health.status === "ok" && health.signIn === "oidc") {
+          return {
+            runtime,
+            config,
+            apiBase,
+            async close() {
+              await new Promise((resolve) => server.close(resolve));
+              await apiBundle.closeApp(dependencies);
+            },
+          };
+        }
       }
     } catch {
       // Not listening yet; keep polling.
     }
     await delay(150);
   }
-
-  child.kill("SIGTERM");
   throw new Error(
-    `the API did not report {status:"ok", signIn:"oidc"} within ${READY_TIMEOUT_MS}ms:\n${log.trim()}`,
+    `the API did not report {status:"ok", signIn:"oidc"} within ${READY_TIMEOUT_MS}ms`,
+  );
+}
+
+/**
+ * Start the real MCP service in-process, over the API's own runtime.
+ *
+ * Phase 6 made the MCP a separate host with its own image and port; running it
+ * here in the same process is a test convenience, not an architectural
+ * concession — it is still a real HTTP listener with the real handler, the real
+ * SDK transport and the real authentication, and it shares storage with the API
+ * the way the container composition does through PostgreSQL.
+ */
+async function startMcpService({ port, runtime, publicUrl, projectVolume }) {
+  const mcpBundle = await import(
+    pathToFileURL(join(ROOT, "dist-mcp-service", "server.mjs")).href
+  );
+  const config = mcpBundle.loadMcpConfig({
+    NODE_ENV: "test",
+    HOST: "127.0.0.1",
+    PORT: String(port),
+    MCP_PUBLIC_URL: publicUrl,
+    PROJECT_VOLUME: projectVolume,
+    PGLITE_DIR: "memory://",
+    TOKEN_PEPPER: `e2e-pepper-${COOKIE_SECRET}`,
+  });
+  const service = await mcpBundle.createMcpService(config, {
+    runtime,
+    logger: { log: () => {} },
+  });
+  const server = mcpBundle.createMcpHttpServer({
+    config,
+    observability: service.observability,
+    handleMcp: service.handleMcp,
+    ready: service.ready,
+    onError(error, requestId) {
+      process.stderr.write(`${requestId} mcp error: ${error}\n`);
+    },
+  });
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(port, "127.0.0.1", () => resolve());
+  });
+  const mcpBase = `http://127.0.0.1:${port}`;
+
+  const deadline = Date.now() + READY_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(`${mcpBase}/health`);
+      if (response.ok) {
+        return {
+          mcpBase,
+          config,
+          async close() {
+            await new Promise((resolve) => server.close(resolve));
+            await service.close();
+          },
+        };
+      }
+    } catch {
+      // Not listening yet; keep polling.
+    }
+    await delay(150);
+  }
+  throw new Error(
+    `the MCP service did not become healthy within ${READY_TIMEOUT_MS}ms`,
   );
 }
 
@@ -324,11 +404,14 @@ async function serverProjectByName(page, projectName) {
  * it is a machine credential on a different axis from the browser session, and
  * a test that borrowed the page's session would not prove it.
  */
-async function remoteMcp(apiBase, token, message) {
-  const response = await fetch(`${apiBase}/mcp`, {
+async function remoteMcp(baseUrl, token, message) {
+  const response = await fetch(`${baseUrl}/mcp`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
+      // The Streamable HTTP transport requires a client to accept both a JSON
+      // body and an event stream, even when the server only ever sends JSON.
+      accept: "application/json, text/event-stream",
       ...(token === null ? {} : { authorization: `Bearer ${token}` }),
     },
     body: JSON.stringify(message),
@@ -344,8 +427,8 @@ async function remoteMcp(apiBase, token, message) {
 }
 
 /** Call a remote MCP tool and return its result object. */
-async function remoteTool(apiBase, token, id, name, args) {
-  const answer = await remoteMcp(apiBase, token, {
+async function remoteTool(baseUrl, token, id, name, args) {
+  const answer = await remoteMcp(baseUrl, token, {
     jsonrpc: "2.0",
     id,
     method: "tools/call",
@@ -1814,7 +1897,7 @@ async function runChecks(page) {
  * leak between them: two contexts signed in as different people must not share a
  * session, and an anonymous context must genuinely start with no session.
  */
-async function runServerChecks(browser, idp, apiBase) {
+async function runServerChecks(browser, idp, apiBase, mcpBase) {
   const owner = {
     sub: "e2e-owner",
     name: "E2E Owner",
@@ -2422,22 +2505,27 @@ async function runServerChecks(browser, idp, apiBase) {
         if (project === null) throw new Error("Agent Project was not created");
 
         // 2. A machine client authenticates with the credential alone.
-        const handshake = await remoteMcp(apiBase, secret, {
+        const handshake = await remoteMcp(mcpBase, secret, {
           jsonrpc: "2.0",
           id: 1,
           method: "initialize",
-          params: { protocolVersion: "2025-06-18" },
+          // A complete initialize: the SDK's schema requires the client's
+          // capabilities and identity as well as the requested version.
+          params: {
+            protocolVersion: "2025-11-25",
+            capabilities: {},
+            clientInfo: { name: "sequencediagrams-e2e", version: "1.0.0" },
+          },
         });
         check(
           "the agent authenticates with its credential",
           handshake.status === 200 &&
-            handshake.json?.result?.serverInfo?.name ===
-              "sequencediagrams-remote",
+            handshake.json?.result?.serverInfo?.name === "sequencediagrams-mcp",
           `status ${handshake.status}`,
         );
 
         // 3. A read-only credential is not even offered the write tools.
-        const tools = await remoteMcp(apiBase, secret, {
+        const tools = await remoteMcp(mcpBase, secret, {
           jsonrpc: "2.0",
           id: 2,
           method: "tools/list",
@@ -2453,14 +2541,14 @@ async function runServerChecks(browser, idp, apiBase) {
 
         // 4. It reads the document the browser wrote.
         const resources = await remoteTool(
-          apiBase,
+          mcpBase,
           secret,
           3,
           "list_resources",
           { projectId: project.id },
         );
         const resource = resources?.structuredContent?.resources?.[0];
-        const read = await remoteTool(apiBase, secret, 4, "read_resource", {
+        const read = await remoteTool(mcpBase, secret, 4, "read_resource", {
           projectId: project.id,
           resource: resource?.id,
         });
@@ -2470,17 +2558,18 @@ async function runServerChecks(browser, idp, apiBase) {
         );
 
         // 5. It cannot write.
-        const write = await remoteTool(apiBase, secret, 5, "create_resource", {
+        const write = await remoteTool(mcpBase, secret, 5, "create_resource", {
           projectId: project.id,
           path: "agent-created.seq",
           type: "sequence-diagram",
           content: "One ->> Two: nope",
         });
+        // The write tool is not even registered for this credential, so the
+        // refusal is a tool error rather than a successful call.
         check(
           "the read-only credential is refused every write",
-          write?.isError === true &&
-            write?.structuredContent?.error?.code === "forbidden",
-          write?.structuredContent?.error?.code,
+          write?.isError === true,
+          write?.content?.[0]?.text,
         );
 
         // 6. Revoking the credential stops it immediately.
@@ -2498,7 +2587,7 @@ async function runServerChecks(browser, idp, apiBase) {
         );
         check("the credential can be revoked from the agents screen", true);
 
-        const afterRevoke = await remoteMcp(apiBase, secret, {
+        const afterRevoke = await remoteMcp(mcpBase, secret, {
           jsonrpc: "2.0",
           id: 9,
           method: "tools/list",
@@ -2532,7 +2621,10 @@ async function main() {
   // API that belongs to *this* run.
   process.env.SDM_API_TARGET = `http://127.0.0.1:${apiPort}`;
 
+  const mcpPort = await findFreePort(MCP_PORT);
+
   let api;
+  let mcp;
   let server;
   let browser;
   try {
@@ -2542,6 +2634,14 @@ async function main() {
       issuer: idp.issuer,
       clientId: idp.clientId,
       clientSecret: idp.clientSecret,
+    });
+    // The MCP service is a real host on its own port, sharing the API's runtime
+    // so a browser write and an agent read see the same project.
+    mcp = await startMcpService({
+      port: mcpPort,
+      runtime: api.runtime,
+      publicUrl: `http://127.0.0.1:${mcpPort}`,
+      projectVolume,
     });
     server = await startPreviewServer();
     browser = await chromium.launch();
@@ -2553,11 +2653,17 @@ async function main() {
     const checksPage = await checksContext.newPage();
     await runChecks(checksPage);
     await checksContext.close();
-    await runServerChecks(browser, idp, `http://127.0.0.1:${apiPort}`);
+    await runServerChecks(
+      browser,
+      idp,
+      `http://127.0.0.1:${apiPort}`,
+      mcp.mcpBase,
+    );
   } finally {
     await browser?.close().catch(() => {});
     server?.kill("SIGTERM");
-    api?.kill("SIGTERM");
+    await mcp?.close().catch(() => {});
+    await api?.close().catch(() => {});
     await idp.close().catch(() => {});
     await rm(projectVolume, { recursive: true, force: true }).catch(() => {});
   }

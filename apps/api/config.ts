@@ -175,7 +175,7 @@ export function loadConfig(
     port,
     publicUrl,
     cookieSecret,
-    tokenPepper: optional(env, "TOKEN_PEPPER") ?? cookieSecret,
+    tokenPepper: loadTokenPepper(env, cookieSecret, environment),
     sessionTtlSeconds,
     database,
     projectVolume,
@@ -185,6 +185,50 @@ export function loadConfig(
       ? {}
       : { oidcFetch: options.oidcFetch }),
   };
+}
+
+/**
+ * Read the credential pepper, keeping it independent of the cookie secret.
+ *
+ * Phase 5 defaulted `TOKEN_PEPPER` to `COOKIE_SECRET`. That is key reuse across
+ * two different authorities — the cookie secret signs login state, this keys
+ * machine-credential digests — so a leak of one compromises the other and they
+ * cannot rotate independently. Phase 6 §73 removes the fallback in production:
+ * an operator must supply a real, separate pepper, or the server refuses to
+ * start. Development and test keep a fallback so a local run needs no setup, but
+ * it is a *derived* value rather than the cookie secret itself, so the two are
+ * never the same key material even locally.
+ */
+function loadTokenPepper(
+  env: Record<string, string | undefined>,
+  cookieSecret: string,
+  environment: NodeEnvironment,
+): string {
+  const supplied = optional(env, "TOKEN_PEPPER");
+  if (supplied === undefined) {
+    if (environment === "production") {
+      throw new ConfigurationError(
+        "TOKEN_PEPPER is required and must be independent of COOKIE_SECRET (generate one with `openssl rand -base64 48`).",
+      );
+    }
+    // Derived, not equal: a development database's digests are still keyed by
+    // something the cookie secret alone does not reveal.
+    return `dev-token-pepper:${cookieSecret}`;
+  }
+  if (supplied.length < 32) {
+    throw new ConfigurationError(
+      "TOKEN_PEPPER must be at least 32 characters; generate one with `openssl rand -base64 48`.",
+    );
+  }
+  if (
+    environment === "production" &&
+    /^(change|replace|secret|test|dev)/i.test(supplied)
+  ) {
+    throw new ConfigurationError(
+      "TOKEN_PEPPER is still a placeholder. Generate a real secret before deploying.",
+    );
+  }
+  return supplied;
 }
 
 /** Read and validate the OIDC settings, which are all-or-nothing. */

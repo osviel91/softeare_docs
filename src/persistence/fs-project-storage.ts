@@ -282,6 +282,30 @@ export function createFsProjectStorage(
       }
     },
 
+    async promote(move): Promise<Result<StoredResource, Error>> {
+      try {
+        const from = normalizeResourcePath(move.from);
+        const to = normalizeResourcePath(move.to);
+        const source = await resolveInsideRoot(root, from);
+        const destination = await resolveInsideRoot(root, to);
+        await mkdir(path.dirname(destination), {
+          recursive: true,
+          mode: 0o700,
+        });
+        // `rename` replaces an existing destination atomically, which is exactly
+        // the semantics the operation journal's completion step needs.
+        await rename(source, destination);
+        const content = await readFile(destination, "utf8");
+        return ok({
+          path: to,
+          type: resourceTypeOfName(to),
+          content,
+        });
+      } catch (error) {
+        return err(asError(error));
+      }
+    },
+
     async exists(relative: string): Promise<boolean> {
       try {
         const normalized = normalizeResourcePath(relative);

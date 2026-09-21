@@ -18,13 +18,7 @@
  */
 import type { ApplicationContext } from "./context";
 import { actorIdOf, actorTypeOf, credentialIdOf } from "./context";
-import {
-  ApplicationError,
-  forbidden,
-  invalid,
-  notFound,
-  revisionConflict,
-} from "./errors";
+import { ApplicationError, forbidden, invalid, notFound } from "./errors";
 import type {
   ProjectListing,
   ServerProject,
@@ -45,16 +39,21 @@ import type {
 import type { ProjectStorage } from "./project-storage";
 import { InvalidResourcePathError } from "./ports/resource-path";
 import type { AuditAction, AuditRepository } from "./ports/audit-repository";
+import type { WorkspaceOperationRepository } from "./ports/workspace-operation-repository";
+import {
+  createWorkspaceMutationService,
+  type ResourceView,
+  type WorkspaceMutationService,
+} from "./workspace-mutations";
 import type { JsonObject } from "../shared/json/json-value";
 
-/** A resource as the API and MCP surface it: identity, path, type, revision. */
-export interface CatalogResource {
-  id: string;
-  projectId: string;
-  path: string;
-  type: ResourceRecord["type"];
-  revision: number;
-}
+/**
+ * A resource as the API and MCP surface it: identity, path, type, revision.
+ *
+ * Structurally the mutation service's {@link ResourceView}; named here because
+ * this is the vocabulary every host already imports.
+ */
+export type CatalogResource = ResourceView;
 
 /**
  * How to open a project's storage.
@@ -72,6 +71,20 @@ export interface ProjectCatalogOptions {
   storage: ProjectStorageFactory;
   audit?: AuditRepository;
   /**
+   * The durable operation journal every resource mutation commits through.
+   *
+   * Supplying it is what turns a mutation into the Phase 6 sequence — claim the
+   * revision, journal the intent, promote the staged bytes, settle — rather than
+   * a check followed by a write. A test or a host that omits it gets a service
+   * that refuses resource mutations rather than one that silently falls back to
+   * the racy path.
+   */
+  operations?: WorkspaceOperationRepository;
+  /** A pre-built mutation service, for a host that shares one with its provider. */
+  mutations?: WorkspaceMutationService;
+  /** Content digest for the journal's staging verification. */
+  hashContent?: (content: string) => string;
+  /**
    * The authorization policy. Injectable so a test can prove a use case refuses
    * when the policy does — and so a different deployment can supply a different
    * policy without any use case changing.
@@ -80,16 +93,11 @@ export interface ProjectCatalogOptions {
   /**
    * Called when an audit entry could not be written.
    *
-   * An audit write happens *after* the mutation it describes has committed, so
-   * failing the request would tell the caller their change did not happen when it
-   * did — worse than the missing row. The failure is therefore reported here and
-   * swallowed, which is what makes it observable without being a lie. The default
-   * writes to stderr, so a deployment that forgets to inject a reporter still
-   * sees the problem in its logs.
-   *
-   * The durable fix is a transactional outbox, where the audit row commits with
-   * the mutation instead of after it. That is Phase 6 work, recorded in
-   * `docs/plan/server-migration-4.md`.
+   * Project and membership mutations still write their audit entry after the
+   * change, because their whole change is one database transaction that the
+   * audit row cannot join through this port. Resource mutations no longer take
+   * this path at all: their audit row commits *with* the change, inside the
+   * operation journal's transaction.
    */
   onAuditFailure?: (error: unknown, event: AuditFailureContext) => void;
 }
@@ -204,11 +212,22 @@ export interface ProjectCatalog {
     resourceId: string,
   ): Promise<{ resource: CatalogResource; content: string }>;
 
-  /** Create a resource, refusing a path that is already taken. */
+  /**
+   * Create a resource, refusing a path that is already taken.
+   *
+   * `idempotencyKey` is optional; when present, a retry with the same key by the
+   * same actor in the same project returns the first result instead of creating a
+   * second resource.
+   */
   createResource(
     context: ApplicationContext,
     projectId: string,
-    input: { path: string; type: ResourceRecord["type"]; content: string },
+    input: {
+      path: string;
+      type: ResourceRecord["type"];
+      content: string;
+      idempotencyKey?: string;
+    },
   ): Promise<CatalogResource>;
 
   /**
@@ -221,7 +240,11 @@ export interface ProjectCatalog {
     context: ApplicationContext,
     projectId: string,
     resourceId: string,
-    input: { content: string; expectedRevision: number },
+    input: {
+      content: string;
+      expectedRevision: number;
+      idempotencyKey?: string;
+    },
   ): Promise<CatalogResource>;
 
   /** Move a resource to another path, keeping its id. */
@@ -229,7 +252,11 @@ export interface ProjectCatalog {
     context: ApplicationContext,
     projectId: string,
     resourceId: string,
-    input: { path: string; expectedRevision: number },
+    input: {
+      path: string;
+      expectedRevision: number;
+      idempotencyKey?: string;
+    },
   ): Promise<CatalogResource>;
 
   /** Delete a resource's file and its record. */
@@ -237,6 +264,7 @@ export interface ProjectCatalog {
     context: ApplicationContext,
     projectId: string,
     resourceId: string,
+    input?: { expectedRevision?: number; idempotencyKey?: string },
   ): Promise<void>;
 }
 
@@ -247,8 +275,12 @@ export interface ProjectCatalog {
  * `Result`, because a traversal attempt is a programming or hostile input error,
  * not a value a caller branches on. Translating it here is what keeps that
  * detail out of every transport.
+ *
+ * Resource mutations now take this path inside the mutation service; this
+ * re-export keeps the translation available to the project-level use cases that
+ * still run here.
  */
-async function withPath<T>(work: () => Promise<T>): Promise<T> {
+export async function withPath<T>(work: () => Promise<T>): Promise<T> {
   try {
     return await work();
   } catch (error) {
@@ -280,6 +312,39 @@ export function createProjectCatalog(
   const { projects, storage, audit } = options;
   const policy =
     options.policy ?? createAuthorizationPolicy<ServerProject>(projects);
+
+  /**
+   * The one authoritative resource-mutation path (Phase 6 §25–33).
+   *
+   * A host may inject a pre-built service so the catalog and the documentation
+   * provider cannot end up with two; otherwise it is built here from the same
+   * repositories. A host that supplies neither gets a catalog that refuses
+   * resource mutations loudly rather than a second, racy implementation.
+   */
+  const mutations: WorkspaceMutationService | null =
+    options.mutations ??
+    (options.operations === undefined
+      ? null
+      : createWorkspaceMutationService({
+          projects,
+          storage,
+          operations: options.operations,
+          policy,
+          ...(options.hashContent === undefined
+            ? {}
+            : { hashContent: options.hashContent }),
+        }));
+
+  /** The mutation service, or a refusal that names the misconfiguration. */
+  const requireMutations = (): WorkspaceMutationService => {
+    if (mutations === null) {
+      throw new ApplicationError(
+        "internal",
+        "This deployment has no workspace operation journal, so resource mutations are disabled.",
+      );
+    }
+    return mutations;
+  };
 
   /**
    * Authorize an operation, then hand back the project it acted on.
@@ -343,17 +408,6 @@ export function createProjectCatalog(
       (options.onAuditFailure ?? reportAuditFailure)(error, failureContext);
     }
   };
-
-  const conflict = (
-    resourceId: string,
-    expectedRevision: number,
-    currentRevision: number,
-  ): ApplicationError =>
-    revisionConflict(
-      expectedRevision,
-      currentRevision,
-      `Resource ${resourceId} changed since it was read: expected revision ${expectedRevision}, current revision ${currentRevision}. Re-read it and retry.`,
-    );
 
   return {
     async listProjects(context) {
@@ -518,139 +572,44 @@ export function createProjectCatalog(
       };
     },
 
-    async createResource(context, projectId, input) {
-      await requirePermission(context, projectId, "resource:create");
-      const existing = await withPath(() =>
-        projects.findResourceByPath(projectId, input.path),
-      );
-      if (existing) {
-        throw new ApplicationError(
-          "conflict",
-          `A resource already exists at "${existing.path}" (id: ${existing.id}).`,
-        );
-      }
-      const written = await storage(projectId).write(input.path, input.content);
-      if (!written.ok) throw invalid(written.error.message);
-      const record = await projects.createResource(projectId, {
-        path: written.value.path,
-        type: input.type,
-      });
-      await writeAudit(context, {
-        action: "resource.created",
-        projectId,
-        resourceId: record.id,
-      });
-      return toCatalogResource(record);
+    /**
+     * Create a resource through the one authoritative mutation path.
+     *
+     * Everything below this line — authorization, staging, the revision claim,
+     * the durable journal record, the transactional audit row and the final
+     * promote — lives in {@link createWorkspaceMutationService}, so the HTTP API,
+     * the remote MCP tools and the shared documentation service all get the same
+     * sequence rather than three near-copies of it.
+     */
+    createResource(context, projectId, input) {
+      return requireMutations().createResource(context, projectId, input);
     },
 
-    async updateResource(context, projectId, resourceId, input) {
-      await requirePermission(context, projectId, "resource:update");
-      const record = await projects.findResource(projectId, resourceId);
-      if (!record) throw notFound(`No resource with id ${resourceId}.`);
-
-      // The revision is claimed *first*, so a stale writer changes nothing at
-      // all. The claim and the file write cannot share a transaction — one is
-      // PostgreSQL, the other a volume — so a write that fails after the claim
-      // consumes the revision while leaving the content unchanged. That is the
-      // price of a conflict check that never lets a stale writer touch the file.
-      const bumped = await projects.bumpRevision(
+    updateResource(context, projectId, resourceId, input) {
+      return requireMutations().updateResource(
+        context,
         projectId,
         resourceId,
-        input.expectedRevision,
+        input,
       );
-      if (!bumped.ok) {
-        throw conflict(
-          resourceId,
-          bumped.error.expectedRevision,
-          bumped.error.currentRevision,
-        );
-      }
-
-      const written = await storage(projectId).write(
-        record.path,
-        input.content,
-      );
-      if (!written.ok) throw invalid(written.error.message);
-
-      await writeAudit(context, {
-        action: "resource.updated",
-        projectId,
-        resourceId,
-      });
-      return toCatalogResource(bumped.value);
     },
 
-    async moveResource(context, projectId, resourceId, input) {
-      await requirePermission(context, projectId, "resource:move");
-      const record = await projects.findResource(projectId, resourceId);
-      if (!record) throw notFound(`No resource with id ${resourceId}.`);
-
-      // A stale caller is refused *before* the volume is touched. The conditional
-      // update below is still the authority, but a rename that no record will
-      // ever point at would strand the document: moving the file first and only
-      // then discovering the conflict leaves the row at the old path and the
-      // bytes at the new one, which reads as a missing resource.
-      if (record.revision !== input.expectedRevision) {
-        throw conflict(resourceId, input.expectedRevision, record.revision);
-      }
-
-      // A destination another record already holds is refused here as a
-      // `conflict`; letting the conditional update discover it would surface a
-      // unique-constraint violation as a 500 instead.
-      const occupant = await withPath(() =>
-        projects.findResourceByPath(projectId, input.path),
-      );
-      if (occupant && occupant.id !== resourceId) {
-        throw new ApplicationError(
-          "conflict",
-          `A resource already exists at "${occupant.path}" (id: ${occupant.id}).`,
-        );
-      }
-
-      const moved = await withPath(() =>
-        storage(projectId).move({ from: record.path, to: input.path }),
-      );
-      if (!moved.ok)
-        throw new ApplicationError("conflict", moved.error.message);
-
-      const updated = await projects.moveResource(
+    moveResource(context, projectId, resourceId, input) {
+      return requireMutations().moveResource(
+        context,
         projectId,
         resourceId,
-        moved.value.path,
-        input.expectedRevision,
+        input,
       );
-      if (!updated.ok) {
-        // A writer raced the pre-check. Put the file back, so even the race
-        // leaves the project as the refused caller found it.
-        await storage(projectId)
-          .move({ from: moved.value.path, to: record.path })
-          .catch(() => undefined);
-        throw conflict(
-          resourceId,
-          updated.error.expectedRevision,
-          updated.error.currentRevision,
-        );
-      }
-      await writeAudit(context, {
-        action: "resource.moved",
-        projectId,
-        resourceId,
-      });
-      return toCatalogResource(updated.value);
     },
 
-    async deleteResource(context, projectId, resourceId) {
-      await requirePermission(context, projectId, "resource:delete");
-      const record = await projects.findResource(projectId, resourceId);
-      if (!record) throw notFound(`No resource with id ${resourceId}.`);
-      const removed = await storage(projectId).remove(record.path);
-      if (!removed.ok) throw removed.error;
-      await projects.deleteResource(projectId, resourceId);
-      await writeAudit(context, {
-        action: "resource.deleted",
+    deleteResource(context, projectId, resourceId, input) {
+      return requireMutations().deleteResource(
+        context,
         projectId,
         resourceId,
-      });
+        input ?? {},
+      );
     },
   };
 }

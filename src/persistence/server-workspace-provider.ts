@@ -23,6 +23,7 @@ import type {
 } from "../application/ports";
 import type { ProjectCatalog } from "../application/project-catalog";
 import type { ProjectStorage } from "../application/project-storage";
+import type { WorkspaceMutationService } from "../application/workspace-mutations";
 import type { ProjectRepository } from "./project-repository";
 import { createServerWorkspaceRepository } from "./server-workspace-repository";
 import type { ServerProject } from "../domain/project/server-project";
@@ -41,6 +42,14 @@ export interface ServerWorkspaceProviderOptions {
   /** Resource identity and revisions, shared with the catalog. */
   projects: ProjectRepository;
   /**
+   * The one authoritative mutation path, shared with the catalog and MCP.
+   *
+   * Phase 6 removed this provider's private write path: it used to claim a
+   * revision and then write a file, which is the window the mission's item 27
+   * names. Every write now goes through the journal.
+   */
+  mutations: WorkspaceMutationService;
+  /**
    * Where a project's files live.
    *
    * The provider asks this for a project it has already authorized, so the
@@ -58,7 +67,7 @@ function toDomainProject(project: ServerProject): Project {
 export function createServerWorkspaceProvider(
   options: ServerWorkspaceProviderOptions,
 ): ProjectWorkspaceProvider {
-  const { context, catalog, projects, location } = options;
+  const { context, catalog, projects, location, mutations } = options;
 
   return {
     describe(): string {
@@ -96,6 +105,8 @@ export function createServerWorkspaceProvider(
           projectId: listing.project.id,
           storage,
           resources: projects,
+          context,
+          mutations,
           writable,
         }),
         root,

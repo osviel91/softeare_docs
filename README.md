@@ -448,6 +448,120 @@ approach `npm run test:e2e` takes for the browser bundle — checking the
 handshake, the tool catalog, a full create → validate → audit loop against a
 temporary workspace, and the protocol/tool error channels.
 
+## Remote MCP service (Phase 6)
+
+Phase 6 turns the remote MCP from a route on the API into an **independently
+deployable HTTPS service**. It is its own image (`Dockerfile.mcp`), its own
+process, its own hostname and its own security policy, and it shares _code_ with
+the API — never an HTTP call.
+
+```bash
+npm run mcp:service:build
+DATABASE_URL=postgres://sdm:pass@localhost:5432/sdm \
+MCP_PUBLIC_URL=https://mcp.docs.example.com \
+TOKEN_PEPPER="$(openssl rand -base64 48)" \
+node dist-mcp-service/server.mjs
+```
+
+| Image                  | Contains                                      | Does not contain        |
+| ---------------------- | --------------------------------------------- | ----------------------- |
+| `sequencediagrams-web` | nginx + the static bundle                     | Node, MCP runtime       |
+| `sequencediagrams-api` | the API bundle + `pg`                         | frontend, MCP runtime   |
+| `sequencediagrams-mcp` | the MCP bundle + `pg`, non-root, read-only FS | frontend, nginx, PGlite |
+
+### Transport and protocol
+
+`POST /mcp` uses the official `@modelcontextprotocol/sdk` **Streamable HTTP**
+transport in **stateless JSON mode**: a fresh server and transport per request,
+no session id, no server-initiated stream. Request 1 may land on instance A and
+request 2 on instance B and both work, so no sticky session is needed. `GET`
+answers `405`; `DELETE` is a `204` no-op.
+
+The installed SDK implements protocol `2025-11-25` (its newest) and validates
+`MCP-Protocol-Version` itself. `Mcp-Method` and `Mcp-Name` — which the SDK does
+not know — are validated here and fail closed when they disagree with the body.
+
+### Authentication
+
+Every request must present `Authorization: Bearer sdm_pat_…`. There are no
+anonymous tools, and a browser session cookie is never accepted: a request that
+carries only a cookie is a `401`. The MCP edge calls the _same_
+`authenticateBearerToken` the API calls; `verifyMcpPat()` does not exist. The
+verifier is already a chain, so Phase 7 appends an OAuth access-token verifier
+without touching a tool.
+
+| Situation                                | Answer                     |
+| ---------------------------------------- | -------------------------- |
+| no credential                            | `401` + `WWW-Authenticate` |
+| malformed / revoked / expired / disabled | `401`                      |
+| valid credential, missing scope or role  | `403`                      |
+| unknown or invisible project             | `404`                      |
+
+### Tools
+
+Twenty tools in three levels. Prefer the semantic tools: they parse, validate,
+preserve identity and apply the revision in one idempotent operation.
+
+- **Discovery** — `list_projects`, `get_project`, `get_project_index`,
+  `list_resources`, `get_resource_metadata`, `search_project`
+- **Primitive resources** — `read_resource`, `create_resource`,
+  `update_resource`, `move_resource`, `delete_resource`
+- **Semantic** — `read_diagram`, `upsert_sequence_diagram`, `upsert_event_flow`,
+  `render_diagram`, `read_documentation`, `upsert_documentation`,
+  `get_event_catalog`, `find_event_producers`, `find_event_consumers`,
+  `validate_project`
+
+Every list-like tool paginates with `limit` + `cursor`; search returns
+`{resourceId, path, line, snippet}` rather than whole files; every mutating tool
+accepts an `idempotencyKey`. Project content is also exposed as MCP resources
+under `seqdocs://projects/<id>/…`, read through the same authorized use case.
+
+### Operational limits
+
+| Concern       | Setting                                                                                 |
+| ------------- | --------------------------------------------------------------------------------------- |
+| Request body  | `MCP_MAX_BODY_BYTES` → `413`                                                            |
+| Document size | `MCP_MAX_SEQ_BYTES`, `MCP_MAX_EVENTSEQ_BYTES`, `MCP_MAX_MARKDOWN_BYTES`                 |
+| Rate limits   | per credential, per class (`MCP_RATE_READ_LIMIT`, `…_WRITE_LIMIT`, `…_DELETE_LIMIT`, …) |
+| Tool deadline | `MCP_TOOL_TIMEOUT_MS`, combined with the client's abort signal                          |
+
+`/health` is liveness, `/ready` checks PostgreSQL and the project volume, and
+`/metrics` exposes Prometheus counters with bounded labels. Structured logs are
+JSON lines carrying `requestId` and `traceId`; secrets and document bodies are
+never logged.
+
+### Storage reliability
+
+PostgreSQL and the project volume cannot share a transaction, so every resource
+mutation is journaled (ADR-048): the intent, the row change, the audit row and
+the idempotency record commit together, the new bytes are promoted with one
+atomic rename, and recovery at boot finishes anything a crash left half-done. A
+failed move restores the old path; a failed delete leaves a record recovery uses
+to remove the file. A partial unique index permits one unfinished operation per
+resource, which is what closes the check→write window.
+
+### Deployment
+
+```bash
+docker compose -f compose.production.yml up --build -d
+```
+
+Reverse proxy, web, API, MCP and PostgreSQL, with no source bind mounts. The
+proxy routes three hostnames (`docs.`, `api.`, `mcp.`) and strips `Cookie` on the
+MCP route. See [`deploy/reverse-proxy/nginx.conf`](./deploy/reverse-proxy/nginx.conf)
+and [`.env.example`](./.env.example).
+
+### Verifying it
+
+```bash
+npm run test:mcp         # stdio smoke + the MCP service integration suite
+npm run test:containers  # builds the real images and runs the real composition
+```
+
+The container suite proves the property that matters most: a resource created
+through the MCP is visible to the API, and one created through the API is visible
+to the MCP.
+
 ## Docker
 
 The app is a static bundle, so it ships as a two-stage image: a Node stage
@@ -560,13 +674,14 @@ What exists today:
   (`apps/api/http/csrf.ts`), on top of `SameSite=Lax` cookies and JSON-only
   request bodies.
 
-Not yet: the **stdio MCP server** still runs on the local filesystem, and
-**Personal Access Tokens**, **OAuth-compatible MCP authorization** and **remote
-MCP** are later phases. The application and authorization layers they will use are
-already in place. The migration plans, their definition-of-done reviews and their
-known compromises are recorded in
-[docs/plan/server-migration-0-3.md](docs/plan/server-migration-0-3.md) and
-[docs/plan/server-migration-4.md](docs/plan/server-migration-4.md).
+The **stdio MCP server** still runs on the local filesystem by design; the remote
+MCP service is separate and authenticated. **OAuth-compatible MCP authorization**
+(discovery, protected-resource metadata and an access-token verifier) is Phase 7;
+the Phase 6 verifier chain and the canonical resource URL are already in place for
+it. The migration plans, their definition-of-done reviews and their known
+compromises are recorded under [`docs/plan/`](./docs/plan/) — most recently
+[server-migration-5.md](docs/plan/server-migration-5.md) and
+[server-migration-6.md](docs/plan/server-migration-6.md).
 
 ## Repository layout
 
@@ -598,10 +713,11 @@ mcp/              MCP server for coding agents: a Node filesystem workspace
                   reference resources, the workflow prompts, and its tests
 apps/api/         The authenticated HTTP API: config, the HTTP transport, the
                   route table, and the composition root. An adapter over
-                  `src/application`, never imported by the MCP host
-apps/             Server hosts. The remote MCP server moves here in a later
-                  phase. Both are adapters over `src/application` and are never
-                  imported by each other.
+                  `src/application`, never imported by a sibling host
+apps/mcp/         The remote MCP service: config, the bearer/PAT edge, the SDK
+                  Streamable HTTP handler, the tool/resource catalog, rate
+                  limiting, observability, health/ready. Its own image, its own
+                  port, shared code, never an HTTP call to the API
 scripts/          Repo scripts: the MCP bundle, and the MCP/browser smoke tests
 tests/            Browser-independent and workflow tests
 docs/plan/        Mission plans: intent, deliverables, and verification
@@ -609,8 +725,9 @@ deploy/           Portainer stack for the published image
 .github/          CI: the image publish workflow
 ```
 
-The `dist-mcp/` directory is the bundled server `npm run mcp:build` produces; it
-is build output, not source.
+The `dist-mcp/` directory is the bundled stdio server `npm run mcp:build`
+produces and `dist-mcp-service/` is the bundled remote service
+`npm run mcp:service:build` produces; both are build output, not source.
 
 The early structure is intentionally small; layers are added as phases demand
 them while keeping the boundaries above intact.
@@ -637,10 +754,20 @@ deliverables and boundaries — is recorded under [`docs/plan/`](./docs/plan/).
 
 ## Status
 
-**Phases 0–11 are implemented** on this branch. `npm test` runs 1589 tests,
-`npm run test:e2e` drives 85 checks against the production bundle in Chromium,
-and `npm run typecheck`, `npm run lint`, `npm run build` and
-`npm run format:check` are clean.
+**Phases 0–11 are implemented** on this branch. `npm test` runs 1801 tests,
+`npm run test:e2e` drives the production bundle in Chromium (including a
+browser ↔ MCP consistency scenario), `npm run test:containers` runs the real
+production composition, and `npm run typecheck`, `npm run lint`, `npm run build`
+and `npm run format:check` are clean.
+
+**Server migration Phase 6 is implemented.** The remote MCP is an independently
+deployable authenticated HTTPS service with its own image, port and hostname; the
+API and MCP share one application layer, one authorization policy and one
+journaled mutation path; per-credential rate limiting, body and resource limits,
+structured logs, metrics and health/readiness endpoints are in place. PAT bearer
+is the only credential accepted — OAuth is Phase 7. See
+[Remote MCP service](#remote-mcp-service-phase-6) above and
+[docs/plan/server-migration-6.md](docs/plan/server-migration-6.md).
 
 **Phase 12 (MCP server) is implemented.** A coding agent can now document an
 application through the Model Context Protocol: 17 tools cover orientation,

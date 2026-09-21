@@ -1,49 +1,43 @@
 /**
- * The API's composition root (ADR-040).
+ * The API's composition root (ADR-040, Phase 6 §2).
  *
- * One place builds the persistence layer from the configuration and hands it to
- * the route table as plain values. No module below this one reads a global, opens
- * a connection lazily, or resolves a dependency by import side effect — which is
- * what lets a test build the whole API against an in-memory PostgreSQL and call
- * `handle()` on it.
+ * Phase 6 moved the persistence wiring into `src/persistence/server-runtime.ts`
+ * so the API and the MCP service are two hosts over one application stack rather
+ * than two stacks that happen to agree. What is left here is only what is
+ * genuinely API-shaped: the server configuration, the agent lifecycle service,
+ * the project catalog and the provider the documentation service opens projects
+ * through.
+ *
+ * No module below this one reads a global or resolves a dependency by import
+ * side effect, which is what lets a test build the whole API against an
+ * in-memory PostgreSQL and call `handle()` on it.
  */
-import path from "node:path";
-import { migrate } from "../../src/persistence/migrate";
-import { createPostgresClient } from "../../src/persistence/postgres-client";
-import { createPgliteClient } from "../../src/persistence/pglite-client";
-import { createUserRepository } from "../../src/persistence/user-repository";
-import { createProjectRepository } from "../../src/persistence/project-repository";
-import { createSessionRepository } from "../../src/persistence/session-repository";
-import { createAuditRepository } from "../../src/persistence/audit-repository";
 import {
-  createAgentCredentialRepository,
-  createAgentIdentityRepository,
-} from "../../src/persistence/agent-repository";
-import type { SqlClient } from "../../src/persistence/sql-client";
-import {
-  createProjectCatalog,
-  type ProjectCatalog,
-} from "../../src/application/project-catalog";
+  closeServerRuntime,
+  createServerRuntime,
+  openDatabase,
+  recoverServerRuntime,
+  type ServerRuntime,
+} from "../../src/persistence/server-runtime";
+import { createProjectCatalog } from "../../src/application/project-catalog";
 import { createAgentService } from "../../src/application/agent-service";
 import { createCredentialMint } from "./auth/agent-credential";
-import {
-  assertProjectVolumeUsable,
-  createFsProjectStorage,
-} from "../../src/persistence/fs-project-storage";
 import type { ServerConfig } from "./config";
 
 /** Everything the route table needs, built once per process. */
 export interface AppDependencies {
   config: ServerConfig;
-  sql: SqlClient;
-  users: ReturnType<typeof createUserRepository>;
-  projects: ReturnType<typeof createProjectRepository>;
-  sessions: ReturnType<typeof createSessionRepository>;
-  audit: ReturnType<typeof createAuditRepository>;
+  /** The persistence, authorization and mutation stack shared with MCP. */
+  runtime: ServerRuntime;
+  sql: ServerRuntime["sql"];
+  users: ServerRuntime["users"];
+  projects: ServerRuntime["projects"];
+  sessions: ServerRuntime["sessions"];
+  audit: ServerRuntime["audit"];
   /** Agent identities: the automation principals a user owns. */
-  agentIdentities: ReturnType<typeof createAgentIdentityRepository>;
+  agentIdentities: ServerRuntime["agentIdentities"];
   /** Agent credentials: the revocable bearer secrets those agents present. */
-  credentials: ReturnType<typeof createAgentCredentialRepository>;
+  credentials: ServerRuntime["credentials"];
   /** The agent/credential lifecycle use cases the settings API calls. */
   agents: ReturnType<typeof createAgentService>;
   /** The HMAC pepper credential digests are keyed with. Never sent anywhere. */
@@ -52,12 +46,11 @@ export interface AppDependencies {
    * A catalog over the same repositories.
    *
    * The catalog is stateless — the *caller* is the argument to each use case —
-   * so one instance serves every request. It is still built per dependency set
-   * rather than imported, so a test can hand in its own repositories.
+   * so one instance serves every request.
    */
-  catalog: ProjectCatalog;
+  catalog: ReturnType<typeof createProjectCatalog>;
   /** Where a project's files live. Never derived from a request. */
-  storageFor: (projectId: string) => ReturnType<typeof createFsProjectStorage>;
+  storageFor: ServerRuntime["storageFor"];
   /**
    * A project's storage handle and its root directory together.
    *
@@ -65,79 +58,97 @@ export interface AppDependencies {
    * already authorized; building it here keeps the composition root the only
    * place that knows where the volume is.
    */
-  locationFor: (projectId: string) => {
-    storage: ReturnType<typeof createFsProjectStorage>;
-    root: string;
-  };
+  locationFor: ServerRuntime["locationFor"];
   /** Whether the database is reachable, for the health endpoint. */
   ping: () => Promise<boolean>;
+  /** Whether the database *and* the project volume are usable, for `/ready`. */
+  ready: ServerRuntime["ready"];
+  /**
+   * Whether this dependency set opened the runtime and therefore closes it.
+   *
+   * False when a host injected its own — an embedded host or the E2E harness
+   * that builds both the API and the MCP over one database. Closing a runtime
+   * the caller owns would pull the database out from under its second host.
+   */
+  ownsRuntime: boolean;
+}
+
+/** Options for {@link createApp}. */
+export interface CreateAppOptions {
+  /**
+   * A runtime to use instead of opening one.
+   *
+   * This is the seam that lets one process run the API and the MCP service over
+   * exactly the same repositories, which is what the browser↔MCP end-to-end
+   * scenario needs and what an embedded host would want.
+   */
+  runtime?: ServerRuntime;
 }
 
 /** Open the SQL client the configuration describes. */
-export function openDatabase(config: ServerConfig): SqlClient {
-  if ("connectionString" in config.database) {
-    return createPostgresClient(config.database);
-  }
-  return createPgliteClient(config.database);
-}
+export { openDatabase };
 
 /**
  * Build the application's dependencies and bring the schema up to date.
- *
- * Migrating at boot is deliberate: a deployment that starts is a deployment
- * whose schema matches its code, and running the migrations twice is a no-op.
  */
 export async function createApp(
   config: ServerConfig,
+  options: CreateAppOptions = {},
 ): Promise<AppDependencies> {
-  const sql = openDatabase(config);
-  await migrate(sql);
-  await assertProjectVolumeUsable(config.projectVolume);
+  const ownsRuntime = options.runtime === undefined;
+  const runtime =
+    options.runtime ??
+    (await createServerRuntime({
+      database: config.database,
+      projectVolume: config.projectVolume,
+      tokenPepper: config.tokenPepper,
+    }));
 
-  const projects = createProjectRepository(sql);
-  const storageFor = (projectId: string) =>
-    createFsProjectStorage({
-      root: path.join(config.projectVolume, projectId),
-    });
-  const audit = createAuditRepository(sql);
-  const agentIdentities = createAgentIdentityRepository(sql);
-  const credentials = createAgentCredentialRepository(sql);
+  // A process that starts finishes what a previous one left half-done.
+  await recoverServerRuntime(runtime, (error, operationId) => {
+    process.stderr.write(
+      `workspace recovery: ${operationId} could not be settled: ${
+        error instanceof Error ? error.message : String(error)
+      }\n`,
+    );
+  });
 
   return {
     config,
-    sql,
-    users: createUserRepository(sql),
-    projects,
-    sessions: createSessionRepository(sql),
-    audit,
-    agentIdentities,
-    credentials,
+    runtime,
+    sql: runtime.sql,
+    users: runtime.users,
+    projects: runtime.projects,
+    sessions: runtime.sessions,
+    audit: runtime.audit,
+    agentIdentities: runtime.agentIdentities,
+    credentials: runtime.credentials,
     agents: createAgentService({
-      agents: agentIdentities,
-      credentials,
-      projects,
-      audit,
+      agents: runtime.agentIdentities,
+      credentials: runtime.credentials,
+      projects: runtime.projects,
+      audit: runtime.audit,
       mint: createCredentialMint(config.tokenPepper),
     }),
     tokenPepper: config.tokenPepper,
-    catalog: createProjectCatalog({ projects, audit, storage: storageFor }),
-    storageFor,
-    locationFor: (projectId: string) => ({
-      storage: storageFor(projectId),
-      root: path.join(config.projectVolume, projectId),
+    // The catalog runs resource mutations through the *same* service the MCP
+    // host uses, so there is one implementation of "update a resource".
+    catalog: createProjectCatalog({
+      projects: runtime.projects,
+      audit: runtime.audit,
+      storage: runtime.storageFor,
+      mutations: runtime.mutations,
     }),
-    async ping() {
-      try {
-        await sql.query("SELECT 1");
-        return true;
-      } catch {
-        return false;
-      }
-    },
+    storageFor: runtime.storageFor,
+    locationFor: runtime.locationFor,
+    ping: runtime.ping,
+    ready: runtime.ready,
+    ownsRuntime,
   };
 }
 
-/** Close everything a dependency set owns. */
+/** Close everything a dependency set owns, and only what it owns. */
 export async function closeApp(dependencies: AppDependencies): Promise<void> {
-  await dependencies.sql.close().catch(() => {});
+  if (!dependencies.ownsRuntime) return;
+  await closeServerRuntime(dependencies.runtime);
 }

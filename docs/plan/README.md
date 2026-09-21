@@ -14,15 +14,17 @@ _decisions_; these explain the _intent_.
 | [Server migration, Phases 0–3](server-migration-0-3.md)                                                 | Implemented | `48242d4` + review                |
 | [Server migration, Phase 4](server-migration-4.md)                                                      | Implemented | `596e265` + `dd44687`             |
 | [Server migration, Phase 5 — PATs + remote MCP](server-migration-5.md)                                  | Implemented | `0335271` + `204f385` + `c46b91f` |
+| [Server migration, Phase 6 — production MCP service & mutation reliability](server-migration-6.md)      | Implemented | Phase 6 checkpoint                |
 
 ## How a phase is run
 
 1. The mission is recorded here as a plan: goal, deliverables, and the
    boundaries it must not cross.
 2. Work proceeds in the slices the plan names, each with its own tests.
-3. The phase ends with a checkpoint: `npm test`, `npm run typecheck`,
-   `npm run lint`, `npm run format:check`, `npm run build`, and
-   `npm run test:e2e` all green, followed by one commit.
+3. The phase ends with a checkpoint: `npm test`, `npm run test:mcp`,
+   `npm run test:e2e`, `npm run test:containers`, `npm run typecheck`,
+   `npm run lint`, `npm run format:check` and `npm run build` all green,
+   followed by one commit.
 
 ## Related documents
 

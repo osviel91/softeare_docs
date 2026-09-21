@@ -1,5 +1,10 @@
 dist/
+# nginx include fragments: prettier maps `.inc` to PHP and reflows them
+deploy/reverse-proxy/*.inc
+
 dist-mcp/
+dist-api/
+dist-mcp-service/
 node_modules/
 coverage/
 *.tsbuildinfo

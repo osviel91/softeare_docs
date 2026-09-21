@@ -47,10 +47,10 @@ describe("splitStatements", () => {
 
 describe("migrate", () => {
   it("applies every migration to an empty database", async () => {
-    const client = createPgliteClient();
+    const client = await createPgliteClient();
     try {
       const report = await migrate(client);
-      expect(report.applied).toEqual([1, 2]);
+      expect(report.applied).toEqual([1, 2, 3]);
       expect(report.present).toEqual([]);
       const tables = await client.query(
         `SELECT table_name FROM information_schema.tables
@@ -68,6 +68,8 @@ describe("migrate", () => {
         "schema_migrations",
         "sessions",
         "users",
+        "workspace_operations",
+        "idempotency_records",
       ]) {
         expect(names).toContain(expected);
       }
@@ -79,19 +81,19 @@ describe("migrate", () => {
   });
 
   it("is idempotent: running it twice changes nothing", async () => {
-    const client = createPgliteClient();
+    const client = await createPgliteClient();
     try {
       await migrate(client);
       const second = await migrate(client);
       expect(second.applied).toEqual([]);
-      expect(second.present).toEqual([1, 2]);
+      expect(second.present).toEqual([1, 2, 3]);
     } finally {
       await client.close();
     }
   });
 
   it("applies migrations in ascending version order", async () => {
-    const client = createPgliteClient();
+    const client = await createPgliteClient();
     try {
       const report = await migrate(client, [
         { version: 20, name: "later", sql: "CREATE TABLE later (x int);" },
@@ -104,7 +106,7 @@ describe("migrate", () => {
   });
 
   it("rolls a failed migration back completely", async () => {
-    const client = createPgliteClient();
+    const client = await createPgliteClient();
     try {
       await expect(
         migrate(client, [

@@ -24,6 +24,7 @@
     "scripts/**/*.mjs",
     "tests/architecture/**/*.ts",
     "tests/api/**/*.ts",
-    "tests/persistence/**/*.ts"
+    "tests/persistence/**/*.ts",
+    "tests/mcp/**/*.ts"
   ]
 }

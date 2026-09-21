@@ -13,6 +13,21 @@ import { loadConfig, ConfigurationError } from "./config";
 import { closeApp, createApp } from "./app";
 import { createRouter } from "./routes";
 import { createHttpServer } from "./http/node-server";
+import { createServerRuntime } from "../../src/persistence/server-runtime";
+
+/**
+ * The host's composition, re-exported so an embedding process can build the API
+ * without starting one.
+ *
+ * The bundler keeps every export reachable from the entry point, so
+ * `dist-api/server.mjs` is both the runnable server *and* the library the E2E
+ * harness imports to run the API and the MCP service over one shared runtime.
+ */
+export { loadConfig, ConfigurationError };
+export { closeApp, createApp };
+export { createRouter };
+export { createHttpServer };
+export { createServerRuntime };
 
 /** Start the server, or exit with a readable message. */
 export async function main(): Promise<void> {

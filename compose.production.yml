@@ -1,0 +1,152 @@
+# ---------------------------------------------------------------------------
+# Production-shaped composition: reverse proxy, web, API, MCP, PostgreSQL.
+#
+#   docker compose -f compose.production.yml up --build -d
+#
+# This is the topology Phase 6 defines:
+#
+#   internet → HTTPS → reverse-proxy ─┬─ web   (nginx + static bundle)
+#                                     ├─ api   (Node, /api /auth)
+#                                     └─ mcp   (Node, /mcp)
+#
+# Three deliberate properties:
+#
+#   * **No source bind mounts.** Every service runs the artifact built into its
+#     image, and state lives only in named volumes.
+#   * **The MCP is its own host and its own hostname.** It is not a route on the
+#     API, so it can be rate-limited, firewalled and scaled independently.
+#   * **Secrets come from the environment**, never from the image. Both Node
+#     services refuse to start when a required secret is missing (see
+#     `apps/api/config.ts` and `apps/mcp/config.ts`).
+#
+# TLS terminates at the proxy. For local use the proxy also publishes plain HTTP
+# on 8080 so the composition can be exercised without certificates; in a real
+# deployment terminate TLS with the certificates the proxy config expects.
+# ---------------------------------------------------------------------------
+services:
+  reverse-proxy:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    depends_on:
+      - web
+      - api
+      - mcp
+    ports:
+      - "${PROXY_PORT:-8080}:8080"
+    volumes:
+      - ./deploy/reverse-proxy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./deploy/reverse-proxy/proxy-headers.inc:/etc/nginx/conf.d/proxy-headers.inc:ro
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget -q -O /dev/null http://127.0.0.1:8080/healthz || exit 1",
+        ]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: sequencediagrams-web:phase6
+    restart: unless-stopped
+    # No ports: only the proxy reaches it, over the compose network.
+    expose:
+      - "8080"
+    # The web image is nginx plus static files: no Node, no MCP runtime, no
+    # database driver.
+    read_only: true
+    tmpfs:
+      - /var/cache/nginx
+      - /var/run
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    image: sequencediagrams-api:phase6
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: "4000"
+      HOST: 0.0.0.0
+      PUBLIC_URL: "${API_PUBLIC_URL:?set API_PUBLIC_URL, for example https://api.docs.example.com}"
+      DATABASE_URL: "postgres://sdm:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/sdm"
+      PROJECT_VOLUME: /data/projects
+      COOKIE_SECRET: "${COOKIE_SECRET:?set COOKIE_SECRET}"
+      # Required, and independent of COOKIE_SECRET (Phase 6 §73).
+      TOKEN_PEPPER: "${TOKEN_PEPPER:?set TOKEN_PEPPER}"
+      OIDC_ISSUER: "${OIDC_ISSUER:?set OIDC_ISSUER}"
+      OIDC_CLIENT_ID: "${OIDC_CLIENT_ID:?set OIDC_CLIENT_ID}"
+      OIDC_CLIENT_SECRET: "${OIDC_CLIENT_SECRET:?set OIDC_CLIENT_SECRET}"
+      TRUSTED_PROXIES: "172.16.0.0/12"
+    expose:
+      - "4000"
+    volumes:
+      - project-data:/data/projects
+    read_only: true
+    tmpfs:
+      - /tmp
+
+  mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile.mcp
+    image: sequencediagrams-mcp:phase6
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: "4100"
+      HOST: 0.0.0.0
+      # The canonical protected-resource identity. Never derived from Host.
+      MCP_PUBLIC_URL: "${MCP_PUBLIC_URL:?set MCP_PUBLIC_URL, for example https://mcp.docs.example.com}"
+      DATABASE_URL: "postgres://sdm:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/sdm"
+      PROJECT_VOLUME: /data/projects
+      TOKEN_PEPPER: "${TOKEN_PEPPER:?set TOKEN_PEPPER}"
+      TRUSTED_PROXIES: "172.16.0.0/12"
+      MCP_ALLOWED_HOSTS: "${MCP_ALLOWED_HOSTS:-}"
+      MCP_MAX_BODY_BYTES: "${MCP_MAX_BODY_BYTES:-1048576}"
+      MCP_TOOL_TIMEOUT_MS: "${MCP_TOOL_TIMEOUT_MS:-30000}"
+      MCP_RATE_READ_LIMIT: "${MCP_RATE_READ_LIMIT:-600}"
+      MCP_RATE_WRITE_LIMIT: "${MCP_RATE_WRITE_LIMIT:-60}"
+      MCP_RATE_DELETE_LIMIT: "${MCP_RATE_DELETE_LIMIT:-10}"
+      MCP_METRICS: "${MCP_METRICS:-true}"
+    expose:
+      - "4100"
+    volumes:
+      # The same project volume the API uses: both hosts read and write the same
+      # documents, and neither calls the other over HTTP to do it.
+      - project-data:/data/projects
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: sdm
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}"
+      POSTGRES_DB: sdm
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sdm -d sdm"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres-data:
+  project-data:

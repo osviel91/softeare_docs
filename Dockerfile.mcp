@@ -1,0 +1,60 @@
+# syntax=docker/dockerfile:1
+
+# ---------------------------------------------------------------------------
+# The independent MCP service image (Phase 6 §3).
+#
+# Three properties the mission asks for and this file enforces:
+#
+#   * it contains **no frontend bundle and no nginx** — the MCP release is a
+#     Node process and nothing else;
+#   * it runs as a **non-root user** with the application tree read-only, so a
+#     compromised tool cannot rewrite its own code;
+#   * it ships **no PGlite** — a deployment connects to PostgreSQL, and the test
+#     driver is loaded lazily so its absence is real rather than theoretical.
+#
+# The project volume is mounted only because the service reads and writes
+# document bytes; it has no Docker socket, no host mount and no access to the
+# API's source tree.
+# ---------------------------------------------------------------------------
+
+# ---- Build stage -----------------------------------------------------------
+FROM node:22-alpine AS build
+
+WORKDIR /app
+
+# The project-local npm cache lives in the workspace and is not writable by a
+# normal user in CI, so override it with a writable dir here.
+COPY package.json package-lock.json .npmrc ./
+RUN npm ci --cache /tmp/.npm-cache
+
+COPY . .
+RUN npm run mcp:service:build
+
+# ---- Run stage -------------------------------------------------------------
+FROM node:22-alpine AS serve
+
+WORKDIR /app
+ENV NODE_ENV=production
+
+# The bundle is self-contained: `pg` and its dependencies are inlined except for
+# the optional native binding. PGlite is deliberately *not* copied — a
+# deployment always sets DATABASE_URL, and a WebAssembly database that will
+# never be loaded is weight and attack surface for nothing.
+COPY --from=build --chown=node:node /app/dist-mcp-service ./dist-mcp-service
+
+# The project volume: user documents live here, never in the image. The service
+# also uses a hidden staging directory inside each project for the operation
+# journal, so this must be writable.
+RUN mkdir -p /data/projects && chown -R node:node /data/projects
+VOLUME ["/data/projects"]
+
+USER node
+
+EXPOSE 4100
+
+# A liveness probe that touches no dependency, so a database outage does not
+# make the orchestrator kill a healthy process.
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||4100)+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+
+CMD ["node", "dist-mcp-service/server.mjs"]

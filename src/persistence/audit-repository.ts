@@ -27,14 +27,20 @@ export type { AuditAction, AuditEvent, AuditRecord, AuditRepository };
 /** Cap on how many entries one listing returns, so a query cannot be unbounded. */
 const MAX_LIMIT = 500;
 
-/** The repository over a `SqlClient`. */
-export function createAuditRepository(
-  client: SqlClient,
-  options: { newId?: IdGenerator } = {},
-): AuditRepository {
-  const newId = options.newId ?? createIdGenerator();
-
-  const insert = async (tx: SqlClient, event: AuditEvent, id: string) => {
+/**
+ * Build a writer that appends one audit entry **inside an existing client or
+ * transaction**.
+ *
+ * Extracted in Phase 6 so the workspace operation journal can commit an audit
+ * row in the same transaction as the resource mutation it describes, rather than
+ * after it. That is the mission's "audit must not be lost after a success"
+ * requirement, and sharing the writer is what keeps the durable path and the
+ * ordinary path from drifting.
+ */
+export function createAuditEventWriter(
+  newId: IdGenerator = createIdGenerator(),
+): (tx: SqlClient, event: AuditEvent) => Promise<AuditRecord> {
+  return async (tx, event) => {
     const result = await tx.query(
       `INSERT INTO audit_events
          (id, user_id, actor_type, actor_id, credential_id, auth_type, project_id,
@@ -42,7 +48,7 @@ export function createAuditRepository(
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb)
        RETURNING *`,
       [
-        id,
+        newId(),
         event.subjectUserId,
         event.actorType ?? "user",
         event.actorId ?? event.subjectUserId,
@@ -57,19 +63,27 @@ export function createAuditRepository(
     );
     return toAuditRecord(result.rows[0]);
   };
+}
+
+/** The repository over a `SqlClient`. */
+export function createAuditRepository(
+  client: SqlClient,
+  options: { newId?: IdGenerator } = {},
+): AuditRepository {
+  const newId = options.newId ?? createIdGenerator();
+  const insert = createAuditEventWriter(newId);
 
   return {
     async record(event) {
-      return insert(client, event, newId());
+      return insert(client, event);
     },
 
     async recordAll(events) {
       if (events.length === 0) return [];
-      const ids = events.map(() => newId());
       return client.transaction(async (tx) => {
         const written: AuditRecord[] = [];
-        for (const [index, event] of events.entries()) {
-          written.push(await insert(tx, event, ids[index]));
+        for (const event of events) {
+          written.push(await insert(tx, event));
         }
         return written;
       });

@@ -98,6 +98,17 @@ export function invalid(message: string, details?: Record<string, unknown>) {
   return new ApplicationError("invalid", message, details);
 }
 
+/**
+ * The request cannot be applied because it clashes with current state.
+ *
+ * Distinct from {@link revisionConflict}: this is "a resource is already at that
+ * path", "another operation is still finishing", or another clash that is not a
+ * stale revision. `details.retryable` marks the ones a client may simply retry.
+ */
+export function conflict(message: string, details?: Record<string, unknown>) {
+  return new ApplicationError("conflict", message, details);
+}
+
 /** Narrow an unknown thrown value into an {@link ApplicationError}. */
 export function asApplicationError(
   error: unknown,

@@ -14,6 +14,7 @@ import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createProjectCatalog } from "../../src/application/project-catalog";
 import { createFsProjectStorage } from "../../src/persistence/fs-project-storage";
+import { createWorkspaceOperationRepository } from "../../src/persistence/workspace-operation-repository";
 import { createProjectRepository } from "../../src/persistence/project-repository";
 import { createUserRepository } from "../../src/persistence/user-repository";
 import { createAuditRepository } from "../../src/persistence/audit-repository";
@@ -41,6 +42,8 @@ beforeAll(async () => {
   catalog = createProjectCatalog({
     projects,
     audit,
+    // Phase 6: resource mutations run through the durable operation journal.
+    operations: createWorkspaceOperationRepository(client),
     // The factory is the only thing that decides where a project lives, and it
     // is asked only for a project the catalog has already authorized.
     storage: (projectId) =>

@@ -11,7 +11,6 @@
  * `createPostgresClient` is the deployed one, and both satisfy the same port,
  * which is the only reason a single repository implementation can serve both.
  */
-import { PGlite } from "@electric-sql/pglite";
 import type { SqlClient, SqlResult, SqlValue } from "./sql-client";
 import { toDriverValue } from "./sql-client";
 
@@ -21,8 +20,18 @@ export interface PgliteOptions {
   dataDir?: string;
 }
 
-/** Open an in-process PostgreSQL for tests. */
-export function createPgliteClient(options: PgliteOptions = {}): SqlClient {
+/**
+ * Open an in-process PostgreSQL for tests.
+ *
+ * The driver is loaded with a *dynamic* import so a production bundle never
+ * evaluates it: the API and MCP images deliberately do not ship PGlite's
+ * WebAssembly build, and a static import would make the bundled server entry
+ * fail at module instantiation before a single line of the application ran.
+ */
+export async function createPgliteClient(
+  options: PgliteOptions = {},
+): Promise<SqlClient> {
+  const { PGlite } = await import("@electric-sql/pglite");
   const database = new PGlite(options.dataDir ?? "memory://");
 
   const query = async (

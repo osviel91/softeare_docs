@@ -30,7 +30,18 @@ ENV NODE_ENV=production
 COPY --from=build /app/dist-api ./dist-api
 
 # The project volume: user documents live here, never in the image.
+#
+# The directory is owned by `node` because the container runs as `node`, and
+# because the MCP container shares this volume under the *same* uid. Document
+# files are written mode 0600 by the storage boundary, so two hosts can only
+# read each other's writes when they are the same non-root user — which is
+# exactly what this and Dockerfile.mcp arrange.
+RUN mkdir -p /data/projects && chown -R node:node /data/projects
 VOLUME ["/data/projects"]
+
+# Non-root, like the MCP image. Root would own the project volume's files and
+# make them unreadable to the other host.
+USER node
 
 EXPOSE 4000
 CMD ["node", "dist-api/server.mjs"]

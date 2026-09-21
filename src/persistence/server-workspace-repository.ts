@@ -24,6 +24,8 @@ import type {
 } from "../application/project-storage";
 import type { RevisionedWorkspaceRepository } from "../application/ports";
 import type { ProjectRepository } from "./project-repository";
+import type { ApplicationContext } from "../application/context";
+import type { WorkspaceMutationService } from "../application/workspace-mutations";
 import {
   createEmptyMetadata,
   parseProjectMetadata,
@@ -51,6 +53,16 @@ export interface ServerWorkspaceRepositoryOptions {
   storage: ProjectStorage;
   resources: ProjectRepository;
   /**
+   * The caller this repository acts as.
+   *
+   * Phase 6 requires it: every write now goes through the shared mutation
+   * service, which authorizes as that principal and journals the operation. A
+   * repository with no context could not honestly claim "expected revision N".
+   */
+  context: ApplicationContext;
+  /** The one authoritative mutation path, shared with the catalog and MCP. */
+  mutations: WorkspaceMutationService;
+  /**
    * Whether this caller may change the project's resources.
    *
    * Resolved by the provider through the same authorization policy every other
@@ -65,6 +77,11 @@ export interface ServerWorkspaceRepositoryOptions {
 /** Read a required resource record, or a failure naming what is missing. */
 function missing(message: string): Result<never, Error> {
   return err(new Error(message));
+}
+
+/** Normalise a thrown value into the `Error` a `Result` carries. */
+function asError(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error));
 }
 
 /** The file name a resource id addresses inside its project. */
@@ -84,12 +101,16 @@ export class ServerWorkspaceRepository implements RevisionedWorkspaceRepository 
   private readonly projectId: string;
   private readonly storage: ProjectStorage;
   private readonly resources: ProjectRepository;
+  private readonly context: ApplicationContext;
+  private readonly mutations: WorkspaceMutationService;
   private readonly writable: boolean;
 
   constructor(options: ServerWorkspaceRepositoryOptions) {
     this.projectId = options.projectId;
     this.storage = options.storage;
     this.resources = options.resources;
+    this.context = options.context;
+    this.mutations = options.mutations;
     this.writable = options.writable ?? false;
   }
 
@@ -187,10 +208,13 @@ export class ServerWorkspaceRepository implements RevisionedWorkspaceRepository 
         entry.path,
       );
       if (existing) continue;
-      await this.resources.createResource(this.projectId, {
-        id: entry.id,
+      // A resource the identity record knows but the database does not is a
+      // create like any other, and goes through the journal so its audit row and
+      // its revision are as real as any other resource's.
+      await this.mutations.createResource(this.context, this.projectId, {
         path: entry.path,
         type,
+        content: "",
       });
     }
   }
@@ -493,7 +517,17 @@ export class ServerWorkspaceRepository implements RevisionedWorkspaceRepository 
     return path;
   }
 
-  /** Write a resource's content, creating its row when it is new. */
+  /**
+   * Write a resource's content, creating its row when it is new.
+   *
+   * Phase 6 routes this through the shared mutation service rather than doing
+   * "read the revision, then write the file" here. That old sequence had a real
+   * window: two writers could both claim a bump and then write their bytes in
+   * the opposite order, leaving the database at the later revision and the file
+   * holding the earlier writer's text. The mutation service stages the bytes,
+   * claims the revision and journals the intent in one transaction, and promotes
+   * the staged file only once no other writer can be inside that resource.
+   */
   private async save<T extends DiagramFile | NoteFile>(
     projectId: ProjectId,
     path: string,
@@ -504,33 +538,28 @@ export class ServerWorkspaceRepository implements RevisionedWorkspaceRepository 
       return missing(`No project with id ${projectId} in this repository.`);
     }
     if (!this.writable) return this.refuseWrite();
-    const existing = await this.resources.findResourceByPath(
-      this.projectId,
-      this.storagePathOf(path),
-    );
-    if (existing) {
-      const bumped = await this.resources.bumpRevision(
+    try {
+      const storagePath = this.storagePathOf(path);
+      const existing = await this.resources.findResourceByPath(
         this.projectId,
-        existing.id,
-        existing.revision,
+        storagePath,
       );
-      if (!isOk(bumped)) {
-        return err(
-          new Error(
-            `The resource changed since it was read: expected revision ${bumped.error.expectedRevision}, current revision ${bumped.error.currentRevision}.`,
-          ),
-        );
-      }
+      const view = existing
+        ? await this.mutations.updateResource(
+            this.context,
+            this.projectId,
+            existing.id,
+            { content, expectedRevision: existing.revision },
+          )
+        : await this.mutations.createResource(this.context, this.projectId, {
+            path: storagePath,
+            type: resourceTypeOfName(path),
+            content,
+          });
+      return ok(toDomain({ path: view.path, type: view.type, content }));
+    } catch (error) {
+      return err(asError(error));
     }
-    const written = await this.storage.write(this.storagePathOf(path), content);
-    if (!isOk(written)) return written;
-    if (!existing) {
-      await this.resources.createResource(this.projectId, {
-        path: this.storagePathOf(path),
-        type: resourceTypeOfName(path),
-      });
-    }
-    return ok(toDomain(written.value));
   }
 
   /** Create a resource under a free name inside the project. */
@@ -589,14 +618,27 @@ export class ServerWorkspaceRepository implements RevisionedWorkspaceRepository 
       return missing(`No project with id ${projectId} in this repository.`);
     }
     if (!this.writable) return this.refuseWrite();
-    const record = await this.resources.findResourceByPath(
-      this.projectId,
-      this.storagePathOf(path),
-    );
-    const removed = await this.storage.remove(this.storagePathOf(path));
-    if (!isOk(removed)) return removed;
-    if (record) await this.resources.deleteResource(this.projectId, record.id);
-    return ok(undefined);
+    try {
+      const storagePath = this.storagePathOf(path);
+      const record = await this.resources.findResourceByPath(
+        this.projectId,
+        storagePath,
+      );
+      if (!record) {
+        // Nothing is recorded: the file is either absent (a no-op) or an
+        // orphan the database never knew about. Removing it is still the
+        // honest answer to "delete this path".
+        return this.storage.remove(storagePath);
+      }
+      await this.mutations.deleteResource(
+        this.context,
+        this.projectId,
+        record.id,
+      );
+      return ok(undefined);
+    } catch (error) {
+      return err(asError(error));
+    }
   }
 
   /** Move a resource's file and its row, keeping its database id. */
@@ -614,34 +656,31 @@ export class ServerWorkspaceRepository implements RevisionedWorkspaceRepository 
       resourceTypeOfName(to) === "markdown-document" && !/\.md$/i.test(to)
         ? `${to}.md`
         : to;
-    if (await this.storage.exists(target)) {
-      return err(new Error(`Cannot rename to "${target}": it already exists.`));
-    }
-    const record = await this.resources.findResourceByPath(
-      this.projectId,
-      this.storagePathOf(from),
-    );
-    const moved = await this.storage.move({
-      from: this.storagePathOf(from),
-      to: target,
-    });
-    if (!isOk(moved)) return moved;
-    if (record) {
-      const movedRow = await this.resources.moveResource(
+    try {
+      const record = await this.resources.findResourceByPath(
+        this.projectId,
+        this.storagePathOf(from),
+      );
+      if (!record) {
+        return missing(`No resource is stored at "${from}".`);
+      }
+      const view = await this.mutations.moveResource(
+        this.context,
         this.projectId,
         record.id,
-        target,
-        record.revision,
+        { path: target, expectedRevision: record.revision },
       );
-      if (!isOk(movedRow)) {
-        return err(
-          new Error(
-            `The resource changed while it was being renamed: expected revision ${movedRow.error.expectedRevision}, current revision ${movedRow.error.currentRevision}.`,
-          ),
+      const read = await this.storage.read(view.path);
+      if (!isOk(read)) return read;
+      if (read.value === null) {
+        return missing(
+          `The resource moved but its file is missing at ${view.path}.`,
         );
       }
+      return ok(toDomain(read.value));
+    } catch (error) {
+      return err(asError(error));
     }
-    return ok(toDomain(moved.value));
   }
 }
 

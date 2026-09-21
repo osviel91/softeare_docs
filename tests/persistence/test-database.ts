@@ -13,7 +13,7 @@ import type { SqlClient } from "../../src/persistence/sql-client";
 
 /** A migrated, empty database. */
 export async function openTestDatabase(): Promise<SqlClient> {
-  const client = createPgliteClient();
+  const client = await createPgliteClient();
   await migrate(client);
   return client;
 }

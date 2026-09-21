@@ -9,7 +9,7 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && tsc -p mcp/tsconfig.json && tsc -p apps/api/tsconfig.json && vite build && npm run mcp:build && npm run api:build",
+    "build": "tsc -b && tsc -p mcp/tsconfig.json && tsc -p apps/api/tsconfig.json && tsc -p apps/mcp/tsconfig.json && vite build && npm run mcp:build && npm run api:build && npm run mcp:service:build",
     "build:web": "tsc -b && vite build",
     "preview": "vite preview",
     "mcp:build": "node scripts/build-mcp.mjs",
@@ -17,20 +17,26 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "test:e2e": "npm run build:web && npm run api:build && node scripts/e2e-smoke.mjs",
-    "test:mcp": "npm run mcp:build && node scripts/mcp-smoke.mjs",
+    "test:e2e": "npm run build:web && npm run api:build && npm run mcp:service:build && node scripts/e2e-smoke.mjs",
+    "test:mcp": "npm run mcp:build && node scripts/mcp-smoke.mjs && vitest run tests/mcp",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "typecheck": "tsc -b --noEmit && tsc -p mcp/tsconfig.json --noEmit && tsc -p apps/api/tsconfig.json --noEmit",
+    "typecheck": "tsc -b --noEmit && tsc -p mcp/tsconfig.json --noEmit && tsc -p apps/api/tsconfig.json --noEmit && tsc -p apps/mcp/tsconfig.json --noEmit",
     "api:build": "node scripts/build-api.mjs",
-    "api": "npm run api:build --silent && node dist-api/server.mjs"
+    "api": "npm run api:build --silent && node dist-api/server.mjs",
+    "mcp:service:build": "node scripts/build-mcp-service.mjs",
+    "mcp:service": "npm run mcp:service:build --silent && node dist-mcp-service/server.mjs",
+    "test:mcp:service": "vitest run tests/mcp",
+    "test:containers": "node scripts/container-integration.mjs"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "jose": "^6.2.12",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.8",

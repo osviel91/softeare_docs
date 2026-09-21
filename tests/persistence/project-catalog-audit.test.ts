@@ -23,6 +23,7 @@ import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createProjectCatalog } from "../../src/application/project-catalog";
 import { createFsProjectStorage } from "../../src/persistence/fs-project-storage";
+import { createWorkspaceOperationRepository } from "../../src/persistence/workspace-operation-repository";
 import { createProjectRepository } from "../../src/persistence/project-repository";
 import { createUserRepository } from "../../src/persistence/user-repository";
 import { createAuditRepository } from "../../src/persistence/audit-repository";
@@ -57,6 +58,7 @@ async function owner(audit?: AuditRepository, onAuditFailure?: () => void) {
   const catalog = createProjectCatalog({
     projects: createProjectRepository(client),
     audit,
+    operations: createWorkspaceOperationRepository(client),
     storage: (projectId) =>
       createFsProjectStorage({ root: path.join(volume, projectId) }),
     ...(onAuditFailure === undefined ? {} : { onAuditFailure }),

@@ -15,7 +15,10 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { DocumentationWorkspace } from "../../mcp/workspace";
 import { ALL_PERMISSIONS } from "../../src/domain/access/permissions";
 import { createProjectCatalog } from "../../src/application/project-catalog";
+import { createWorkspaceMutationService } from "../../src/application/workspace-mutations";
 import { createServerWorkspaceProvider } from "../../src/persistence/server-workspace-provider";
+import { createWorkspaceOperationRepository } from "../../src/persistence/workspace-operation-repository";
+import { hashWorkspaceContent } from "../../src/persistence/server-runtime";
 import { createFsProjectStorage } from "../../src/persistence/fs-project-storage";
 import { createProjectRepository } from "../../src/persistence/project-repository";
 import { createUserRepository } from "../../src/persistence/user-repository";
@@ -67,16 +70,26 @@ async function aContext(): Promise<ApplicationContext> {
 
 /** The documentation service over the server, exactly as the API will build it. */
 function serviceOver(context: ApplicationContext): DocumentationWorkspace {
+  const operations = createWorkspaceOperationRepository(client);
+  const mutations = createWorkspaceMutationService({
+    projects,
+    storage: (projectId) =>
+      createFsProjectStorage({ root: path.join(volume, projectId) }),
+    operations,
+    hashContent: hashWorkspaceContent,
+  });
   const catalog = createProjectCatalog({
     projects,
     audit: createAuditRepository(client),
     storage: (projectId) =>
       createFsProjectStorage({ root: path.join(volume, projectId) }),
+    mutations,
   });
   const provider = createServerWorkspaceProvider({
     context,
     catalog,
     projects,
+    mutations,
     location: (projectId) => ({
       storage: createFsProjectStorage({ root: path.join(volume, projectId) }),
       root: path.join(volume, projectId),
@@ -275,6 +288,7 @@ describe("the shared service cannot bypass the policy", () => {
       projects,
       storage: (projectId) =>
         createFsProjectStorage({ root: path.join(volume, projectId) }),
+      operations: createWorkspaceOperationRepository(client),
     });
   }
 
@@ -347,6 +361,7 @@ describe("the catalog is the only way in", () => {
       projects,
       storage: (projectId) =>
         createFsProjectStorage({ root: path.join(volume, projectId) }),
+      operations: createWorkspaceOperationRepository(client),
     });
     const listing = await catalog.createProject(owner, { name: "Mapped" });
 

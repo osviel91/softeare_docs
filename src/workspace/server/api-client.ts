@@ -64,6 +64,33 @@ export interface ServerProjectAccess {
   permissions: readonly string[];
 }
 
+/** A token's metadata, as `/api/tokens` renders it. Never carries a secret. */
+export interface PersonalAccessToken {
+  id: string;
+  name: string;
+  prefix: string;
+  scopes: readonly string[];
+  projectIds: readonly string[] | null;
+  createdAt: string;
+  expiresAt: string | null;
+  lastUsedAt: string | null;
+  revokedAt: string | null;
+  revoked: boolean;
+}
+
+/** A newly created token: its metadata plus the one-time plaintext. */
+export interface CreatedPersonalAccessToken {
+  /** The full `sdm_pat_…` value. The caller must show it and then forget it. */
+  secret: string;
+  token: PersonalAccessToken;
+}
+
+/** The token list together with the scope vocabulary the server accepts. */
+export interface PersonalAccessTokenList {
+  tokens: PersonalAccessToken[];
+  scopes: string[];
+}
+
 /** The `fetch` shape this client uses. Injectable so a test needs no network. */
 export type FetchLike = (
   input: string,
@@ -247,6 +274,55 @@ export class ServerApiClient {
   /** Revoke the session server-side and clear the cookie. */
   async logout(): Promise<void> {
     await this.request<unknown>("POST", "/auth/logout");
+  }
+
+  /** The caller's own access-token metadata plus the scope vocabulary. */
+  async listTokens(): Promise<PersonalAccessTokenList> {
+    const body = await this.request<PersonalAccessTokenList>(
+      "GET",
+      "/api/tokens",
+    );
+    return { tokens: body.tokens ?? [], scopes: body.scopes ?? [] };
+  }
+
+  /**
+   * Create a token and return its one-time plaintext.
+   *
+   * The secret is in the return value and nowhere else: it is the caller's job
+   * to show it, and this class never stores, logs or caches it.
+   */
+  async createToken(input: {
+    name: string;
+    scopes: readonly string[];
+    expiresAt?: string | null;
+    projectIds?: readonly string[] | null;
+  }): Promise<CreatedPersonalAccessToken> {
+    return this.request<CreatedPersonalAccessToken>(
+      "POST",
+      "/api/tokens",
+      input,
+    );
+  }
+
+  /** Rename a token. */
+  async renameToken(
+    tokenId: string,
+    name: string,
+  ): Promise<PersonalAccessToken> {
+    const body = await this.request<{ token: PersonalAccessToken }>(
+      "PATCH",
+      `/api/tokens/${encodeURIComponent(tokenId)}`,
+      { name },
+    );
+    return body.token;
+  }
+
+  /** Revoke a token. It stops authenticating immediately. */
+  async revokeToken(tokenId: string): Promise<void> {
+    await this.request<unknown>(
+      "DELETE",
+      `/api/tokens/${encodeURIComponent(tokenId)}`,
+    );
   }
 
   /**

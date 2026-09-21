@@ -13,6 +13,7 @@ _decisions_; these explain the _intent_.
 | [Phase 12 — MCP server for coding agents](phase-12-mcp-server.md)                                       | Implemented | working tree          |
 | [Server migration, Phases 0–3](server-migration-0-3.md)                                                 | Implemented | `48242d4` + review    |
 | [Server migration, Phase 4](server-migration-4.md)                                                      | Implemented | `596e265` + `dd44687` |
+| [Server migration, Phase 5 — PATs + remote MCP](server-migration-5.md)                                  | Implemented | `0335271` + `204f385` |
 
 ## How a phase is run
 

@@ -2950,3 +2950,168 @@ body {
 .app__status-action:hover {
   background: var(--bg-hover);
 }
+
+/* --- Personal access tokens (Phase 5E) ---------------------------------- */
+
+.tokens {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 24px 32px 48px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.tokens__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.tokens__eyebrow {
+  margin: 0 0 2px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.tokens__title {
+  margin: 0;
+  font-size: 22px;
+}
+
+.tokens__lead {
+  margin: 6px 0 0;
+  max-width: 70ch;
+  color: var(--text-muted);
+}
+
+.tokens__heading {
+  margin: 0 0 10px;
+  font-size: 15px;
+}
+
+.tokens__panel {
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 8px);
+  background: var(--bg-elevated, transparent);
+}
+
+.tokens__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.tokens__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.tokens__field input,
+.tokens__field select {
+  min-width: 220px;
+  padding: 5px 8px;
+  font: inherit;
+  color: var(--text);
+  background: var(--bg-input, transparent);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+}
+
+.tokens__scopes {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.tokens__scope {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0;
+  font-size: 13px;
+}
+
+.tokens__secret {
+  padding: 16px;
+  border: 1px solid var(--accent, #c9a227);
+  border-radius: var(--radius-md, 8px);
+  background: var(--bg-elevated, transparent);
+}
+
+.tokens__warning {
+  margin: 0 0 10px;
+  max-width: 80ch;
+  color: var(--text-muted);
+}
+
+.tokens__secret-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tokens__secret-value {
+  flex: 1;
+  min-width: 280px;
+  padding: 6px 8px;
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  color: var(--text);
+  background: var(--bg-input, transparent);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+}
+
+.tokens__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.tokens__table th,
+.tokens__table td {
+  padding: 6px 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.tokens__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tokens__row--revoked {
+  opacity: 0.55;
+}
+
+.tokens__error {
+  margin: 10px 0 0;
+  color: var(--danger, #d9534f);
+}
+
+.tokens__code {
+  margin: 10px 0;
+  padding: 12px;
+  overflow: auto;
+  font-size: 12px;
+  background: var(--bg-code, rgba(127, 127, 127, 0.12));
+  border-radius: var(--radius-sm);
+}
+
+.tokens__note {
+  margin: 0;
+  max-width: 80ch;
+  color: var(--text-muted);
+}

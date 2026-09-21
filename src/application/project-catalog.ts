@@ -17,6 +17,7 @@
  * without either re-deciding what happened.
  */
 import type { ApplicationContext } from "./context";
+import { hasAnyScope } from "./context";
 import {
   ApplicationError,
   forbidden,
@@ -395,8 +396,14 @@ export function createProjectCatalog(
       // There is no project to resolve a role in yet, so the credential's own
       // capability is the whole check. A session carries the full vocabulary; a
       // read-only machine token does not, which keeps project creation a
-      // privileged act even where a transport exposes it.
-      if (!credentialGrants(context.principal, "project:write")) {
+      // privileged act even where a transport exposes it. `project:admin`
+      // counts: it is strictly stronger than `project:write`.
+      if (
+        !hasAnyScope(context.principal.scopes, [
+          "project:write",
+          "project:admin",
+        ])
+      ) {
         throw forbidden(
           "This credential does not carry the project:write permission.",
         );

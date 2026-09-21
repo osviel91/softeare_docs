@@ -157,6 +157,7 @@ import type { WorkspaceRepository } from "./workspace/WorkspaceRepository";
 import { ServerApiClient } from "./workspace/server/api-client";
 import { useAuth } from "./features/server/use-auth";
 import { useServerWorkspaces } from "./features/server/use-server-workspaces";
+import PersonalAccessTokens from "./features/server/PersonalAccessTokens";
 import { RevisionConflictError } from "./workspace/server/api-errors";
 import { supportsForcedWrite } from "./workspace/server/server-workspace-repository";
 
@@ -169,9 +170,11 @@ type EditorView = "code" | "outline" | "problems" | "overview" | "history";
  * Which page the shell shows. The editor, explorer and preview make up the
  * workspace; the documentation is a page of its own rather than a panel inside
  * the editor pane, because it is reference material about the tools rather than
- * something you edit alongside a diagram.
+ * something you edit alongside a diagram. Access tokens are a third page,
+ * reachable only while signed in, because they are account settings rather than
+ * editing tools.
  */
-type AppPage = "workspace" | "docs";
+type AppPage = "workspace" | "docs" | "tokens";
 
 /**
  * A destructive action waiting for confirmation. The dialog is opened when the
@@ -1521,6 +1524,9 @@ export default function App() {
   /** Open the documentation page. */
   const openDocs = useCallback((): void => setPage("docs"), []);
 
+  /** Open the personal-access-token page (only meaningful while signed in). */
+  const openTokens = useCallback((): void => setPage("tokens"), []);
+
   const registry = useCommands({
     createEmptyDiagram: workspace.createEmptyDiagram,
     createEmptyNote: createNote,
@@ -1998,6 +2004,18 @@ export default function App() {
               <span aria-hidden="true">▤</span> Docs
             </button>
 
+            {auth.status === "authenticated" ? (
+              <button
+                type="button"
+                className="button app__tokens-button"
+                data-testid="open-tokens"
+                title="Manage personal access tokens for remote MCP clients"
+                onClick={openTokens}
+              >
+                <span aria-hidden="true">⚿</span> Tokens
+              </button>
+            ) : null}
+
             <label className="switch" title="Re-render the diagram as you type">
               <input
                 type="checkbox"
@@ -2018,7 +2036,7 @@ export default function App() {
           </>
         ) : (
           <span className="app__page-title" data-testid="docs-page-title">
-            Documentation
+            {page === "tokens" ? "Access tokens" : "Documentation"}
           </span>
         )}
 
@@ -2039,6 +2057,12 @@ export default function App() {
 
       {page === "docs" ? (
         <DocsPage onBack={() => setPage("workspace")} />
+      ) : page === "tokens" ? (
+        <PersonalAccessTokens
+          client={apiClient}
+          auth={auth}
+          onBack={() => setPage("workspace")}
+        />
       ) : (
         <>
           <main className="app__workspace">

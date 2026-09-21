@@ -99,6 +99,42 @@ npm run mcp         # build, then run it on the current directory`}</CodeBlock>
 }`}</CodeBlock>
       </Group>
 
+      <Group title="Remote MCP for server projects" testId="mcp-remote">
+        <p className="ref__summary">
+          When you use the hosted server, an agent reaches <em>your</em> server
+          projects over the remote MCP endpoint — no local checkout, no
+          workspace directory. It authenticates with a{" "}
+          <strong>personal access token</strong> presented as a bearer
+          credential. Create one under <strong>Tokens</strong> in the toolbar;
+          the token is shown once and cannot be retrieved again.
+        </p>
+        <CodeBlock>{`{
+  "mcpServers": {
+    "sequencediagrams": {
+      "type": "http",
+      "url": "<your-server>/mcp",
+      "headers": {
+        "Authorization": "Bearer <YOUR_PAT>"
+      }
+    }
+  }
+}`}</CodeBlock>
+        <p className="ref__summary">
+          A token carries a scope: <code>projects:read</code> can only read,{" "}
+          <code>projects:write</code> can also create, update, move and delete
+          documents. It acts as you, inside the projects you belong to, and
+          never widens your own access. Revoking it in the{" "}
+          <strong>Tokens</strong> page stops it immediately.
+        </p>
+        <p className="ref__summary">
+          Remote MCP is a <em>machine</em> surface: it accepts only the bearer
+          token, never your browser session cookie, and a token is never a
+          substitute for signing in. Writes preserve optimistic concurrency — an
+          agent must send the revision it last read, and a stale write is
+          refused with a conflict instead of overwriting a change made here.
+        </p>
+      </Group>
+
       <Group title="What an agent can do" testId="mcp-capabilities">
         <ul className="ref__list ref__list--bullets">
           <li>

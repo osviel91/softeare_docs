@@ -101,6 +101,8 @@ const CONFLICT_OWNER = "CONFLICTOWNERWINS";
 const CONFLICT_LOCAL = "CONFLICTLOCALEDIT";
 const VIEWER_MARKER = "VIEWERREADONLYBASE";
 const LOCAL_MARKER = "LOCALANONMARKER";
+/** Written through the remote MCP endpoint and then looked for in the browser. */
+const AGENT_MARKER = "REMOTEMCPMARKER";
 
 const failures = [];
 
@@ -312,6 +314,44 @@ async function serverProjectByName(page, projectName) {
     (entry) => entry.name === projectName,
   );
   return project ?? null;
+}
+
+/**
+ * Speak one JSON-RPC message to the remote MCP endpoint as a machine client.
+ *
+ * This goes to the API directly with an `Authorization: Bearer` header, not
+ * through the page's cookie: the whole point of the remote MCP surface is that
+ * it is a machine credential on a different axis from the browser session, and
+ * a test that borrowed the page's session would not prove it.
+ */
+async function remoteMcp(apiBase, token, message) {
+  const response = await fetch(`${apiBase}/mcp`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      ...(token === null ? {} : { authorization: `Bearer ${token}` }),
+    },
+    body: JSON.stringify(message),
+  });
+  const text = await response.text();
+  let json = null;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    json = null;
+  }
+  return { status: response.status, json, text };
+}
+
+/** Call a remote MCP tool and return its result object. */
+async function remoteTool(apiBase, token, id, name, args) {
+  const answer = await remoteMcp(apiBase, token, {
+    jsonrpc: "2.0",
+    id,
+    method: "tools/call",
+    params: { name, arguments: args },
+  });
+  return answer.json?.result ?? null;
 }
 
 /**
@@ -1774,7 +1814,7 @@ async function runChecks(page) {
  * leak between them: two contexts signed in as different people must not share a
  * session, and an anonymous context must genuinely start with no session.
  */
-async function runServerChecks(browser, idp) {
+async function runServerChecks(browser, idp, apiBase) {
   const owner = {
     sub: "e2e-owner",
     name: "E2E Owner",
@@ -2308,6 +2348,199 @@ async function runServerChecks(browser, idp) {
       }
     },
   );
+
+  await scenario(
+    "Server scenario 6: a remote MCP client reads and writes with a PAT",
+    async () => {
+      const context = await browser.newContext();
+      const page = await context.newPage();
+      try {
+        await page.goto(BASE_URL, { waitUntil: "domcontentloaded" });
+        await page.locator('[data-testid="app-shell"]').waitFor({
+          state: "visible",
+          timeout: UI_TIMEOUT_MS,
+        });
+        await signIn(page, idp, owner);
+        await createServerProject(page, "Remote Agent");
+        const project = await serverProjectByName(page, "Remote Agent");
+        if (project === null) throw new Error("Remote Agent was not created");
+
+        // 1. The user creates a personal access token through the real screen.
+        await page.locator('[data-testid="open-tokens"]').click();
+        await page.locator('[data-testid="token-name"]').fill("E2E agent");
+        await page
+          .locator('[data-testid="token-scope-projects:write"]')
+          .check();
+        await page.locator('[data-testid="token-create"]').click();
+        const secret = await page
+          .locator('[data-testid="token-secret"]')
+          .inputValue();
+        check(
+          "a PAT is created and its secret is shown once",
+          secret.startsWith("sdm_pat_"),
+          secret.slice(0, 16),
+        );
+        await page.locator('[data-testid="token-dismiss"]').click();
+        await page.locator('[data-testid="tokens-back"]').click();
+        await page.locator('[data-testid="app-shell"]').waitFor({
+          state: "visible",
+          timeout: UI_TIMEOUT_MS,
+        });
+
+        // 2. A machine client authenticates and handshakes. It carries only the
+        //    bearer token; the browser session belongs to a different context.
+        const handshake = await remoteMcp(apiBase, secret, {
+          jsonrpc: "2.0",
+          id: 1,
+          method: "initialize",
+          params: { protocolVersion: "2025-06-18" },
+        });
+        check(
+          "the remote MCP client authenticates with the PAT",
+          handshake.status === 200 &&
+            handshake.json?.result?.serverInfo?.name ===
+              "sequencediagrams-remote",
+          `status ${handshake.status}`,
+        );
+
+        // 3. It reads the server project.
+        const listed = await remoteTool(
+          apiBase,
+          secret,
+          2,
+          "list_projects",
+          {},
+        );
+        check(
+          "the agent reads the server project list",
+          (listed?.structuredContent?.projects ?? []).some(
+            (entry) => entry.id === project.id,
+          ),
+        );
+
+        // 4. It creates a document, then updates it at the revision it read.
+        const created = await remoteTool(
+          apiBase,
+          secret,
+          3,
+          "create_resource",
+          {
+            projectId: project.id,
+            path: "agent-flow.seq",
+            type: "sequence-diagram",
+            content: [
+              "title Agent Flow",
+              "participant One",
+              "participant Two",
+              `One ->> Two: ${AGENT_MARKER}`,
+              "",
+            ].join("\n"),
+          },
+        );
+        const resource = created?.structuredContent?.resource;
+        check(
+          "the agent creates a document on the server",
+          created?.isError === false && resource?.revision === 1,
+        );
+
+        const updated = await remoteTool(
+          apiBase,
+          secret,
+          4,
+          "update_resource",
+          {
+            projectId: project.id,
+            resource: resource.id,
+            content: [
+              "title Agent Flow",
+              "participant One",
+              "participant Two",
+              `One ->> Two: ${AGENT_MARKER}`,
+              "Two --> One: Ack",
+              "",
+            ].join("\n"),
+            expectedRevision: resource.revision,
+          },
+        );
+        check(
+          "the agent's update advances the revision",
+          updated?.structuredContent?.resource?.revision === 2,
+        );
+
+        // 5. A stale write is refused rather than overwriting.
+        const stale = await remoteTool(apiBase, secret, 5, "update_resource", {
+          projectId: project.id,
+          resource: resource.id,
+          content: "One ->> Two: STALE",
+          expectedRevision: resource.revision,
+        });
+        check(
+          "a stale agent write is a conflict, not an overwrite",
+          stale?.isError === true &&
+            stale?.structuredContent?.error?.code === "conflict",
+          stale?.structuredContent?.error?.code,
+        );
+
+        // 6. The browser observes the agent's change.
+        await page.reload({ waitUntil: "domcontentloaded" });
+        await openServerProject(page, "Remote Agent");
+        const projectRow = page
+          .locator('[data-testid="explorer-project"]')
+          .filter({ hasText: "Remote Agent" });
+        const diagram = projectRow
+          .locator('[data-testid="explorer-diagram"]')
+          .first();
+        await diagram.waitFor({ state: "visible", timeout: UI_TIMEOUT_MS });
+        await diagram.click();
+        await page.locator('[data-testid="dsl-textarea"]').waitFor({
+          state: "visible",
+          timeout: UI_TIMEOUT_MS,
+        });
+        const observed = await waitForInputValue(
+          page.locator('[data-testid="dsl-textarea"]'),
+          (value) => value.includes(AGENT_MARKER),
+          "the browser to see the agent's document",
+        );
+        check(
+          "the browser observes the document the agent wrote",
+          observed.includes("Two --> One: Ack"),
+        );
+
+        // 7. Revoking the token stops the same machine credential immediately.
+        await page.locator('[data-testid="open-tokens"]').click();
+        const tokenRow = page
+          .locator('[data-testid^="token-row-"]')
+          .filter({ hasText: "E2E agent" });
+        await tokenRow.waitFor({ state: "visible", timeout: UI_TIMEOUT_MS });
+        await tokenRow
+          .locator('[data-testid^="token-revoke-"]')
+          .first()
+          .click();
+        await tokenRow
+          .locator('[data-testid^="token-revoke-confirm-"]')
+          .click();
+        await waitForText(
+          tokenRow,
+          (text) => text.includes("revoked"),
+          "the revoked token row",
+        );
+        check("the token can be revoked from the token screen", true);
+
+        const afterRevoke = await remoteMcp(apiBase, secret, {
+          jsonrpc: "2.0",
+          id: 9,
+          method: "tools/list",
+        });
+        check(
+          "the revoked credential is rejected immediately",
+          afterRevoke.status === 401,
+          `status ${afterRevoke.status}`,
+        );
+      } finally {
+        await context.close();
+      }
+    },
+  );
 }
 
 async function main() {
@@ -2348,7 +2581,7 @@ async function main() {
     const checksPage = await checksContext.newPage();
     await runChecks(checksPage);
     await checksContext.close();
-    await runServerChecks(browser, idp);
+    await runServerChecks(browser, idp, `http://127.0.0.1:${apiPort}`);
   } finally {
     await browser?.close().catch(() => {});
     server?.kill("SIGTERM");

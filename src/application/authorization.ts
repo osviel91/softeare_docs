@@ -16,7 +16,7 @@
  *    project that does not exist, so a credential cannot be used to enumerate
  *    project ids.
  *
- * Use cases call `requirePermission(context, projectId, "resource:write")` and
+ * Use cases call `requirePermission(context, projectId, "resource:update")` and
  * nothing else. That single call is why the HTTP API and the MCP adapter cannot
  * disagree about who may do what: there is only one implementation to disagree
  * with.
@@ -123,7 +123,7 @@ export interface AuthorizationPolicy<
 
 /** Whether a credential is restricted to a specific set of projects. */
 export function restrictionOf(principal: Principal): readonly string[] | null {
-  const restricted = principal.projectIds;
+  const restricted = principal.allowedProjectIds;
   if (restricted === undefined || restricted.length === 0) return null;
   return restricted;
 }
@@ -184,7 +184,7 @@ export function createAuthorizationPolicy<
         role =
           project === null
             ? null
-            : await projects.roleOf(projectId, context.principal.userId);
+            : await projects.roleOf(projectId, context.principal.subjectUserId);
       } catch {
         // A failure to read membership is a refusal. This is the one place an
         // error is swallowed, and it is swallowed in the safe direction: the

@@ -64,31 +64,53 @@ export interface ServerProjectAccess {
   permissions: readonly string[];
 }
 
-/** A token's metadata, as `/api/tokens` renders it. Never carries a secret. */
-export interface PersonalAccessToken {
+/** An agent identity, as `/api/agents` renders it. */
+export interface ServerAgent {
   id: string;
+  name: string;
+  description: string | null;
+  createdAt: string;
+  updatedAt: string;
+  disabledAt: string | null;
+  disabled: boolean;
+  credentialCount?: number;
+  activeCredentialCount?: number;
+}
+
+/** A credential's metadata, as `/api/agents/:id/credentials` renders it. */
+export interface ServerCredential {
+  id: string;
+  agentId: string;
   name: string;
   prefix: string;
   scopes: readonly string[];
-  projectIds: readonly string[] | null;
+  allowedProjectIds: readonly string[] | null;
   createdAt: string;
   expiresAt: string | null;
   lastUsedAt: string | null;
   revokedAt: string | null;
-  revoked: boolean;
+  status: "active" | "revoked" | "expired" | "disabled";
 }
 
-/** A newly created token: its metadata plus the one-time plaintext. */
-export interface CreatedPersonalAccessToken {
+/** A newly created credential: its metadata plus the one-time plaintext. */
+export interface CreatedServerCredential {
   /** The full `sdm_pat_…` value. The caller must show it and then forget it. */
   secret: string;
-  token: PersonalAccessToken;
+  credential: ServerCredential;
 }
 
-/** The token list together with the scope vocabulary the server accepts. */
-export interface PersonalAccessTokenList {
-  tokens: PersonalAccessToken[];
+/** The agent list together with the scope vocabulary the server offers. */
+export interface ServerAgentList {
+  agents: ServerAgent[];
   scopes: string[];
+  defaultScopes: string[];
+}
+
+/** A credential list together with the scope vocabulary the server offers. */
+export interface ServerCredentialList {
+  credentials: ServerCredential[];
+  scopes: string[];
+  defaultScopes: string[];
 }
 
 /** The `fetch` shape this client uses. Injectable so a test needs no network. */
@@ -276,52 +298,113 @@ export class ServerApiClient {
     await this.request<unknown>("POST", "/auth/logout");
   }
 
-  /** The caller's own access-token metadata plus the scope vocabulary. */
-  async listTokens(): Promise<PersonalAccessTokenList> {
-    const body = await this.request<PersonalAccessTokenList>(
-      "GET",
-      "/api/tokens",
+  /** The caller's agents, with the scope vocabulary the server offers. */
+  async listAgents(): Promise<ServerAgentList> {
+    const body = await this.request<ServerAgentList>("GET", "/api/agents");
+    return {
+      agents: body.agents ?? [],
+      scopes: body.scopes ?? [],
+      defaultScopes: body.defaultScopes ?? [],
+    };
+  }
+
+  /** Create an agent identity. */
+  async createAgent(input: {
+    name: string;
+    description?: string | null;
+  }): Promise<ServerAgent> {
+    const body = await this.request<{ agent: ServerAgent }>(
+      "POST",
+      "/api/agents",
+      input,
     );
-    return { tokens: body.tokens ?? [], scopes: body.scopes ?? [] };
+    return body.agent;
+  }
+
+  /** Rename an agent, or change its description. */
+  async renameAgent(
+    agentId: string,
+    changes: { name?: string; description?: string | null },
+  ): Promise<ServerAgent> {
+    const body = await this.request<{ agent: ServerAgent }>(
+      "PATCH",
+      `/api/agents/${encodeURIComponent(agentId)}`,
+      changes,
+    );
+    return body.agent;
+  }
+
+  /** Disable an agent, invalidating every one of its credentials at once. */
+  async disableAgent(agentId: string): Promise<ServerAgent> {
+    const body = await this.request<{ agent: ServerAgent }>(
+      "DELETE",
+      `/api/agents/${encodeURIComponent(agentId)}`,
+    );
+    return body.agent;
+  }
+
+  /** Re-enable a disabled agent. */
+  async enableAgent(agentId: string): Promise<ServerAgent> {
+    const body = await this.request<{ agent: ServerAgent }>(
+      "POST",
+      `/api/agents/${encodeURIComponent(agentId)}/enable`,
+    );
+    return body.agent;
+  }
+
+  /** Every credential of an agent, with the offered scope vocabulary. */
+  async listCredentials(agentId: string): Promise<ServerCredentialList> {
+    const body = await this.request<ServerCredentialList>(
+      "GET",
+      `/api/agents/${encodeURIComponent(agentId)}/credentials`,
+    );
+    return {
+      credentials: body.credentials ?? [],
+      scopes: body.scopes ?? [],
+      defaultScopes: body.defaultScopes ?? [],
+    };
   }
 
   /**
-   * Create a token and return its one-time plaintext.
+   * Create a credential and return its one-time plaintext.
    *
    * The secret is in the return value and nowhere else: it is the caller's job
    * to show it, and this class never stores, logs or caches it.
    */
-  async createToken(input: {
-    name: string;
-    scopes: readonly string[];
-    expiresAt?: string | null;
-    projectIds?: readonly string[] | null;
-  }): Promise<CreatedPersonalAccessToken> {
-    return this.request<CreatedPersonalAccessToken>(
+  async createCredential(
+    agentId: string,
+    input: {
+      name: string;
+      scopes: readonly string[];
+      expiresAt?: string | null;
+      allowedProjectIds?: readonly string[] | null;
+    },
+  ): Promise<CreatedServerCredential> {
+    return this.request<CreatedServerCredential>(
       "POST",
-      "/api/tokens",
+      `/api/agents/${encodeURIComponent(agentId)}/credentials`,
       input,
     );
   }
 
-  /** Rename a token. */
-  async renameToken(
-    tokenId: string,
-    name: string,
-  ): Promise<PersonalAccessToken> {
-    const body = await this.request<{ token: PersonalAccessToken }>(
-      "PATCH",
-      `/api/tokens/${encodeURIComponent(tokenId)}`,
-      { name },
+  /** Rotate a credential: mint a replacement and revoke the old one. */
+  async rotateCredential(
+    agentId: string,
+    credentialId: string,
+  ): Promise<CreatedServerCredential & { replacedCredentialId: string }> {
+    return this.request<
+      CreatedServerCredential & { replacedCredentialId: string }
+    >(
+      "POST",
+      `/api/agents/${encodeURIComponent(agentId)}/credentials/${encodeURIComponent(credentialId)}/rotate`,
     );
-    return body.token;
   }
 
-  /** Revoke a token. It stops authenticating immediately. */
-  async revokeToken(tokenId: string): Promise<void> {
+  /** Revoke a credential. It stops authenticating immediately. */
+  async revokeCredential(agentId: string, credentialId: string): Promise<void> {
     await this.request<unknown>(
       "DELETE",
-      `/api/tokens/${encodeURIComponent(tokenId)}`,
+      `/api/agents/${encodeURIComponent(agentId)}/credentials/${encodeURIComponent(credentialId)}`,
     );
   }
 

@@ -29,7 +29,10 @@ import { createAuditRepository } from "../../src/persistence/audit-repository";
 import { createIdGenerator } from "../../src/shared/ids/uuid";
 import type { AuditRepository } from "../../src/application/ports/audit-repository";
 import type { ApplicationContext } from "../../src/application/context";
-import type { Permission } from "../../src/domain/access/permissions";
+import {
+  ALL_PERMISSIONS,
+  type Permission,
+} from "../../src/domain/access/permissions";
 import type { SqlClient } from "../../src/persistence/sql-client";
 import { openTestDatabase, closeTestDatabase } from "./test-database";
 
@@ -46,18 +49,7 @@ afterAll(async () => {
   await rm(volume, { recursive: true, force: true });
 });
 
-const ALL_SCOPES: Permission[] = [
-  "project:read",
-  "project:write",
-  "project:admin",
-  "resource:read",
-  "resource:write",
-  "diagram:render",
-  "project:validate",
-  "project:export",
-  "mcp:read",
-  "mcp:write",
-];
+const ALL_SCOPES: Permission[] = [...ALL_PERMISSIONS];
 
 /** A context owning a fresh project, over the given audit store. */
 async function owner(audit?: AuditRepository, onAuditFailure?: () => void) {
@@ -77,7 +69,12 @@ async function owner(audit?: AuditRepository, onAuditFailure?: () => void) {
   });
   const context: ApplicationContext = {
     requestId: "req-audit",
-    principal: { userId: user.id, authType: "session", scopes: ALL_SCOPES },
+    principal: {
+      subjectUserId: user.id,
+      actor: { kind: "user", userId: user.id },
+      authType: "session",
+      scopes: ALL_SCOPES,
+    },
   };
   const listing = await catalog.createProject(context, { name: "Audited" });
   return { catalog, context, projectId: listing.project.id };

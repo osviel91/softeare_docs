@@ -135,8 +135,8 @@ function fakeFetch(input: string, init?: RequestInit): Promise<Response> {
         permissions: [
           "project:read",
           "resource:read",
-          "resource:write",
-          "project:admin",
+          "resource:update",
+          "project:delete",
         ],
       }),
     );

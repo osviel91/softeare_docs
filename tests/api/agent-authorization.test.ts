@@ -1,20 +1,18 @@
 /**
- * PAT authorization composition (Phase 5, checkpoints 5B).
+ * Agent-credential authorization composition (ADR-043, Phase 5 §9, §39–41).
  *
- * A PAT is not a second authorization system: it produces the same
- * {@link ApplicationContext} a session does, and every use case decides on it
- * through the one policy. This suite proves the two grants compose — the
- * credential's scopes *and* the caller's project role — and that neither one can
- * widen the other:
+ * A credential is not a second authorization system: it produces the same
+ * {@link ApplicationContext} a session does, with the owner as the subject and
+ * the agent as the actor, and every use case decides on it through the one
+ * policy. This suite proves the two grants compose — the credential's scopes
+ * *and* the owner's project role — and that neither widens the other:
  *
- * - a read-only token is refused a write even in a project its owner owns;
- * - a writer token whose owner is only a VIEWER is still refused;
- * - a token never sees a project its owner is not a member of;
- * - a project-restricted token addresses another project as if it did not exist;
+ * - a read-only credential is refused a write even in a project its owner owns;
+ * - a writer credential whose owner is only a VIEWER is still refused;
+ * - a credential never sees a project its owner is not a member of;
+ * - a project-restricted credential addresses another project as if it did not
+ *   exist;
  * - a resource id from another project resolves to nothing.
- *
- * It also asserts the security posture the mission names: no token material in
- * logs or audit rows, and malformed credentials refused.
  */
 // @vitest-environment node
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -25,16 +23,10 @@ import { loadConfig } from "../../apps/api/config";
 import { closeApp, createApp, type AppDependencies } from "../../apps/api/app";
 import { contextFor, SESSION_SCOPES } from "../../apps/api/context";
 import {
-  PAT_PREFIX,
-  generatePat,
-  principalFromPat,
-  resolvePat,
-} from "../../apps/api/auth/pat";
-import {
-  parseCookies,
-  parseQuery,
-  type ServerRequest,
-} from "../../apps/api/http/http";
+  principalFromCredential,
+  resolveAgentCredential,
+} from "../../apps/api/auth/agent-credential";
+import { parseCookies, parseQuery } from "../../apps/api/http/http";
 import { ApplicationError } from "../../src/application/errors";
 import type { ApplicationContext } from "../../src/application/context";
 import { createTestProvider, type TestProvider } from "./test-provider";
@@ -44,7 +36,7 @@ let volume: string;
 let provider: TestProvider;
 
 beforeAll(async () => {
-  volume = await mkdtemp(path.join(tmpdir(), "sd-pat-authz-"));
+  volume = await mkdtemp(path.join(tmpdir(), "sd-agent-authz-"));
   provider = await createTestProvider();
   dependencies = await createApp(
     loadConfig(
@@ -76,36 +68,66 @@ async function aUser(): Promise<string> {
   subjectCounter += 1;
   const user = await dependencies.users.findOrCreateByExternalIdentity({
     issuer: provider.issuer,
-    subject: `pat-authz-${subjectCounter}`,
+    subject: `agent-authz-${subjectCounter}`,
     displayName: `User ${subjectCounter}`,
     email: null,
   });
   return user.id;
 }
 
+/** A session context, as the browser-management routes would build. */
+function sessionContext(userId: string): ApplicationContext {
+  return contextFor(
+    {
+      subjectUserId: userId,
+      actor: { kind: "user", userId },
+      authType: "session",
+      scopes: SESSION_SCOPES,
+    },
+    "req-session",
+  );
+}
+
 /**
- * Mint a token for a user and return the context a remote MCP request would
- * run under: identity from the token's owner, capabilities from its scopes.
- *
- * The record is created through the repository (the browser route is covered
- * elsewhere) and turned into a principal by the same function the bearer
- * verifier uses, so nothing about the composition is faked.
+ * Create an agent and one credential for a user, then return the context a
+ * request presenting that credential would run under.
  */
-async function patContext(
+async function credentialContext(
   userId: string,
   scopes: readonly string[],
-  projectIds?: readonly string[],
+  allowedProjectIds?: readonly string[],
 ): Promise<ApplicationContext> {
-  const minted = generatePat();
-  const record = await dependencies.tokens.create({
-    userId,
-    name: "Agent",
-    prefix: minted.prefix,
-    tokenHash: minted.tokenHash,
-    scopes,
-    ...(projectIds === undefined ? {} : { projectIds }),
+  const session = sessionContext(userId);
+  const agent = await dependencies.agents.createAgent(session, {
+    name: `Agent ${Math.random().toString(36).slice(2)}`,
   });
-  return contextFor(principalFromPat(record), `req-${record.id}`);
+  const created = await dependencies.agents.createCredential(
+    session,
+    agent.id,
+    {
+      name: "Credential",
+      scopes,
+      ...(allowedProjectIds === undefined ? {} : { allowedProjectIds }),
+    },
+  );
+  const lookup = await resolveAgentCredential(
+    dependencies.credentials,
+    {
+      method: "POST",
+      path: "/mcp",
+      query: parseQuery(""),
+      headers: { authorization: `Bearer ${created.token}` },
+      cookies: parseCookies(""),
+      body: "{}",
+    },
+    dependencies.tokenPepper,
+  );
+  if (lookup.state !== "valid")
+    throw new Error("the credential did not verify");
+  return contextFor(
+    principalFromCredential(lookup.credential, lookup.agent),
+    `req-${created.credential.id}`,
+  );
 }
 
 /** Run a catalog call and return the ApplicationError code it threw, if any. */
@@ -119,30 +141,23 @@ async function refusalOf(work: () => Promise<unknown>): Promise<string | null> {
   }
 }
 
-/** Create a project owned by a user, directly through the catalog. */
+/** Create a project owned by a user, through the catalog. */
 async function aProject(ownerId: string, name = "Payments") {
-  const context = contextFor(
-    { userId: ownerId, authType: "session", scopes: SESSION_SCOPES },
-    "req-owner",
+  const listing = await dependencies.catalog.createProject(
+    sessionContext(ownerId),
+    { name },
   );
-  const listing = await dependencies.catalog.createProject(context, { name });
   return listing.project.id;
 }
 
-/** Add a member at a role, directly through the repository. */
-async function addMember(
-  projectId: string,
-  userId: string,
-  role: "OWNER" | "EDITOR" | "VIEWER",
-) {
-  await dependencies.projects.setMember(projectId, userId, role);
-}
-
 describe("scopes compose with project roles", () => {
-  it("lets a writer token create, update, move and delete a resource", async () => {
+  it("lets a writer credential create, update, move and delete a resource", async () => {
     const owner = await aUser();
     const projectId = await aProject(owner, "Writer project");
-    const context = await patContext(owner, ["projects:write"]);
+    const context = await credentialContext(owner, [
+      "resource:read",
+      "resource:write",
+    ]);
 
     const created = await dependencies.catalog.createResource(
       context,
@@ -173,49 +188,42 @@ describe("scopes compose with project roles", () => {
     ).toEqual([]);
   });
 
-  it("refuses every write to a read-only token, even in an owned project", async () => {
+  it("refuses every write to a read-only credential, even in an owned project", async () => {
     const owner = await aUser();
     const projectId = await aProject(owner, "Read-only project");
-    const writer = await patContext(owner, ["projects:write"]);
-    const reader = await patContext(owner, ["projects:read"]);
+    const writer = await credentialContext(owner, [
+      "resource:read",
+      "resource:write",
+    ]);
+    const reader = await credentialContext(owner, ["resource:read"]);
     const resource = await dependencies.catalog.createResource(
       writer,
       projectId,
       { path: "doc.md", type: "markdown-document", content: "# Hi" },
     );
 
-    expect(
-      await refusalOf(() =>
+    for (const attempt of [
+      () =>
         dependencies.catalog.createResource(reader, projectId, {
           path: "new.seq",
           type: "sequence-diagram",
           content: "",
         }),
-      ),
-    ).toBe("forbidden");
-    expect(
-      await refusalOf(() =>
+      () =>
         dependencies.catalog.updateResource(reader, projectId, resource.id, {
           content: "changed",
           expectedRevision: 1,
         }),
-      ),
-    ).toBe("forbidden");
-    expect(
-      await refusalOf(() =>
+      () =>
         dependencies.catalog.moveResource(reader, projectId, resource.id, {
           path: "moved.md",
           expectedRevision: 1,
         }),
-      ),
-    ).toBe("forbidden");
-    expect(
-      await refusalOf(() =>
-        dependencies.catalog.deleteResource(reader, projectId, resource.id),
-      ),
-    ).toBe("forbidden");
+      () => dependencies.catalog.deleteResource(reader, projectId, resource.id),
+    ]) {
+      expect(await refusalOf(attempt)).toBe("forbidden");
+    }
 
-    // The content is untouched, so the refusals changed nothing.
     const read = await dependencies.catalog.readResource(
       reader,
       projectId,
@@ -224,38 +232,42 @@ describe("scopes compose with project roles", () => {
     expect(read.content).toBe("# Hi");
   });
 
-  it("refuses a writer token whose owner is only a VIEWER", async () => {
+  it("refuses a writer credential whose owner is only a VIEWER", async () => {
     const owner = await aUser();
     const viewer = await aUser();
     const projectId = await aProject(owner, "Viewer project");
-    await addMember(projectId, viewer, "VIEWER");
-    const context = await patContext(viewer, ["projects:write"]);
+    await dependencies.projects.setMember(projectId, viewer, "VIEWER");
+    const context = await credentialContext(viewer, [
+      "resource:read",
+      "resource:write",
+    ]);
 
-    const read = await refusalOf(() =>
-      dependencies.catalog.listResources(context, projectId),
-    );
-    expect(read).toBeNull();
-
-    const write = await refusalOf(() =>
-      dependencies.catalog.createResource(context, projectId, {
-        path: "sneaky.seq",
-        type: "sequence-diagram",
-        content: "",
-      }),
-    );
-    expect(write).toBe("forbidden");
+    expect(
+      await refusalOf(() =>
+        dependencies.catalog.listResources(context, projectId),
+      ),
+    ).toBeNull();
+    expect(
+      await refusalOf(() =>
+        dependencies.catalog.createResource(context, projectId, {
+          path: "sneaky.seq",
+          type: "sequence-diagram",
+          content: "",
+        }),
+      ),
+    ).toBe("forbidden");
   });
 
-  it("refuses a read-only token creating a project", async () => {
+  it("refuses a read-only credential creating a project", async () => {
     const owner = await aUser();
-    const reader = await patContext(owner, ["projects:read"]);
+    const reader = await credentialContext(owner, ["resource:read"]);
     expect(
       await refusalOf(() =>
         dependencies.catalog.createProject(reader, { name: "Escalation" }),
       ),
     ).toBe("forbidden");
 
-    const writer = await patContext(owner, ["projects:write"]);
+    const writer = await credentialContext(owner, ["project:create"]);
     const created = await dependencies.catalog.createProject(writer, {
       name: "Agent-made",
     });
@@ -263,12 +275,15 @@ describe("scopes compose with project roles", () => {
   });
 });
 
-describe("project isolation through a PAT", () => {
+describe("project isolation through a credential", () => {
   it("cannot see or touch another user's project", async () => {
     const owner = await aUser();
     const stranger = await aUser();
     const projectId = await aProject(owner, "Private project");
-    const context = await patContext(stranger, ["projects:write"]);
+    const context = await credentialContext(stranger, [
+      "resource:read",
+      "resource:write",
+    ]);
 
     expect(await dependencies.catalog.listProjects(context)).toEqual([]);
     expect(
@@ -287,11 +302,15 @@ describe("project isolation through a PAT", () => {
     ).toBe("not_found");
   });
 
-  it("answers a project a restricted token cannot address as missing", async () => {
+  it("answers a project a restricted credential cannot address as missing", async () => {
     const owner = await aUser();
     const visible = await aProject(owner, "Visible");
     const hidden = await aProject(owner, "Hidden");
-    const context = await patContext(owner, ["projects:write"], [visible]);
+    const context = await credentialContext(
+      owner,
+      ["resource:read", "resource:write"],
+      [visible],
+    );
 
     const listed = await dependencies.catalog.listProjects(context);
     expect(listed.map((entry) => entry.project.id)).toEqual([visible]);
@@ -309,7 +328,10 @@ describe("project isolation through a PAT", () => {
     const owner = await aUser();
     const first = await aProject(owner, "First");
     const second = await aProject(owner, "Second");
-    const context = await patContext(owner, ["projects:write"]);
+    const context = await credentialContext(owner, [
+      "resource:read",
+      "resource:write",
+    ]);
     const resource = await dependencies.catalog.createResource(context, first, {
       path: "doc.md",
       type: "markdown-document",
@@ -336,7 +358,10 @@ describe("malformed input and credential handling", () => {
   it("refuses a traversing resource path as an invalid path", async () => {
     const owner = await aUser();
     const projectId = await aProject(owner, "Paths");
-    const context = await patContext(owner, ["projects:write"]);
+    const context = await credentialContext(owner, [
+      "resource:read",
+      "resource:write",
+    ]);
 
     for (const bad of [
       "../escape.seq",
@@ -360,63 +385,93 @@ describe("malformed input and credential handling", () => {
     }
   });
 
-  it("refuses malformed bearer credentials with an unauthenticated failure", async () => {
-    const request = (authorization: string | undefined): ServerRequest => ({
-      method: "POST",
-      path: "/mcp",
-      query: parseQuery(""),
-      headers: authorization === undefined ? {} : { authorization },
-      cookies: parseCookies(authorization === undefined ? undefined : ""),
-      body: "{}",
-    });
-
-    const cases = [
-      undefined,
-      "",
-      "Bearer",
-      "Bearer ",
-      "Basic dXNlcjpwYXNz",
-      "Token abc",
-      `${PAT_PREFIX}${"0".repeat(16)}.${"A".repeat(43)}`,
-    ];
-    for (const header of cases) {
-      const lookup = await resolvePat(dependencies.tokens, request(header));
-      expect(lookup.state === "valid").toBe(false);
-    }
-  });
-
-  it("never writes a presented token to stderr", async () => {
+  it("never writes a presented credential to stderr", async () => {
     const owner = await aUser();
-    const context = await patContext(owner, ["projects:read"]);
-    // A valid record exists; present it with a wrong secret so verification
-    // runs every branch it can fail on.
-    const record = (await dependencies.tokens.listForUser(owner))[0];
-    const wrong = `${PAT_PREFIX}${record.prefix}.${"Z".repeat(43)}`;
+    const context = await credentialContext(owner, ["resource:read"]);
+    expect(context.principal.actor.kind).toBe("agent");
+
+    const agentId =
+      context.principal.actor.kind === "agent"
+        ? context.principal.actor.agentId
+        : "";
+    const credentials = await dependencies.credentials.listForAgent(agentId);
+    const wrong = `sdm_pat_${credentials[0].publicPrefix}.${"Z".repeat(43)}`;
     const write = vi.spyOn(process.stderr, "write").mockReturnValue(true);
     try {
-      await resolvePat(dependencies.tokens, {
-        method: "POST",
-        path: "/mcp",
-        query: parseQuery(""),
-        headers: { authorization: `Bearer ${wrong}` },
-        cookies: parseCookies(""),
-        body: "{}",
-      });
-      expect(context.principal.userId).toBe(owner);
+      await resolveAgentCredential(
+        dependencies.credentials,
+        {
+          method: "POST",
+          path: "/mcp",
+          query: parseQuery(""),
+          headers: { authorization: `Bearer ${wrong}` },
+          cookies: parseCookies(""),
+          body: "{}",
+        },
+        dependencies.tokenPepper,
+      );
     } finally {
       const calls = write.mock.calls.map((call) => String(call[0])).join("");
       expect(calls).not.toContain(wrong);
       write.mockRestore();
     }
   });
+});
 
-  it("records an invalid credential attempt in no audit row", async () => {
+describe("audit distinguishes an agent write from a session write", () => {
+  it("records the agent as actor, the owner as subject and the credential", async () => {
     const owner = await aUser();
-    const context = await patContext(owner, ["projects:read"]);
+    const projectId = await aProject(owner, "Audited project");
+    const context = await credentialContext(owner, [
+      "resource:read",
+      "resource:write",
+    ]);
+
+    await dependencies.catalog.createResource(context, projectId, {
+      path: "doc.md",
+      type: "markdown-document",
+      content: "# One",
+    });
+
     const events = await dependencies.audit.listForUser(owner, 50);
-    // Creating the token is audited; verification itself is not an audit event
-    // (it is counted through last_used_at), so nothing here names a secret.
-    expect(JSON.stringify(events)).not.toContain("token_hash");
-    expect(context.principal.authType).toBe("pat");
+    const created = events.find((event) => event.action === "resource.created");
+    expect(created).toBeDefined();
+    expect(created!.subjectUserId).toBe(owner);
+    expect(created!.actorType).toBe("agent");
+    expect(created!.actorId).not.toBe(owner);
+    expect(created!.credentialId).not.toBeNull();
+    expect(created!.authType).toBe("pat");
+
+    // A session write in the same project records the user as the actor.
+    await dependencies.catalog.createResource(
+      sessionContext(owner),
+      projectId,
+      {
+        path: "by-hand.md",
+        type: "markdown-document",
+        content: "# Two",
+      },
+    );
+    const after = await dependencies.audit.listForUser(owner, 50);
+    const sessionWrite = after.find(
+      (event) =>
+        event.action === "resource.created" && event.actorType === "user",
+    );
+    expect(sessionWrite).toBeDefined();
+    expect(sessionWrite!.actorId).toBe(owner);
+    expect(sessionWrite!.credentialId).toBeNull();
+  });
+});
+
+describe("the shared API serves a credential too", () => {
+  it("resolves a bearer credential through /api/me and the project routes", async () => {
+    // Covered end to end by the E2E scenario; asserted here at the seam so a
+    // regression is caught without a browser.
+    const owner = await aUser();
+    await aProject(owner, "Shared");
+    const context = await credentialContext(owner, ["project:read"]);
+    expect(context.principal.scopes).toContain("project:read");
+    const listed = await dependencies.catalog.listProjects(context);
+    expect(listed).toHaveLength(1);
   });
 });

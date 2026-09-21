@@ -13,6 +13,7 @@
  */
 import type { SqlClient } from "./sql-client";
 import { up as initialSchema } from "./migrations/0001-initial-schema";
+import { up as agentCredentials } from "./migrations/0002-agent-credentials";
 
 /** One migration: a stable name and the SQL that applies it. */
 export interface Migration {
@@ -27,6 +28,7 @@ export interface Migration {
 /** Every migration the server knows, oldest first. */
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: "initial-schema", sql: initialSchema },
+  { version: 2, name: "agent-credentials", sql: agentCredentials },
 ];
 
 /**

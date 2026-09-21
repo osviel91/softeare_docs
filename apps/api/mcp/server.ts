@@ -12,7 +12,7 @@
  *   hands the resulting {@link ApplicationContext} in, so the dispatcher only
  *   ever sees an already-identified principal.
  * - It does not authorize *project* access. Each tool's use case does that.
- *   The one check here is the credential's `mcp:read`/`mcp:write` capability,
+ *   The one check here is the credential's operation permission,
  *   which decides which tools are even visible and is re-checked at call time.
  *
  * ## Scope visibility

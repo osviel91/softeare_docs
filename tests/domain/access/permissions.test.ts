@@ -7,13 +7,19 @@
  */
 import { describe, expect, it } from "vitest";
 import {
-  AGENT_PROFILES,
   ALL_PERMISSIONS,
   ALL_PROJECT_ROLES,
+  ADMIN_PERMISSIONS,
+  CREDENTIAL_PROFILES,
+  CREDENTIAL_SCOPES,
+  DEFAULT_CREDENTIAL_SCOPES,
   OAUTH_SCOPE_TO_PERMISSION,
   PERMISSIONS_BY_ROLE,
+  RESOURCE_WRITE_SCOPE,
+  isCredentialScope,
   isPermission,
   isProjectRole,
+  permissionsOfCredentialScopes,
   permissionsOfOAuthScopes,
   permissionsOfRole,
 } from "../../../src/domain/access/permissions";
@@ -31,29 +37,35 @@ describe("role permissions", () => {
   it("lets a viewer read but not write", () => {
     const viewer = permissionsOfRole("VIEWER");
     expect(viewer).toContain("resource:read");
-    expect(viewer).not.toContain("resource:write");
-    expect(viewer).not.toContain("project:write");
-    expect(viewer).not.toContain("project:admin");
+    expect(viewer).not.toContain("resource:create");
+    expect(viewer).not.toContain("resource:update");
+    expect(viewer).not.toContain("project:create");
+    expect(viewer).not.toContain("project:delete");
   });
 
   it("lets an editor write resources but not administer the project", () => {
     const editor = permissionsOfRole("EDITOR");
-    expect(editor).toContain("resource:write");
-    expect(editor).toContain("project:write");
-    expect(editor).not.toContain("project:admin");
+    expect(editor).toContain("resource:update");
+    expect(editor).toContain("resource:delete");
+    expect(editor).not.toContain("project:delete");
+    expect(editor).not.toContain("project:members:write");
+    expect(editor).not.toContain("agent:manage");
+    expect(editor).not.toContain("credential:manage");
   });
 
-  it("reserves project:admin for an owner", () => {
-    const owners = ALL_PROJECT_ROLES.filter((role) =>
-      PERMISSIONS_BY_ROLE[role].includes("project:admin"),
-    );
-    expect(owners).toEqual(["OWNER"]);
+  it("reserves the administrative capabilities for an owner", () => {
+    for (const permission of ADMIN_PERMISSIONS) {
+      const holders = ALL_PROJECT_ROLES.filter((role) =>
+        PERMISSIONS_BY_ROLE[role].includes(permission),
+      );
+      expect(holders).toEqual(["OWNER"]);
+    }
   });
 
   it("returns a fresh array, so a caller cannot mutate the table", () => {
     const first = permissionsOfRole("VIEWER");
-    first.push("project:admin");
-    expect(permissionsOfRole("VIEWER")).not.toContain("project:admin");
+    first.push("project:delete");
+    expect(permissionsOfRole("VIEWER")).not.toContain("project:delete");
   });
 
   it("gives every role the read capabilities a listing needs", () => {
@@ -65,33 +77,65 @@ describe("role permissions", () => {
   });
 });
 
-describe("agent profiles", () => {
-  it("keeps a read-only agent unable to write", () => {
-    const scopes = AGENT_PROFILES.READ_ONLY_AGENT;
-    expect(scopes).toContain("mcp:read");
-    expect(scopes).not.toContain("mcp:write");
-    expect(scopes).not.toContain("resource:write");
+describe("credential scopes", () => {
+  it("keeps the read-only profile unable to change anything", () => {
+    const permissions = permissionsOfCredentialScopes(
+      DEFAULT_CREDENTIAL_SCOPES,
+    );
+    expect(permissions).toContain("project:read");
+    expect(permissions).toContain("resource:read");
+    expect(permissions).not.toContain("resource:create");
+    expect(permissions).not.toContain("resource:update");
+    expect(permissions).not.toContain("resource:delete");
+    expect(permissions).not.toContain("project:delete");
   });
 
-  it("lets a documentation agent write documents but not administer", () => {
-    const scopes = AGENT_PROFILES.DOCUMENTATION_AGENT;
-    expect(scopes).toContain("resource:write");
-    expect(scopes).not.toContain("project:admin");
-    expect(scopes).not.toContain("project:write");
+  it("offers no administrative scope by default", () => {
+    for (const permission of ADMIN_PERMISSIONS) {
+      expect(DEFAULT_CREDENTIAL_SCOPES).not.toContain(permission);
+    }
   });
 
-  it("makes the only administrative profile explicit", () => {
-    expect(AGENT_PROFILES.PROJECT_ADMIN).toEqual(ALL_PERMISSIONS);
+  it("expands resource:write into the four resource mutations", () => {
+    expect(permissionsOfCredentialScopes([RESOURCE_WRITE_SCOPE])).toEqual([
+      "resource:create",
+      "resource:update",
+      "resource:move",
+      "resource:delete",
+    ]);
+  });
+
+  it("lets a documentation profile write but not administer", () => {
+    const permissions = permissionsOfCredentialScopes(
+      CREDENTIAL_PROFILES.DOCUMENTATION,
+    );
+    expect(permissions).toContain("resource:update");
+    expect(permissions).not.toContain("project:delete");
+    expect(permissions).not.toContain("agent:manage");
+  });
+
+  it("drops an unknown scope instead of widening access", () => {
+    expect(
+      permissionsOfCredentialScopes(["resource:read", "resource:destroy"]),
+    ).toEqual(["resource:read"]);
   });
 });
 
 describe("vocabulary guards", () => {
   it("recognises permissions and roles and rejects anything else", () => {
-    expect(isPermission("resource:write")).toBe(true);
+    expect(isPermission("resource:update")).toBe(true);
     expect(isPermission("resource:destroy")).toBe(false);
     expect(isPermission(42)).toBe(false);
     expect(isProjectRole("EDITOR")).toBe(true);
     expect(isProjectRole("editor")).toBe(false);
+  });
+
+  it("recognises the credential shorthand as a scope but not a permission", () => {
+    expect(isCredentialScope(RESOURCE_WRITE_SCOPE)).toBe(true);
+    expect(isCredentialScope("resource:read")).toBe(true);
+    expect(isCredentialScope("nope")).toBe(false);
+    expect(isPermission(RESOURCE_WRITE_SCOPE)).toBe(false);
+    expect(CREDENTIAL_SCOPES).toContain(RESOURCE_WRITE_SCOPE);
   });
 });
 
@@ -99,13 +143,13 @@ describe("OAuth scope mapping", () => {
   it("maps the docs.* namespace onto application permissions", () => {
     expect(
       permissionsOfOAuthScopes(["docs.resources.read", "docs.resources.write"]),
-    ).toEqual(["resource:read", "resource:write"]);
+    ).toEqual(["resource:read", "resource:update"]);
   });
 
   it("drops unknown scopes instead of widening access", () => {
-    expect(permissionsOfOAuthScopes(["docs.projects.admin", "openid"])).toEqual(
-      ["project:admin"],
-    );
+    expect(
+      permissionsOfOAuthScopes(["docs.projects.unknown", "openid"]),
+    ).toEqual([]);
   });
 
   it("keeps every mapped target inside the permission vocabulary", () => {

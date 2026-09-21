@@ -21,9 +21,11 @@ import {
 } from "./http/http";
 import { guarded } from "./http/errors";
 import { correlationId } from "./http/node-server";
-import { requireContext, resolveSession } from "./context";
+import { requireApiContext } from "./auth/api-auth";
+import { hasBearerCredential } from "./auth/agent-credential";
+import { resolveSession } from "./context";
 import { createAuthRoutes, oidcClientFor } from "./auth/routes";
-import { registerPersonalAccessTokenRoutes } from "./pat/routes";
+import { registerAgentRoutes } from "./agents/routes";
 import { registerRemoteMcpRoutes } from "./mcp/routes";
 import type { ProjectRole } from "../../src/domain/access/permissions";
 import { isProjectRole } from "../../src/domain/access/permissions";
@@ -37,9 +39,15 @@ export function createRouter(dependencies: AppDependencies): Router {
   const auth = createAuthRoutes(dependencies, oidcClientFor(dependencies));
   const signInConfigured = oidcClientFor(dependencies) !== null;
 
-  /** The authenticated context for a request, or a 401-mapped failure. */
+  /**
+   * The authenticated context for a general project/resource request.
+   *
+   * Either credential works: an explicit `Authorization: Bearer` wins over the
+   * ambient session cookie, and the two are never merged. Agent management
+   * routes deliberately do not use this — they are session-only.
+   */
   const contextOf = (request: ServerRequest) =>
-    requireContext(dependencies.sessions, request);
+    requireApiContext(dependencies, request);
 
   router.get("/healthz", async () =>
     json(200, {
@@ -63,20 +71,29 @@ export function createRouter(dependencies: AppDependencies): Router {
    * Anonymous is a normal answer here rather than a 401: the browser asks this
    * on load to decide whether to render a sign-in button, and treating "nobody"
    * as an error would make every page load log a failure.
+   *
+   * A bearer credential *is* answered, because a machine client may reasonably
+   * ask who it is; it returns `user: null` and a `principal` describing the
+   * agent and the user it acts for. The browser's `user` shape is unchanged.
    */
   router.get("/api/me", async (request) =>
     guarded(correlationId(request), async () => {
+      if (hasBearerCredential(request)) {
+        const context = await contextOf(request);
+        return json(200, { user: null, principal: principalView(context) });
+      }
       const lookup = await resolveSession(dependencies.sessions, request);
       if (lookup.state !== "valid") return json(200, { user: null });
       const context = await contextOf(request);
       return json(200, {
         user: {
-          id: context.principal.userId,
+          id: context.principal.subjectUserId,
           displayName: context.principal.displayName ?? "",
           email: context.principal.email ?? null,
           authType: context.principal.authType,
           scopes: [...context.principal.scopes],
         },
+        principal: principalView(context),
       });
     }),
   );
@@ -287,12 +304,12 @@ export function createRouter(dependencies: AppDependencies): Router {
       }),
   );
 
-  // ---- Personal access tokens ----------------------------------------------
+  // ---- Agents and credential management ------------------------------------
   //
-  // Cookie/session authenticated, so a machine credential cannot mint or revoke
+  // Cookie/session authenticated, so a credential cannot mint or revoke
   // credentials. The routes live in their own module because the surface has a
   // different threat model from project editing, not merely different URLs.
-  registerPersonalAccessTokenRoutes(router, dependencies);
+  registerAgentRoutes(router, dependencies);
 
   // ---- Remote MCP -----------------------------------------------------------
   //
@@ -324,6 +341,36 @@ function projectView(listing: {
   };
 }
 
+/**
+ * The wire shape of an authenticated principal.
+ *
+ * Exposed on `/api/me` so a machine client can learn which agent it is and
+ * which user that agent acts for, without the API inventing a second identity
+ * vocabulary.
+ */
+function principalView(context: {
+  principal: {
+    subjectUserId: string;
+    actor: unknown;
+    authType: string;
+    scopes: readonly string[];
+    displayName?: string;
+    allowedProjectIds?: readonly string[];
+  };
+}): Record<string, unknown> {
+  const principal = context.principal;
+  return {
+    subjectUserId: principal.subjectUserId,
+    actor: principal.actor,
+    authType: principal.authType,
+    scopes: [...principal.scopes],
+    displayName: principal.displayName ?? null,
+    allowedProjectIds:
+      principal.allowedProjectIds === undefined
+        ? null
+        : [...principal.allowedProjectIds],
+  };
+}
 /** The fields every project response carries, whether or not it has a role. */
 function projectFieldsView(project: {
   id: string;

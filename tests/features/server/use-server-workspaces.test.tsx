@@ -80,7 +80,7 @@ function fakeApi(options: FakeOptions = {}) {
       return reply(200, {
         projectId: "p1",
         role: "OWNER",
-        permissions: options.permissions ?? ["project:read", "resource:write"],
+        permissions: options.permissions ?? ["project:read", "resource:update"],
       });
     }
     if (url.pathname === "/auth/logout") return reply(204);
@@ -182,7 +182,7 @@ describe("useServerWorkspaces", () => {
   });
 
   it("opens a project into a writable repository when the role allows it", async () => {
-    const api = fakeApi({ signedIn: true, permissions: ["resource:write"] });
+    const api = fakeApi({ signedIn: true, permissions: ["resource:update"] });
     const client = new ServerApiClient({ fetch: api.fetch });
     const { result } = renderHook(() => useServerWorkspaces(client, signedIn));
     await waitFor(() => expect(result.current.projects).toHaveLength(1));

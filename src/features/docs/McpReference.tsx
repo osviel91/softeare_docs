@@ -104,9 +104,10 @@ npm run mcp         # build, then run it on the current directory`}</CodeBlock>
           When you use the hosted server, an agent reaches <em>your</em> server
           projects over the remote MCP endpoint — no local checkout, no
           workspace directory. It authenticates with a{" "}
-          <strong>personal access token</strong> presented as a bearer
-          credential. Create one under <strong>Tokens</strong> in the toolbar;
-          the token is shown once and cannot be retrieved again.
+          <strong>agent credential</strong> presented as a bearer token. Create
+          an <strong>agent</strong> and a credential under{" "}
+          <strong>Agents</strong> in the toolbar; the secret is shown once and
+          cannot be retrieved again.
         </p>
         <CodeBlock>{`{
   "mcpServers": {
@@ -120,11 +121,11 @@ npm run mcp         # build, then run it on the current directory`}</CodeBlock>
   }
 }`}</CodeBlock>
         <p className="ref__summary">
-          A token carries a scope: <code>projects:read</code> can only read,{" "}
-          <code>projects:write</code> can also create, update, move and delete
-          documents. It acts as you, inside the projects you belong to, and
-          never widens your own access. Revoking it in the{" "}
-          <strong>Tokens</strong> page stops it immediately.
+          A credential carries a scope: <code>resource:read</code> can only
+          read, and <code>resource:write</code> can also create, update, move
+          and delete documents. It may be restricted to particular projects, it
+          acts as you, and it never widens your own access. Revoking it — or
+          disabling its agent — stops it immediately.
         </p>
         <p className="ref__summary">
           Remote MCP is a <em>machine</em> surface: it accepts only the bearer

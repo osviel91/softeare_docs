@@ -455,7 +455,7 @@ describe("audit repository", () => {
     });
     const entry = await audit.record({
       action: "project.created",
-      userId: owner.id,
+      subjectUserId: owner.id,
       authType: "session",
       projectId: project.id,
       requestId: "req-1",
@@ -475,13 +475,13 @@ describe("audit repository", () => {
     const written = await audit.recordAll([
       {
         action: "resource.created",
-        userId: owner.id,
+        subjectUserId: owner.id,
         authType: "pat",
         projectId: project.id,
       },
       {
         action: "resource.updated",
-        userId: owner.id,
+        subjectUserId: owner.id,
         authType: "pat",
         projectId: project.id,
       },
@@ -500,13 +500,13 @@ describe("audit repository", () => {
     });
     await audit.record({
       action: "project.created",
-      userId: owner.id,
+      subjectUserId: owner.id,
       authType: "session",
       projectId: project.id,
     });
     await audit.record({
       action: "resource.created",
-      userId: owner.id,
+      subjectUserId: owner.id,
       authType: "session",
       projectId: project.id,
     });
@@ -523,14 +523,14 @@ describe("audit repository", () => {
     });
     await audit.record({
       action: "project.created",
-      userId: owner.id,
+      subjectUserId: owner.id,
       authType: "session",
       projectId: project.id,
     });
     await client.query("DELETE FROM users WHERE id = $1", [owner.id]);
     const listed = await audit.listForProject(project.id);
     expect(listed).toHaveLength(1);
-    expect(listed[0].userId).toBeNull();
+    expect(listed[0].subjectUserId).toBeNull();
   });
 
   it("bounds a listing", async () => {
@@ -542,7 +542,7 @@ describe("audit repository", () => {
     for (let index = 0; index < 5; index += 1) {
       await audit.record({
         action: "mcp.tool.executed",
-        userId: owner.id,
+        subjectUserId: owner.id,
         authType: "pat",
         projectId: project.id,
         detail: { tool: `tool_${index}` },

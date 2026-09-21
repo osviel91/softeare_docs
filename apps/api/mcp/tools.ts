@@ -23,6 +23,7 @@
  * refuses to send a write that did not name a revision.
  */
 import type { ApplicationContext } from "../../../src/application/context";
+import type { Permission } from "../../../src/domain/access/permissions";
 import type { ProjectCatalog } from "../../../src/application/project-catalog";
 import { invalid, notFound } from "../../../src/application/errors";
 import type { ResourceRecord } from "../../../src/application/ports/project-repository";
@@ -50,11 +51,12 @@ export interface RemoteTool {
   /**
    * The permission the *credential* must carry to call this tool at all.
    *
-   * `mcp:read`/`mcp:write` are credential capabilities, not project roles: the
-   * project-role half is enforced by the catalog use case the tool calls. Both
-   * gates must pass, which is how scopes and membership compose.
+   * It is the operation's own permission (`resource:update`), not an
+   * MCP-specific one: the credential half is checked by the dispatcher and the
+   * project-role half by the catalog use case the tool calls, so scopes and
+   * membership compose exactly as they do for the HTTP API.
    */
-  requiredPermission: "mcp:read" | "mcp:write";
+  requiredPermission: Permission;
   run(
     args: Record<string, unknown>,
     context: RemoteToolContext,
@@ -203,7 +205,7 @@ async function resolveResourceId(
 export function createRemoteTools(): RemoteTool[] {
   return [
     {
-      requiredPermission: "mcp:read",
+      requiredPermission: "project:read",
       definition: {
         name: "list_projects",
         title: "List projects",
@@ -239,7 +241,7 @@ export function createRemoteTools(): RemoteTool[] {
     },
 
     {
-      requiredPermission: "mcp:read",
+      requiredPermission: "project:read",
       definition: {
         name: "get_project",
         title: "Get a project",
@@ -280,7 +282,7 @@ export function createRemoteTools(): RemoteTool[] {
     },
 
     {
-      requiredPermission: "mcp:read",
+      requiredPermission: "resource:read",
       definition: {
         name: "list_resources",
         title: "List resources",
@@ -309,7 +311,7 @@ export function createRemoteTools(): RemoteTool[] {
     },
 
     {
-      requiredPermission: "mcp:read",
+      requiredPermission: "resource:read",
       definition: {
         name: "read_resource",
         title: "Read a resource",
@@ -344,7 +346,7 @@ export function createRemoteTools(): RemoteTool[] {
     },
 
     {
-      requiredPermission: "mcp:write",
+      requiredPermission: "resource:create",
       definition: {
         name: "create_resource",
         title: "Create a resource",
@@ -385,7 +387,7 @@ export function createRemoteTools(): RemoteTool[] {
     },
 
     {
-      requiredPermission: "mcp:write",
+      requiredPermission: "resource:update",
       definition: {
         name: "update_resource",
         title: "Update a resource",
@@ -428,7 +430,7 @@ export function createRemoteTools(): RemoteTool[] {
     },
 
     {
-      requiredPermission: "mcp:write",
+      requiredPermission: "resource:move",
       definition: {
         name: "move_resource",
         title: "Move or rename a resource",
@@ -471,7 +473,7 @@ export function createRemoteTools(): RemoteTool[] {
     },
 
     {
-      requiredPermission: "mcp:write",
+      requiredPermission: "resource:delete",
       definition: {
         name: "delete_resource",
         title: "Delete a resource",

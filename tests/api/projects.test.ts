@@ -445,7 +445,7 @@ describe("the access endpoint", () => {
     );
     expect(access.status).toBe(200);
     expect(access.body.role).toBe("OWNER");
-    expect(access.body.permissions).toContain("project:admin");
+    expect(access.body.permissions).toContain("project:delete");
   });
 
   it("tells a viewer exactly what it cannot do", async () => {
@@ -468,8 +468,8 @@ describe("the access endpoint", () => {
     );
     expect(access.body.role).toBe("VIEWER");
     expect(access.body.permissions).toContain("resource:read");
-    expect(access.body.permissions).not.toContain("resource:write");
-    expect(access.body.permissions).not.toContain("project:admin");
+    expect(access.body.permissions).not.toContain("resource:update");
+    expect(access.body.permissions).not.toContain("project:delete");
   });
 
   it("is invisible to a non-member", async () => {
@@ -514,7 +514,7 @@ describe("the audit trail over HTTP", () => {
     expect(actions).toContain("resource.created");
     expect(actions).toContain("resource.updated");
     for (const entry of entries) {
-      expect(entry.userId).toBe(user.userId);
+      expect(entry.subjectUserId).toBe(user.userId);
       expect(entry.authType).toBe("session");
       expect(entry.requestId).toBeTruthy();
     }

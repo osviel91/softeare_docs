@@ -103,17 +103,22 @@ export const SESSION_SCOPES: readonly Permission[] = ALL_PERMISSIONS;
 export function anonymousContext(request: ServerRequest): ApplicationContext {
   return {
     requestId: correlationId(request),
-    principal: { userId: "anonymous", authType: "session", scopes: [] },
+    principal: {
+      subjectUserId: "anonymous",
+      actor: { kind: "user", userId: "anonymous" },
+      authType: "session",
+      scopes: [],
+    },
   };
 }
 
 /** Build a principal from a session's user. */
 export function principalFromSession(session: SessionWithUser): Principal {
   const principal: Principal = {
-    userId: session.user.id,
+    subjectUserId: session.user.id,
+    actor: { kind: "user", userId: session.user.id },
     authType: "session",
     scopes: SESSION_SCOPES,
-    credentialId: session.id,
   };
   if (session.user.displayName !== "")
     principal.displayName = session.user.displayName;

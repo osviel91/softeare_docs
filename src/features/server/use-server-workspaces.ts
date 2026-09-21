@@ -54,7 +54,7 @@ export interface ServerWorkspacesHook {
 }
 
 /** The permission a writable repository requires. */
-const WRITE_PERMISSION = "resource:write";
+const WRITE_PERMISSION = "resource:update";
 
 /**
  * Track the caller's server projects.

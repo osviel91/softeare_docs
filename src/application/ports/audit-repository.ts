@@ -38,9 +38,12 @@ export const AUDIT_ACTIONS = [
   "resource.updated",
   "resource.moved",
   "resource.deleted",
-  "token.created",
-  "token.revoked",
-  "token.renamed",
+  "agent.created",
+  "agent.updated",
+  "agent.disabled",
+  "credential.created",
+  "credential.revoked",
+  "credential.rotated",
   "mcp.tool.executed",
 ] as const;
 
@@ -49,8 +52,24 @@ export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 /** One audit entry, before it is written. */
 export interface AuditEvent {
   action: AuditAction;
-  /** The user who acted. `null` only for a system action. */
-  userId: string | null;
+  /**
+   * The user whose authority bounded the request.
+   *
+   * For a session this is the signed-in user; for an agent credential it is the
+   * agent's owner. `null` only for a system action.
+   */
+  subjectUserId: string | null;
+  /**
+   * Who actually acted: `user`, `agent`, or `system`.
+   *
+   * Distinct from {@link subjectUserId} because an agent acts *on behalf of* its
+   * owner, and the trail has to say which.
+   */
+  actorType?: "user" | "agent" | "system";
+  /** The acting user id or agent id, matching {@link actorType}. */
+  actorId?: string | null;
+  /** The credential an agent actor authenticated with, when there is one. */
+  credentialId?: string | null;
   authType: AuthType;
   projectId?: string | null;
   resourceId?: string | null;

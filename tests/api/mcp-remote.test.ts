@@ -16,7 +16,6 @@ import { loadConfig } from "../../apps/api/config";
 import { closeApp, createApp, type AppDependencies } from "../../apps/api/app";
 import { createRouter } from "../../apps/api/routes";
 import { contextFor, SESSION_SCOPES } from "../../apps/api/context";
-import { generatePat } from "../../apps/api/auth/pat";
 import {
   LATEST_PROTOCOL_VERSION,
   ErrorCode,
@@ -74,28 +73,50 @@ async function aUser(): Promise<string> {
   return user.id;
 }
 
-/** Issue a PAT for a user and return its plaintext. */
+/**
+ * Create an agent credential for a user and return its plaintext.
+ *
+ * The credential is the only thing the MCP client presents; the agent is what
+ * the audit trail names as the actor.
+ */
 async function issueToken(
   userId: string,
   scopes: readonly string[],
   projectIds?: readonly string[],
 ): Promise<string> {
-  const minted = generatePat();
-  await dependencies.tokens.create({
-    userId,
-    name: "Agent",
-    prefix: minted.prefix,
-    tokenHash: minted.tokenHash,
-    scopes,
-    ...(projectIds === undefined ? {} : { projectIds }),
+  const session = contextFor(
+    {
+      subjectUserId: userId,
+      actor: { kind: "user", userId },
+      authType: "session",
+      scopes: SESSION_SCOPES,
+    },
+    "req-agent-owner",
+  );
+  const agent = await dependencies.agents.createAgent(session, {
+    name: "MCP agent",
   });
-  return minted.token;
+  const created = await dependencies.agents.createCredential(
+    session,
+    agent.id,
+    {
+      name: "MCP credential",
+      scopes,
+      ...(projectIds === undefined ? {} : { allowedProjectIds: projectIds }),
+    },
+  );
+  return created.token;
 }
 
 /** Create a project for a user through the catalog (a session context). */
 async function aProject(ownerId: string, name: string): Promise<string> {
   const context = contextFor(
-    { userId: ownerId, authType: "session", scopes: SESSION_SCOPES },
+    {
+      subjectUserId: ownerId,
+      actor: { kind: "user", userId: ownerId },
+      authType: "session",
+      scopes: SESSION_SCOPES,
+    },
     "req-owner",
   );
   const listing = await dependencies.catalog.createProject(context, { name });
@@ -212,9 +233,10 @@ describe("transport and authentication", () => {
 
   it("refuses a revoked token immediately", async () => {
     const userId = await aUser();
-    const token = await issueToken(userId, ["projects:read"]);
-    const record = (await dependencies.tokens.listForUser(userId))[0];
-    await dependencies.tokens.revoke(userId, record.id);
+    const token = await issueToken(userId, ["project:read", "resource:read"]);
+    const agents = await dependencies.agentIdentities.listForUser(userId);
+    const records = await dependencies.credentials.listForAgent(agents[0].id);
+    await dependencies.credentials.revoke(agents[0].id, records[0].id);
 
     const response = await mcp(token, {
       jsonrpc: "2.0",
@@ -225,14 +247,20 @@ describe("transport and authentication", () => {
   });
 
   it("answers a malformed body with a 400 parse error", async () => {
-    const token = await issueToken(await aUser(), ["projects:read"]);
+    const token = await issueToken(await aUser(), [
+      "project:read",
+      "resource:read",
+    ]);
     const response = await mcp(token, {}, { raw: "{not json" });
     expect(response.status).toBe(400);
     expect(response.body.error.code).toBe(ErrorCode.ParseError);
   });
 
   it("answers GET with 405 and DELETE with 204", async () => {
-    const token = await issueToken(await aUser(), ["projects:read"]);
+    const token = await issueToken(await aUser(), [
+      "project:read",
+      "resource:read",
+    ]);
     const get = await router.handle(
       request("GET", "/mcp", { authorization: `Bearer ${token}` }),
     );
@@ -246,7 +274,10 @@ describe("transport and authentication", () => {
 
 describe("protocol handshake", () => {
   it("answers initialize and server/discover", async () => {
-    const token = await issueToken(await aUser(), ["projects:read"]);
+    const token = await issueToken(await aUser(), [
+      "project:read",
+      "resource:read",
+    ]);
     const initialized = await mcp(token, {
       jsonrpc: "2.0",
       id: 1,
@@ -272,7 +303,10 @@ describe("protocol handshake", () => {
   });
 
   it("acknowledges a notification with 202 and no body", async () => {
-    const token = await issueToken(await aUser(), ["projects:read"]);
+    const token = await issueToken(await aUser(), [
+      "project:read",
+      "resource:read",
+    ]);
     const response = await mcp(token, {
       jsonrpc: "2.0",
       method: "notifications/initialized",
@@ -282,7 +316,10 @@ describe("protocol handshake", () => {
   });
 
   it("refuses an unsupported protocol version header", async () => {
-    const token = await issueToken(await aUser(), ["projects:read"]);
+    const token = await issueToken(await aUser(), [
+      "project:read",
+      "resource:read",
+    ]);
     const response = await router.handle({
       ...request("POST", "/mcp", {
         authorization: `Bearer ${token}`,
@@ -300,7 +337,10 @@ describe("protocol handshake", () => {
   });
 
   it("reports an unknown method as a protocol error", async () => {
-    const token = await issueToken(await aUser(), ["projects:read"]);
+    const token = await issueToken(await aUser(), [
+      "project:read",
+      "resource:read",
+    ]);
     const response = await mcp(token, {
       jsonrpc: "2.0",
       id: 3,
@@ -312,7 +352,10 @@ describe("protocol handshake", () => {
 
 describe("tool listing follows the scope", () => {
   it("offers only read tools to a read-only token", async () => {
-    const token = await issueToken(await aUser(), ["projects:read"]);
+    const token = await issueToken(await aUser(), [
+      "project:read",
+      "resource:read",
+    ]);
     const response = await mcp(token, {
       jsonrpc: "2.0",
       id: 1,
@@ -328,7 +371,11 @@ describe("tool listing follows the scope", () => {
   });
 
   it("offers the write tools to a writer token", async () => {
-    const token = await issueToken(await aUser(), ["projects:write"]);
+    const token = await issueToken(await aUser(), [
+      "project:read",
+      "resource:read",
+      "resource:write",
+    ]);
     const response = await mcp(token, {
       jsonrpc: "2.0",
       id: 1,
@@ -346,7 +393,11 @@ describe("tool listing follows the scope", () => {
   });
 
   it("refuses an unknown tool name", async () => {
-    const token = await issueToken(await aUser(), ["projects:write"]);
+    const token = await issueToken(await aUser(), [
+      "project:read",
+      "resource:read",
+      "resource:write",
+    ]);
     const response = await mcp(token, {
       jsonrpc: "2.0",
       id: 1,
@@ -361,8 +412,12 @@ describe("reading through the remote MCP", () => {
   it("lists projects and reads a resource", async () => {
     const owner = await aUser();
     const projectId = await aProject(owner, "Remote project");
-    const writer = await issueToken(owner, ["projects:write"]);
-    const reader = await issueToken(owner, ["projects:read"]);
+    const writer = await issueToken(owner, [
+      "project:read",
+      "resource:read",
+      "resource:write",
+    ]);
+    const reader = await issueToken(owner, ["project:read", "resource:read"]);
 
     const created = await callTool(writer, "create_resource", {
       projectId,
@@ -397,7 +452,11 @@ describe("reading through the remote MCP", () => {
     const owner = await aUser();
     const stranger = await aUser();
     const projectId = await aProject(owner, "Owner only");
-    const token = await issueToken(stranger, ["projects:write"]);
+    const token = await issueToken(stranger, [
+      "project:read",
+      "resource:read",
+      "resource:write",
+    ]);
 
     const failure = await failedTool(token, "list_resources", { projectId });
     expect(failure.code).toBe("not_found");
@@ -411,7 +470,11 @@ describe("writing through the remote MCP", () => {
   it("creates, updates, moves and deletes a resource", async () => {
     const owner = await aUser();
     const projectId = await aProject(owner, "Write project");
-    const token = await issueToken(owner, ["projects:write"]);
+    const token = await issueToken(owner, [
+      "project:read",
+      "resource:read",
+      "resource:write",
+    ]);
 
     const created = await callTool(token, "create_resource", {
       projectId,
@@ -449,7 +512,11 @@ describe("writing through the remote MCP", () => {
   it("preserves optimistic concurrency: a stale write is a conflict", async () => {
     const owner = await aUser();
     const projectId = await aProject(owner, "Concurrency");
-    const token = await issueToken(owner, ["projects:write"]);
+    const token = await issueToken(owner, [
+      "project:read",
+      "resource:read",
+      "resource:write",
+    ]);
 
     const created = await callTool(token, "create_resource", {
       projectId,
@@ -461,7 +528,12 @@ describe("writing through the remote MCP", () => {
 
     // A second client (the browser, say) writes first.
     const session = contextFor(
-      { userId: owner, authType: "session", scopes: SESSION_SCOPES },
+      {
+        subjectUserId: owner,
+        actor: { kind: "user", userId: owner },
+        authType: "session",
+        scopes: SESSION_SCOPES,
+      },
       "req-browser",
     );
     await dependencies.catalog.updateResource(session, projectId, id, {
@@ -503,7 +575,11 @@ describe("writing through the remote MCP", () => {
   it("requires an expected revision on a write", async () => {
     const owner = await aUser();
     const projectId = await aProject(owner, "Required revision");
-    const token = await issueToken(owner, ["projects:write"]);
+    const token = await issueToken(owner, [
+      "project:read",
+      "resource:read",
+      "resource:write",
+    ]);
     const created = await callTool(token, "create_resource", {
       projectId,
       path: "doc.md",
@@ -523,8 +599,12 @@ describe("writing through the remote MCP", () => {
   it("refuses a write from a read-only token even where it is a member", async () => {
     const owner = await aUser();
     const projectId = await aProject(owner, "Read only");
-    const writer = await issueToken(owner, ["projects:write"]);
-    const reader = await issueToken(owner, ["projects:read"]);
+    const writer = await issueToken(owner, [
+      "project:read",
+      "resource:read",
+      "resource:write",
+    ]);
+    const reader = await issueToken(owner, ["project:read", "resource:read"]);
     const created = await callTool(writer, "create_resource", {
       projectId,
       path: "doc.md",
@@ -539,13 +619,17 @@ describe("writing through the remote MCP", () => {
       expectedRevision: 1,
     });
     expect(failure.code).toBe("forbidden");
-    expect(failure.text).toContain("mcp:write");
+    expect(failure.text).toContain("resource:update");
   });
 
   it("refuses a path traversal as an invalid path", async () => {
     const owner = await aUser();
     const projectId = await aProject(owner, "Traversal");
-    const token = await issueToken(owner, ["projects:write"]);
+    const token = await issueToken(owner, [
+      "project:read",
+      "resource:read",
+      "resource:write",
+    ]);
     const failure = await failedTool(token, "create_resource", {
       projectId,
       path: "../../escape.seq",
@@ -558,7 +642,11 @@ describe("writing through the remote MCP", () => {
   it("requires confirmation to delete", async () => {
     const owner = await aUser();
     const projectId = await aProject(owner, "Confirm");
-    const token = await issueToken(owner, ["projects:write"]);
+    const token = await issueToken(owner, [
+      "project:read",
+      "resource:read",
+      "resource:write",
+    ]);
     const created = await callTool(token, "create_resource", {
       projectId,
       path: "doc.md",
@@ -577,7 +665,11 @@ describe("writing through the remote MCP", () => {
     const owner = await aUser();
     const first = await aProject(owner, "First");
     const second = await aProject(owner, "Second");
-    const token = await issueToken(owner, ["projects:write"]);
+    const token = await issueToken(owner, [
+      "project:read",
+      "resource:read",
+      "resource:write",
+    ]);
     const created = await callTool(token, "create_resource", {
       projectId: first,
       path: "doc.md",
@@ -598,7 +690,11 @@ describe("writing through the remote MCP", () => {
     const owner = await aUser();
     const allowed = await aProject(owner, "Allowed");
     const other = await aProject(owner, "Other");
-    const token = await issueToken(owner, ["projects:write"], [allowed]);
+    const token = await issueToken(
+      owner,
+      ["project:read", "resource:read", "resource:write"],
+      [allowed],
+    );
 
     const listed = await callTool(token, "list_projects", {});
     expect(listed.structured.projects.map((entry: any) => entry.id)).toEqual([
@@ -616,7 +712,7 @@ describe("reconnect", () => {
   it("serves a second request with the same credential, statelessly", async () => {
     const owner = await aUser();
     await aProject(owner, "Reconnect");
-    const token = await issueToken(owner, ["projects:read"]);
+    const token = await issueToken(owner, ["project:read", "resource:read"]);
 
     const first = await mcp(token, {
       jsonrpc: "2.0",

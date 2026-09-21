@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { DocumentationWorkspace } from "../../mcp/workspace";
+import { ALL_PERMISSIONS } from "../../src/domain/access/permissions";
 import { createProjectCatalog } from "../../src/application/project-catalog";
 import { createServerWorkspaceProvider } from "../../src/persistence/server-workspace-provider";
 import { createFsProjectStorage } from "../../src/persistence/fs-project-storage";
@@ -56,20 +57,10 @@ async function aContext(): Promise<ApplicationContext> {
   return {
     requestId: "req-workspace",
     principal: {
-      userId: user.id,
+      subjectUserId: user.id,
+      actor: { kind: "user", userId: user.id },
       authType: "session",
-      scopes: [
-        "project:read",
-        "project:write",
-        "project:admin",
-        "resource:read",
-        "resource:write",
-        "diagram:render",
-        "project:validate",
-        "project:export",
-        "mcp:read",
-        "mcp:write",
-      ],
+      scopes: [...ALL_PERMISSIONS],
     },
   };
 }
@@ -302,7 +293,7 @@ describe("the shared service cannot bypass the policy", () => {
     await aCatalog().setMember(
       owner,
       project.id,
-      viewer.principal.userId,
+      viewer.principal.subjectUserId,
       "VIEWER",
     );
 
@@ -335,7 +326,7 @@ describe("the shared service cannot bypass the policy", () => {
     await aCatalog().setMember(
       owner,
       project.id,
-      editor.principal.userId,
+      editor.principal.subjectUserId,
       "EDITOR",
     );
 

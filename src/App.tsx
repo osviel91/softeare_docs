@@ -157,7 +157,7 @@ import type { WorkspaceRepository } from "./workspace/WorkspaceRepository";
 import { ServerApiClient } from "./workspace/server/api-client";
 import { useAuth } from "./features/server/use-auth";
 import { useServerWorkspaces } from "./features/server/use-server-workspaces";
-import PersonalAccessTokens from "./features/server/PersonalAccessTokens";
+import AgentsAndTokens from "./features/server/AgentsAndTokens";
 import { RevisionConflictError } from "./workspace/server/api-errors";
 import { supportsForcedWrite } from "./workspace/server/server-workspace-repository";
 
@@ -1524,7 +1524,7 @@ export default function App() {
   /** Open the documentation page. */
   const openDocs = useCallback((): void => setPage("docs"), []);
 
-  /** Open the personal-access-token page (only meaningful while signed in). */
+  /** Open the agents/access-token page (only meaningful while signed in). */
   const openTokens = useCallback((): void => setPage("tokens"), []);
 
   const registry = useCommands({
@@ -2008,11 +2008,11 @@ export default function App() {
               <button
                 type="button"
                 className="button app__tokens-button"
-                data-testid="open-tokens"
-                title="Manage personal access tokens for remote MCP clients"
+                data-testid="open-agents"
+                title="Manage agents and their access tokens for remote MCP clients"
                 onClick={openTokens}
               >
-                <span aria-hidden="true">⚿</span> Tokens
+                <span aria-hidden="true">⚿</span> Agents
               </button>
             ) : null}
 
@@ -2036,7 +2036,7 @@ export default function App() {
           </>
         ) : (
           <span className="app__page-title" data-testid="docs-page-title">
-            {page === "tokens" ? "Access tokens" : "Documentation"}
+            {page === "tokens" ? "Agents & access tokens" : "Documentation"}
           </span>
         )}
 
@@ -2058,7 +2058,7 @@ export default function App() {
       {page === "docs" ? (
         <DocsPage onBack={() => setPage("workspace")} />
       ) : page === "tokens" ? (
-        <PersonalAccessTokens
+        <AgentsAndTokens
           client={apiClient}
           auth={auth}
           onBack={() => setPage("workspace")}

@@ -203,7 +203,12 @@ function contextFor(
 ): ApplicationContext {
   return {
     requestId,
-    principal: { userId, authType: "session", scopes: SESSION_SCOPES },
+    principal: {
+      subjectUserId: userId,
+      actor: { kind: "user", userId },
+      authType: "session",
+      scopes: SESSION_SCOPES,
+    },
   };
 }
 
@@ -724,7 +729,7 @@ describe("the guarantee does not depend on the HTTP wiring", () => {
         await dependencies.catalog.can(
           context,
           other.projectId,
-          "resource:write",
+          "resource:update",
         ),
       ).toBe(false);
     }
@@ -751,7 +756,7 @@ describe("the policy alone refuses a stranger, with no route in the way", () => 
         }
       }
       await expect(
-        policy.requirePermission(context, other.projectId, "resource:write"),
+        policy.requirePermission(context, other.projectId, "resource:update"),
       ).rejects.toMatchObject({ code: "not_found", status: 404 });
     }
   });
@@ -763,10 +768,15 @@ describe("the policy alone refuses a stranger, with no route in the way", () => 
     const restricted: ApplicationContext = {
       requestId: "req-restricted-isolation",
       principal: {
-        userId: projectA.owner.userId,
+        subjectUserId: projectA.owner.userId,
+        actor: {
+          kind: "agent",
+          agentId: "agent-isolation",
+          credentialId: "credential-isolation",
+        },
         authType: "pat",
         scopes: [...ALL_PERMISSIONS],
-        projectIds: [projectA.projectId],
+        allowedProjectIds: [projectA.projectId],
       },
     };
     const outcome = await policy.decide(
@@ -919,7 +929,7 @@ describe("no membership and the wrong role are refused differently", () => {
       await dependencies.catalog.can(
         contextFor(viewer.userId),
         projectId,
-        "resource:write",
+        "resource:update",
       ),
     ).toBe(false);
     const failure = await failureOf(

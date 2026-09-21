@@ -19,7 +19,10 @@ import { createUserRepository } from "../../src/persistence/user-repository";
 import { createAuditRepository } from "../../src/persistence/audit-repository";
 import { ApplicationError } from "../../src/application/errors";
 import type { ApplicationContext } from "../../src/application/context";
-import type { Permission } from "../../src/domain/access/permissions";
+import {
+  ALL_PERMISSIONS,
+  type Permission,
+} from "../../src/domain/access/permissions";
 import type { SqlClient } from "../../src/persistence/sql-client";
 import { openTestDatabase, closeTestDatabase } from "./test-database";
 
@@ -69,32 +72,17 @@ function contextFor(
   return {
     requestId: "req-test",
     principal: {
-      userId,
+      subjectUserId: userId,
+      actor: { kind: "user", userId },
       authType: "session",
-      scopes: [
-        "project:read",
-        "resource:read",
-        "resource:write",
-        "project:admin",
-      ],
+      scopes: [...ALL_PERMISSIONS],
       ...overrides,
     },
   };
 }
 
-/** Every scope an agent could hold, for tests that are not about scopes. */
-const ALL_SCOPES: Permission[] = [
-  "project:read",
-  "project:write",
-  "project:admin",
-  "resource:read",
-  "resource:write",
-  "diagram:render",
-  "project:validate",
-  "project:export",
-  "mcp:read",
-  "mcp:write",
-];
+/** Every scope a credential could hold, for tests that are not about scopes. */
+const ALL_SCOPES: Permission[] = [...ALL_PERMISSIONS];
 
 /** A project owned by a fresh user, plus its owner context. */
 async function aProject(name = "Payments") {
@@ -218,8 +206,8 @@ describe("authorization by role", () => {
     const access = await catalog.describeAccess(readOnly, project.id);
     expect(access.role).toBe("EDITOR");
     expect(access.permissions).toContain("resource:read");
-    expect(access.permissions).not.toContain("resource:write");
-    expect(await catalog.can(readOnly, project.id, "resource:write")).toBe(
+    expect(access.permissions).not.toContain("resource:update");
+    expect(await catalog.can(readOnly, project.id, "resource:update")).toBe(
       false,
     );
     expect(await catalog.can(readOnly, project.id, "resource:read")).toBe(true);
@@ -296,7 +284,7 @@ describe("authorization by role", () => {
     const restricted = contextFor(agentId, {
       authType: "pat",
       scopes: ALL_SCOPES,
-      projectIds: [project.id],
+      allowedProjectIds: [project.id],
     });
 
     const visible = await catalog.listProjects(restricted);

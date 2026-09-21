@@ -37,12 +37,16 @@ export function createAuditRepository(
   const insert = async (tx: SqlClient, event: AuditEvent, id: string) => {
     const result = await tx.query(
       `INSERT INTO audit_events
-         (id, user_id, auth_type, project_id, resource_id, action, request_id, detail)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
+         (id, user_id, actor_type, actor_id, credential_id, auth_type, project_id,
+          resource_id, action, request_id, detail)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb)
        RETURNING *`,
       [
         id,
-        event.userId,
+        event.subjectUserId,
+        event.actorType ?? "user",
+        event.actorId ?? event.subjectUserId,
+        event.credentialId ?? null,
         event.authType,
         event.projectId ?? null,
         event.resourceId ?? null,
@@ -105,13 +109,27 @@ function clampLimit(limit: number | undefined): number {
 /** Map an `audit_events` row. */
 function toAuditRecord(row: Record<string, unknown>): AuditRecord {
   const value = (key: string): unknown => row[key];
+  const subjectUserId =
+    value("user_id") === null ? null : String(value("user_id"));
   return {
     id: String(value("id")),
     occurredAt:
       value("occurred_at") instanceof Date
         ? (value("occurred_at") as Date)
         : new Date(String(value("occurred_at"))),
-    userId: value("user_id") === null ? null : String(value("user_id")),
+    subjectUserId,
+    actorType:
+      value("actor_type") === null || value("actor_type") === undefined
+        ? "user"
+        : (String(value("actor_type")) as AuditEvent["actorType"]),
+    actorId:
+      value("actor_id") === null || value("actor_id") === undefined
+        ? subjectUserId
+        : String(value("actor_id")),
+    credentialId:
+      value("credential_id") === null || value("credential_id") === undefined
+        ? null
+        : String(value("credential_id")),
     authType: String(value("auth_type")) as AuthType,
     projectId:
       value("project_id") === null ? null : String(value("project_id")),

@@ -37,7 +37,10 @@ import { createAuditRepository } from "../../src/persistence/audit-repository";
 import type { ProjectStorage } from "../../src/application/project-storage";
 import type { ApplicationContext } from "../../src/application/context";
 import { ApplicationError } from "../../src/application/errors";
-import type { Permission } from "../../src/domain/access/permissions";
+import {
+  ALL_PERMISSIONS,
+  type Permission,
+} from "../../src/domain/access/permissions";
 import type { SqlClient } from "../../src/persistence/sql-client";
 import { openTestDatabase, closeTestDatabase } from "./test-database";
 import type { ProjectRepository } from "../../src/application/ports/project-repository";
@@ -73,18 +76,7 @@ interface Faults {
   rowDelete?: boolean;
 }
 
-const ALL_SCOPES: Permission[] = [
-  "project:read",
-  "project:write",
-  "project:admin",
-  "resource:read",
-  "resource:write",
-  "diagram:render",
-  "project:validate",
-  "project:export",
-  "mcp:read",
-  "mcp:write",
-];
+const ALL_SCOPES: Permission[] = [...ALL_PERMISSIONS];
 
 /** The failure every injected fault reports. */
 function injected(what: string): Error {
@@ -181,7 +173,8 @@ async function build(faults: Faults) {
   const context: ApplicationContext = {
     requestId: "req-atomicity",
     principal: {
-      userId: user.id,
+      subjectUserId: user.id,
+      actor: { kind: "user", userId: user.id },
       authType: "session",
       scopes: ALL_SCOPES,
     },

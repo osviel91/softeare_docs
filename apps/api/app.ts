@@ -15,14 +15,17 @@ import { createUserRepository } from "../../src/persistence/user-repository";
 import { createProjectRepository } from "../../src/persistence/project-repository";
 import { createSessionRepository } from "../../src/persistence/session-repository";
 import { createAuditRepository } from "../../src/persistence/audit-repository";
-import { createPersonalAccessTokenRepository } from "../../src/persistence/personal-access-token-repository";
+import {
+  createAgentCredentialRepository,
+  createAgentIdentityRepository,
+} from "../../src/persistence/agent-repository";
 import type { SqlClient } from "../../src/persistence/sql-client";
 import {
   createProjectCatalog,
   type ProjectCatalog,
 } from "../../src/application/project-catalog";
-import { createPersonalAccessTokenService } from "../../src/application/personal-access-token-service";
-import { generatePat } from "./auth/pat";
+import { createAgentService } from "../../src/application/agent-service";
+import { createCredentialMint } from "./auth/agent-credential";
 import {
   assertProjectVolumeUsable,
   createFsProjectStorage,
@@ -37,10 +40,14 @@ export interface AppDependencies {
   projects: ReturnType<typeof createProjectRepository>;
   sessions: ReturnType<typeof createSessionRepository>;
   audit: ReturnType<typeof createAuditRepository>;
-  /** Personal Access Tokens: the machine credentials remote MCP presents. */
-  tokens: ReturnType<typeof createPersonalAccessTokenRepository>;
-  /** The PAT lifecycle use cases the browser's token screen calls. */
-  personalAccessTokens: ReturnType<typeof createPersonalAccessTokenService>;
+  /** Agent identities: the automation principals a user owns. */
+  agentIdentities: ReturnType<typeof createAgentIdentityRepository>;
+  /** Agent credentials: the revocable bearer secrets those agents present. */
+  credentials: ReturnType<typeof createAgentCredentialRepository>;
+  /** The agent/credential lifecycle use cases the settings API calls. */
+  agents: ReturnType<typeof createAgentService>;
+  /** The HMAC pepper credential digests are keyed with. Never sent anywhere. */
+  tokenPepper: string;
   /**
    * A catalog over the same repositories.
    *
@@ -93,7 +100,8 @@ export async function createApp(
       root: path.join(config.projectVolume, projectId),
     });
   const audit = createAuditRepository(sql);
-  const tokens = createPersonalAccessTokenRepository(sql);
+  const agentIdentities = createAgentIdentityRepository(sql);
+  const credentials = createAgentCredentialRepository(sql);
 
   return {
     config,
@@ -102,13 +110,16 @@ export async function createApp(
     projects,
     sessions: createSessionRepository(sql),
     audit,
-    tokens,
-    personalAccessTokens: createPersonalAccessTokenService({
-      tokens,
+    agentIdentities,
+    credentials,
+    agents: createAgentService({
+      agents: agentIdentities,
+      credentials,
       projects,
       audit,
-      mint: generatePat,
+      mint: createCredentialMint(config.tokenPepper),
     }),
+    tokenPepper: config.tokenPepper,
     catalog: createProjectCatalog({ projects, audit, storage: storageFor }),
     storageFor,
     locationFor: (projectId: string) => ({

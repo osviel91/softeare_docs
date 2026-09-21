@@ -36,10 +36,11 @@ function contextFor(
   return {
     requestId: "req-1",
     principal: {
-      userId,
+      subjectUserId: userId,
+      actor: { kind: "user", userId },
       authType: "session",
       scopes: ALL_PERMISSIONS,
-      ...(projectIds === undefined ? {} : { projectIds }),
+      ...(projectIds === undefined ? {} : { allowedProjectIds: projectIds }),
     },
   };
 }
@@ -85,17 +86,17 @@ describe("authorize", () => {
 
   it("never allows an administrative permission to a viewer or an editor", () => {
     for (const role of ["VIEWER", "EDITOR"] as const) {
-      expect(authorize({ role, required: "project:admin" }).allowed).toBe(
+      expect(authorize({ role, required: "project:delete" }).allowed).toBe(
         false,
       );
     }
     expect(
-      authorize({ role: "OWNER", required: "project:admin" }).allowed,
+      authorize({ role: "OWNER", required: "project:delete" }).allowed,
     ).toBe(true);
   });
 
   it("keeps a viewer read-only", () => {
-    for (const permission of ["resource:write", "project:write"] as const) {
+    for (const permission of ["resource:update", "project:create"] as const) {
       expect(authorize({ role: "VIEWER", required: permission }).allowed).toBe(
         false,
       );
@@ -144,7 +145,7 @@ describe("the policy", () => {
     const outcome = await policy.decide(
       contextFor("u1"),
       "p1",
-      "resource:write",
+      "resource:update",
     );
     // An allowed outcome also hands back the project it resolved, so a use case
     // does not read the same row twice.
@@ -159,16 +160,16 @@ describe("the policy", () => {
     const outcome = await policy.decide(
       contextFor("u1"),
       "p1",
-      "resource:write",
+      "resource:update",
     );
     expect(outcome).toEqual({
       allowed: false,
       reason: "forbidden",
       role: "VIEWER",
-      missing: "resource:write",
+      missing: "resource:update",
     });
     await expect(
-      policy.requirePermission(contextFor("u1"), "p1", "resource:write"),
+      policy.requirePermission(contextFor("u1"), "p1", "resource:update"),
     ).rejects.toMatchObject({ code: "forbidden", status: 403 });
   });
 
@@ -227,15 +228,15 @@ describe("the policy", () => {
         scopes: ["resource:read", "project:read"] as const,
       },
     };
-    const outcome = await policy.decide(restricted, "p1", "resource:write");
+    const outcome = await policy.decide(restricted, "p1", "resource:update");
     expect(outcome).toEqual({
       allowed: false,
       reason: "scope",
       role: null,
-      missing: "resource:write",
+      missing: "resource:update",
     });
     await expect(
-      policy.requirePermission(restricted, "p1", "resource:write"),
+      policy.requirePermission(restricted, "p1", "resource:update"),
     ).rejects.toMatchObject({ code: "forbidden", status: 403 });
 
     // The same credential may still read.
@@ -255,7 +256,7 @@ describe("the policy", () => {
         scopes: ["resource:read"] as const,
       },
     };
-    const outcome = await policy.decide(restricted, "p1", "resource:write");
+    const outcome = await policy.decide(restricted, "p1", "resource:update");
     expect(outcome.allowed).toBe(false);
     expect(outcome.allowed === false && outcome.reason).toBe("scope");
   });
@@ -265,11 +266,11 @@ describe("the policy", () => {
     const outcome = await policy.decide(
       contextFor("u1"),
       "p1",
-      "resource:write",
+      "resource:update",
     );
     expect(outcome.allowed).toBe(false);
     await expect(
-      policy.requirePermission(contextFor("u1"), "p1", "resource:write"),
+      policy.requirePermission(contextFor("u1"), "p1", "resource:update"),
     ).rejects.toMatchObject({ code: "not_found" });
   });
 
@@ -313,9 +314,9 @@ describe("the policy", () => {
     const outcome = await wrapper.requirePermission(
       contextFor("u1"),
       "p1",
-      "project:admin",
+      "project:delete",
     );
     expect(outcome.role).toBe("OWNER");
-    expect(seen).toEqual([{ projectId: "p1", permission: "project:admin" }]);
+    expect(seen).toEqual([{ projectId: "p1", permission: "project:delete" }]);
   });
 });

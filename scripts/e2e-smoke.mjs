@@ -2350,7 +2350,7 @@ async function runServerChecks(browser, idp, apiBase) {
   );
 
   await scenario(
-    "Server scenario 6: a remote MCP client reads and writes with a PAT",
+    "Server scenario 6: an agent credential reads, cannot write, and revokes",
     async () => {
       const context = await browser.newContext();
       const page = await context.newPage();
@@ -2361,34 +2361,67 @@ async function runServerChecks(browser, idp, apiBase) {
           timeout: UI_TIMEOUT_MS,
         });
         await signIn(page, idp, owner);
-        await createServerProject(page, "Remote Agent");
-        const project = await serverProjectByName(page, "Remote Agent");
-        if (project === null) throw new Error("Remote Agent was not created");
 
-        // 1. The user creates a personal access token through the real screen.
-        await page.locator('[data-testid="open-tokens"]').click();
-        await page.locator('[data-testid="token-name"]').fill("E2E agent");
-        await page
-          .locator('[data-testid="token-scope-projects:write"]')
-          .check();
-        await page.locator('[data-testid="token-create"]').click();
-        const secret = await page
-          .locator('[data-testid="token-secret"]')
-          .inputValue();
-        check(
-          "a PAT is created and its secret is shown once",
-          secret.startsWith("sdm_pat_"),
-          secret.slice(0, 16),
-        );
-        await page.locator('[data-testid="token-dismiss"]').click();
-        await page.locator('[data-testid="tokens-back"]').click();
-        await page.locator('[data-testid="app-shell"]').waitFor({
+        // The browser writes a document the agent will read.
+        await createServerProject(page, "Agent Project");
+        await createDocument(page, "Agent Project", "context-menu-new-diagram");
+        await page.locator('[data-testid="dsl-textarea"]').waitFor({
           state: "visible",
           timeout: UI_TIMEOUT_MS,
         });
+        await page
+          .locator('[data-testid="dsl-textarea"]')
+          .fill(
+            [
+              "title Agent Project",
+              "participant One",
+              "participant Two",
+              `One ->> Two: ${AGENT_MARKER}`,
+              "",
+            ].join("\n"),
+          );
+        await waitForServerContent(
+          page,
+          "Agent Project",
+          (content) => content.includes(AGENT_MARKER),
+          "the browser's save",
+        );
+        check("the browser saves a document the agent will read", true);
 
-        // 2. A machine client authenticates and handshakes. It carries only the
-        //    bearer token; the browser session belongs to a different context.
+        // 1. The user creates an agent and a read-only credential.
+        await page.locator('[data-testid="open-agents"]').click();
+        await page.locator('[data-testid="agent-name"]').fill("E2E Agent");
+        await page.locator('[data-testid="agent-create"]').click();
+        const card = page
+          .locator('li[data-testid^="agent-"]')
+          .filter({ hasText: "E2E Agent" });
+        await card.waitFor({ state: "visible", timeout: UI_TIMEOUT_MS });
+        await card
+          .locator('[data-testid^="agent-credentials-"]')
+          .first()
+          .click();
+        const createButton = card.locator(
+          '[data-testid^="credential-create-"]',
+        );
+        await createButton.waitFor({
+          state: "visible",
+          timeout: UI_TIMEOUT_MS,
+        });
+        await createButton.click();
+        const secret = await page
+          .locator('[data-testid="credential-secret"]')
+          .inputValue();
+        check(
+          "an agent credential is created and its secret is shown once",
+          secret.startsWith("sdm_pat_"),
+          secret.slice(0, 16),
+        );
+        await page.locator('[data-testid="credential-dismiss"]').click();
+
+        const project = await serverProjectByName(page, "Agent Project");
+        if (project === null) throw new Error("Agent Project was not created");
+
+        // 2. A machine client authenticates with the credential alone.
         const handshake = await remoteMcp(apiBase, secret, {
           jsonrpc: "2.0",
           id: 1,
@@ -2396,135 +2429,74 @@ async function runServerChecks(browser, idp, apiBase) {
           params: { protocolVersion: "2025-06-18" },
         });
         check(
-          "the remote MCP client authenticates with the PAT",
+          "the agent authenticates with its credential",
           handshake.status === 200 &&
             handshake.json?.result?.serverInfo?.name ===
               "sequencediagrams-remote",
           `status ${handshake.status}`,
         );
 
-        // 3. It reads the server project.
-        const listed = await remoteTool(
-          apiBase,
-          secret,
-          2,
-          "list_projects",
-          {},
+        // 3. A read-only credential is not even offered the write tools.
+        const tools = await remoteMcp(apiBase, secret, {
+          jsonrpc: "2.0",
+          id: 2,
+          method: "tools/list",
+        });
+        const names = (tools.json?.result?.tools ?? []).map(
+          (tool) => tool.name,
         );
         check(
-          "the agent reads the server project list",
-          (listed?.structuredContent?.projects ?? []).some(
-            (entry) => entry.id === project.id,
-          ),
+          "a read-only credential is offered reads and not writes",
+          names.includes("read_resource") && !names.includes("create_resource"),
+          names.join(", "),
         );
 
-        // 4. It creates a document, then updates it at the revision it read.
-        const created = await remoteTool(
+        // 4. It reads the document the browser wrote.
+        const resources = await remoteTool(
           apiBase,
           secret,
           3,
-          "create_resource",
-          {
-            projectId: project.id,
-            path: "agent-flow.seq",
-            type: "sequence-diagram",
-            content: [
-              "title Agent Flow",
-              "participant One",
-              "participant Two",
-              `One ->> Two: ${AGENT_MARKER}`,
-              "",
-            ].join("\n"),
-          },
+          "list_resources",
+          { projectId: project.id },
         );
-        const resource = created?.structuredContent?.resource;
-        check(
-          "the agent creates a document on the server",
-          created?.isError === false && resource?.revision === 1,
-        );
-
-        const updated = await remoteTool(
-          apiBase,
-          secret,
-          4,
-          "update_resource",
-          {
-            projectId: project.id,
-            resource: resource.id,
-            content: [
-              "title Agent Flow",
-              "participant One",
-              "participant Two",
-              `One ->> Two: ${AGENT_MARKER}`,
-              "Two --> One: Ack",
-              "",
-            ].join("\n"),
-            expectedRevision: resource.revision,
-          },
-        );
-        check(
-          "the agent's update advances the revision",
-          updated?.structuredContent?.resource?.revision === 2,
-        );
-
-        // 5. A stale write is refused rather than overwriting.
-        const stale = await remoteTool(apiBase, secret, 5, "update_resource", {
+        const resource = resources?.structuredContent?.resources?.[0];
+        const read = await remoteTool(apiBase, secret, 4, "read_resource", {
           projectId: project.id,
-          resource: resource.id,
-          content: "One ->> Two: STALE",
-          expectedRevision: resource.revision,
+          resource: resource?.id,
         });
         check(
-          "a stale agent write is a conflict, not an overwrite",
-          stale?.isError === true &&
-            stale?.structuredContent?.error?.code === "conflict",
-          stale?.structuredContent?.error?.code,
+          "the agent reads the document on the server",
+          (read?.structuredContent?.content ?? "").includes(AGENT_MARKER),
         );
 
-        // 6. The browser observes the agent's change.
-        await page.reload({ waitUntil: "domcontentloaded" });
-        await openServerProject(page, "Remote Agent");
-        const projectRow = page
-          .locator('[data-testid="explorer-project"]')
-          .filter({ hasText: "Remote Agent" });
-        const diagram = projectRow
-          .locator('[data-testid="explorer-diagram"]')
+        // 5. It cannot write.
+        const write = await remoteTool(apiBase, secret, 5, "create_resource", {
+          projectId: project.id,
+          path: "agent-created.seq",
+          type: "sequence-diagram",
+          content: "One ->> Two: nope",
+        });
+        check(
+          "the read-only credential is refused every write",
+          write?.isError === true &&
+            write?.structuredContent?.error?.code === "forbidden",
+          write?.structuredContent?.error?.code,
+        );
+
+        // 6. Revoking the credential stops it immediately.
+        const revokeButton = card
+          .locator('[data-testid^="credential-revoke-"]')
           .first();
-        await diagram.waitFor({ state: "visible", timeout: UI_TIMEOUT_MS });
-        await diagram.click();
-        await page.locator('[data-testid="dsl-textarea"]').waitFor({
-          state: "visible",
-          timeout: UI_TIMEOUT_MS,
-        });
-        const observed = await waitForInputValue(
-          page.locator('[data-testid="dsl-textarea"]'),
-          (value) => value.includes(AGENT_MARKER),
-          "the browser to see the agent's document",
-        );
-        check(
-          "the browser observes the document the agent wrote",
-          observed.includes("Two --> One: Ack"),
-        );
-
-        // 7. Revoking the token stops the same machine credential immediately.
-        await page.locator('[data-testid="open-tokens"]').click();
-        const tokenRow = page
-          .locator('[data-testid^="token-row-"]')
-          .filter({ hasText: "E2E agent" });
-        await tokenRow.waitFor({ state: "visible", timeout: UI_TIMEOUT_MS });
-        await tokenRow
-          .locator('[data-testid^="token-revoke-"]')
-          .first()
-          .click();
-        await tokenRow
-          .locator('[data-testid^="token-revoke-confirm-"]')
+        await revokeButton.click();
+        await card
+          .locator('[data-testid^="credential-revoke-confirm-"]')
           .click();
         await waitForText(
-          tokenRow,
+          card,
           (text) => text.includes("revoked"),
-          "the revoked token row",
+          "the revoked credential row",
         );
-        check("the token can be revoked from the token screen", true);
+        check("the credential can be revoked from the agents screen", true);
 
         const afterRevoke = await remoteMcp(apiBase, secret, {
           jsonrpc: "2.0",

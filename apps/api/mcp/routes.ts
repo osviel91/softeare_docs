@@ -35,7 +35,7 @@ import type { Router } from "../http/router";
 import { errorResponse, json, type ServerResponse } from "../http/http";
 import { guarded } from "../http/errors";
 import { correlationId } from "../http/node-server";
-import { requireBearerContext } from "../auth/pat";
+import { requireBearerContext } from "../auth/agent-credential";
 import {
   ErrorCode,
   SUPPORTED_PROTOCOL_VERSIONS,
@@ -77,7 +77,11 @@ export function registerRemoteMcpRoutes(
   router.post("/mcp", async (request) =>
     guarded(correlationId(request), async () => {
       // Identity first: no token, no parsing, no tool list.
-      const context = await requireBearerContext(dependencies.tokens, request);
+      const context = await requireBearerContext(
+        dependencies.credentials,
+        request,
+        dependencies.tokenPepper,
+      );
 
       const versionError = protocolVersionRefusal(request.headers);
       if (versionError !== null) return versionError;

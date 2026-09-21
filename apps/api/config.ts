@@ -43,6 +43,14 @@ export interface ServerConfig {
   publicUrl: string;
   /** Secret used to sign the short-lived login-state cookie. */
   cookieSecret: string;
+  /**
+   * The HMAC pepper agent credential digests are keyed with.
+   *
+   * Defaults to {@link cookieSecret} so a deployment gets a real key for free;
+   * `TOKEN_PEPPER` separates the two when an operator wants independent
+   * rotation. It is never sent anywhere, only used to key `HMAC-SHA-256`.
+   */
+  tokenPepper: string;
   /** Session lifetime in seconds. */
   sessionTtlSeconds: number;
   database: PostgresOptions | PgliteOptions;
@@ -167,6 +175,7 @@ export function loadConfig(
     port,
     publicUrl,
     cookieSecret,
+    tokenPepper: optional(env, "TOKEN_PEPPER") ?? cookieSecret,
     sessionTtlSeconds,
     database,
     projectVolume,

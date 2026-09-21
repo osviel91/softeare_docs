@@ -88,7 +88,7 @@ export function createServerWorkspaceProvider(
       const writable = await catalog.can(
         context,
         listing.project.id,
-        "resource:write",
+        "resource:update",
       );
       return {
         project: toDomainProject(listing.project),

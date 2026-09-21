@@ -58,12 +58,55 @@ export function isUuid(value: unknown): value is string {
 /**
  * A generator of UUIDv7 strings.
  *
+ * **Monotonic within a millisecond.** Two ids minted in the same tick still sort
+ * in creation order, because the second one advances the first one's random tail
+ * instead of drawing a fresh one. That is not cosmetic: `audit_events` and the
+ * other tables order a listing by `(occurred_at DESC, id DESC)`, and `occurred_at`
+ * is the database's clock, which collides at its own resolution. Without
+ * monotonic ids the tie-break is random, so "newest first" would sometimes return
+ * an older row first. It also keeps a primary-key index append-mostly, which is
+ * the whole reason for UUIDv7.
+ *
  * @param random - Random-byte source. Defaults to `crypto.getRandomValues`,
  *   which exists both in Node and in the browser.
  */
 export function createIdGenerator(random?: RandomBytes): IdGenerator {
   const source: RandomBytes = random ?? defaultRandomBytes();
-  return () => uuidv7From(source(16), Date.now());
+  // The state monotonicity needs: the millisecond of the last id, and the buffer
+  // it was built from.
+  let lastMs = -1;
+  let lastBytes: Uint8Array | null = null;
+  return () => {
+    const now = Date.now();
+    // A later millisecond draws fresh randomness. A repeat of the same
+    // millisecond — or a clock that stepped backwards — advances the previous
+    // tail, so the id is strictly greater than the one before it.
+    if (lastBytes === null || now > lastMs) {
+      lastBytes = source(16);
+      lastMs = now;
+    } else {
+      incrementTail(lastBytes);
+    }
+    // `uuidv7From` reads the buffer and returns a string; it never mutates the
+    // buffer, so advancing it here is what the next call sees.
+    return uuidv7From(lastBytes, lastMs);
+  };
+}
+
+/**
+ * Advance the 80-bit random tail of a UUIDv7 buffer in place.
+ *
+ * Big-endian, carrying upward from the final byte. {@link uuidv7From} overwrites
+ * the version and variant nibbles afterwards; a carry would have to reach the
+ * high nibble of byte 6 or 8 to disturb them, which needs on the order of 2^56
+ * increments inside one millisecond. The ordering the increment establishes is
+ * therefore real rather than probabilistic.
+ */
+function incrementTail(bytes: Uint8Array): void {
+  for (let index = bytes.length - 1; index >= 6; index -= 1) {
+    bytes[index] = (bytes[index] + 1) & 0xff;
+    if (bytes[index] !== 0) return;
+  }
 }
 
 /** The platform's cryptographic random source. */

@@ -22,17 +22,42 @@
  */
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
+import { mkdtemp, rm } from "node:fs/promises";
+import { createServer as createNetServer } from "node:net";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 
 import { chromium } from "playwright";
 
+import { startIdentityProvider } from "./e2e-identity-provider.mjs";
+
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const PORT = Number(process.env.E2E_PORT ?? 4173);
 const BASE_URL = `http://127.0.0.1:${PORT}`;
 const READY_TIMEOUT_MS = 30_000;
 const UI_TIMEOUT_MS = 10_000;
+
+/**
+ * The API ports.
+ *
+ * The browser only ever talks to the preview origin; the proxy forwards
+ * `/api` and `/auth` to the API, so the API's own port is an implementation
+ * detail. It is nonetheless fixed by default so a manual `vite dev` run and the
+ * E2E run agree, and an occupied port falls back to an ephemeral one.
+ */
+const API_PORT = Number(process.env.E2E_API_PORT ?? 8787);
+const IDP_PORT = Number(process.env.E2E_IDP_PORT ?? 8788);
+
+/**
+ * The secret the API signs its login-state cookie with.
+ *
+ * Long enough to satisfy `COOKIE_SECRET`'s 32-character floor, and obviously a
+ * test value. It is generated per run rather than committed so it cannot be
+ * mistaken for a deployment secret.
+ */
+const COOKIE_SECRET = `e2e-${"0123456789abcdef".repeat(4)}`;
 
 /** A diagram that shares no participant names with the seeded sample. */
 const REPLACEMENT_SOURCE = [
@@ -62,6 +87,20 @@ const SEMANTIC_ERROR_SOURCE = [
   "Browser ->> Gateway: Submit order",
   "",
 ].join("\n");
+
+/**
+ * Markers the server scenarios look for on the wire.
+ *
+ * Each is unique so a check can never pass because a *different* scenario's
+ * document happened to be open, and none appears in the seeded sample.
+ */
+const SERVER_MARKER = "SERVERSAVEDMARKER";
+const MARKDOWN_MARKER = "SERVERDOCMARKER";
+const CONFLICT_BASE = "CONFLICTSAVEDBASE";
+const CONFLICT_OWNER = "CONFLICTOWNERWINS";
+const CONFLICT_LOCAL = "CONFLICTLOCALEDIT";
+const VIEWER_MARKER = "VIEWERREADONLYBASE";
+const LOCAL_MARKER = "LOCALANONMARKER";
 
 const failures = [];
 
@@ -97,6 +136,383 @@ async function waitForText(locator, predicate, description) {
   );
 }
 
+/**
+ * Child processes this run owns.
+ *
+ * The API and the preview are killed in `main`'s `finally`, but a hard failure or
+ * a Ctrl-C must not leave a listener behind either. Registering every spawn here
+ * and killing the set on `exit` is what makes an unexpected end safe.
+ */
+const liveChildren = new Set();
+
+/** Remember a child process so an unexpected exit can still kill it. */
+function trackChild(child) {
+  liveChildren.add(child);
+  child.once("exit", () => liveChildren.delete(child));
+  return child;
+}
+
+/** Kill every tracked child, ignoring one that is already gone. */
+function killTrackedChildren() {
+  for (const child of liveChildren) {
+    try {
+      child.kill("SIGKILL");
+    } catch {
+      // Already dead.
+    }
+  }
+}
+
+for (const signal of ["SIGINT", "SIGTERM"]) {
+  process.on(signal, () => {
+    killTrackedChildren();
+    process.exit(1);
+  });
+}
+process.on("exit", killTrackedChildren);
+
+/**
+ * Find a free loopback port.
+ *
+ * The preferred port is tried first so a manual run keeps stable URLs; when it is
+ * taken an ephemeral port is used instead, so a stray process can never make the
+ * suite fail for the wrong reason.
+ */
+async function findFreePort(preferred) {
+  const bind = (port) =>
+    new Promise((resolve) => {
+      const probe = createNetServer();
+      probe.once("error", () => resolve(null));
+      probe.listen(port, "127.0.0.1", () => {
+        const address = probe.address();
+        const bound =
+          typeof address === "object" && address !== null ? address.port : null;
+        probe.close(() => resolve(bound));
+      });
+    });
+  return (await bind(preferred)) ?? (await bind(0));
+}
+
+/**
+ * Start the built API against a temporary volume and wait until it serves.
+ *
+ * Three configuration choices carry the run:
+ *
+ * - `NODE_ENV=test` is deliberate. Without `DATABASE_URL`, the API refuses to
+ *   boot in `development` and `production`; the E2E run must use PGlite rather
+ *   than require a PostgreSQL server, and `test` is the environment in which
+ *   PGlite is a legitimate driver.
+ * - `PUBLIC_URL` is the *browser's* origin, not the API's port. The OIDC
+ *   redirect URI must land back on the preview origin so the session cookie
+ *   stays same-origin and the `/auth` proxy carries it.
+ * - the project volume is a fresh temporary directory per run, so a scenario can
+ *   never read another run's files.
+ */
+async function startApiServer({
+  port,
+  projectVolume,
+  issuer,
+  clientId,
+  clientSecret,
+}) {
+  const entry = join(ROOT, "dist-api", "server.mjs");
+  if (!existsSync(entry)) {
+    throw new Error(
+      "dist-api/server.mjs is missing; run `npm run api:build` first (npm run test:e2e does it for you).",
+    );
+  }
+
+  const child = trackChild(
+    spawn(process.execPath, [entry], {
+      cwd: ROOT,
+      stdio: ["ignore", "pipe", "pipe"],
+      env: {
+        ...process.env,
+        NODE_ENV: "test",
+        HOST: "127.0.0.1",
+        PORT: String(port),
+        PUBLIC_URL: BASE_URL,
+        PROJECT_VOLUME: projectVolume,
+        PGLITE_DIR: "memory://",
+        COOKIE_SECRET,
+        OIDC_ISSUER: issuer,
+        OIDC_CLIENT_ID: clientId,
+        OIDC_CLIENT_SECRET: clientSecret,
+      },
+    }),
+  );
+
+  let log = "";
+  child.stdout.on("data", (chunk) => (log += chunk));
+  child.stderr.on("data", (chunk) => (log += chunk));
+
+  const apiBase = `http://127.0.0.1:${port}`;
+  const deadline = Date.now() + READY_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    if (child.exitCode !== null) {
+      throw new Error(
+        `the API exited with code ${child.exitCode}:\n${log.trim()}`,
+      );
+    }
+    try {
+      const response = await fetch(`${apiBase}/healthz`);
+      if (response.ok) {
+        const health = await response.json();
+        if (health.status === "ok" && health.signIn === "oidc") return child;
+      }
+    } catch {
+      // Not listening yet; keep polling.
+    }
+    await delay(150);
+  }
+
+  child.kill("SIGTERM");
+  throw new Error(
+    `the API did not report {status:"ok", signIn:"oidc"} within ${READY_TIMEOUT_MS}ms:\n${log.trim()}`,
+  );
+}
+
+/**
+ * Send one request from a page, through the application's own origin.
+ *
+ * Using the page's `fetch` is what makes the session part of the test: the
+ * request is same-origin, so the browser attaches the HttpOnly cookie exactly as
+ * the application does, and the preview's proxy forwards `/api` to the API.
+ */
+async function apiRequest(page, path, init = undefined) {
+  return page.evaluate(
+    async ({ path, init }) => {
+      const response = await fetch(path, {
+        credentials: "same-origin",
+        method: init?.method ?? "GET",
+        ...(init?.body === undefined
+          ? {}
+          : {
+              body: init.body,
+              headers: { "content-type": "application/json" },
+            }),
+      });
+      const text = await response.text();
+      let json = null;
+      try {
+        json = JSON.parse(text);
+      } catch {
+        json = null;
+      }
+      return { status: response.status, json, text };
+    },
+    { path, init },
+  );
+}
+
+/** Find a server project by name, as the signed-in page sees it. */
+async function serverProjectByName(page, projectName) {
+  const projects = await apiRequest(page, "/api/projects");
+  const project = (projects.json?.projects ?? []).find(
+    (entry) => entry.name === projectName,
+  );
+  return project ?? null;
+}
+
+/**
+ * Poll the API until one of a project's resources holds content the predicate
+ * accepts.
+ *
+ * Waiting on the *server's* copy rather than the tab's dirty flag is what makes
+ * "the save landed" a fact rather than a guess: the tab clears its dirty flag
+ * from its own optimistic bookkeeping, while this reads what a second browser
+ * would see.
+ */
+async function waitForServerContent(page, projectName, predicate, description) {
+  const deadline = Date.now() + UI_TIMEOUT_MS;
+  let last = "";
+  while (Date.now() < deadline) {
+    const project = await serverProjectByName(page, projectName);
+    if (project !== null) {
+      const list = await apiRequest(
+        page,
+        `/api/projects/${project.id}/resources`,
+      );
+      for (const resource of list.json?.resources ?? []) {
+        const read = await apiRequest(
+          page,
+          `/api/projects/${project.id}/resources/${resource.id}`,
+        );
+        last = read.json?.content ?? "";
+        if (predicate(last)) {
+          return {
+            projectId: project.id,
+            resourceId: resource.id,
+            content: last,
+          };
+        }
+      }
+    }
+    await delay(150);
+  }
+  throw new Error(
+    `${description} timed out after ${UI_TIMEOUT_MS}ms (last content: ${JSON.stringify(
+      last.slice(0, 200),
+    )})`,
+  );
+}
+
+/** Read a project's first resource, with its id, revision and content. */
+async function currentServerResource(page, projectName) {
+  const project = await serverProjectByName(page, projectName);
+  if (project === null) {
+    throw new Error(`no server project named ${JSON.stringify(projectName)}`);
+  }
+  const list = await apiRequest(page, `/api/projects/${project.id}/resources`);
+  const resource = (list.json?.resources ?? [])[0];
+  if (resource === undefined) {
+    throw new Error(`server project ${projectName} has no resources`);
+  }
+  const read = await apiRequest(
+    page,
+    `/api/projects/${project.id}/resources/${resource.id}`,
+  );
+  return {
+    projectId: project.id,
+    resource,
+    content: read.json?.content ?? "",
+  };
+}
+
+/**
+ * Poll an input's value until the predicate accepts it.
+ *
+ * `textContent` does not track a textarea's value, so the textarea-backed
+ * editors need this rather than {@link waitForText}.
+ */
+async function waitForInputValue(locator, predicate, description) {
+  const deadline = Date.now() + UI_TIMEOUT_MS;
+  let last = "";
+  while (Date.now() < deadline) {
+    try {
+      last = await locator.inputValue();
+    } catch {
+      last = "";
+    }
+    if (predicate(last)) return last;
+    await delay(100);
+  }
+  throw new Error(
+    `${description} timed out after ${UI_TIMEOUT_MS}ms (last value: ${JSON.stringify(
+      last.slice(0, 200),
+    )})`,
+  );
+}
+
+/**
+ * Tell the local identity provider who the next authorization signs in as.
+ *
+ * Going through the provider's HTTP control endpoint (rather than calling the
+ * in-process object) exercises the real path a test harness uses, including its
+ * loopback and bearer-token guards.
+ */
+async function setNextIdentity(idp, subject) {
+  const response = await fetch(`${idp.issuer}/__control/subject`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-e2e-control": idp.controlToken,
+    },
+    body: JSON.stringify(subject),
+  });
+  if (!response.ok) {
+    throw new Error(
+      `the identity provider refused a subject change: ${response.status}`,
+    );
+  }
+}
+
+/**
+ * Sign a page in as a subject.
+ *
+ * The provider is told who to sign in as *before* the browser leaves for it: the
+ * authorization endpoint signs in the subject the control endpoint last chose,
+ * which is how one provider serves two different people in one run.
+ */
+async function signIn(page, idp, subject) {
+  await setNextIdentity(idp, subject);
+  const button = page.locator('[data-testid="workspace-sign-in"]');
+  await button.waitFor({ state: "visible", timeout: UI_TIMEOUT_MS });
+  await button.click();
+  await page.locator('[data-testid="workspace-user"]').waitFor({
+    state: "visible",
+    timeout: UI_TIMEOUT_MS,
+  });
+}
+
+/** Create a server project from the switcher and wait until it is open. */
+async function createServerProject(page, name) {
+  await page
+    .locator('[data-testid="workspace-new-server-project-input"]')
+    .fill(name);
+  await page
+    .locator('[data-testid="workspace-new-server-project-button"]')
+    .click();
+  await openServerProject(page, name);
+}
+
+/** Open a server project from the switcher and wait for its explorer row. */
+async function openServerProject(page, name) {
+  const entry = page
+    .locator('[data-testid="workspace-server-project"]')
+    .filter({ hasText: name });
+  await entry.waitFor({ state: "visible", timeout: UI_TIMEOUT_MS });
+  await entry.click();
+  await page
+    .locator('[data-testid="explorer-project"]')
+    .filter({ hasText: name })
+    .waitFor({ state: "visible", timeout: UI_TIMEOUT_MS });
+}
+
+/** Add a document to a project through the explorer's add menu. */
+async function addDocument(page, projectName, menuTestId) {
+  await page
+    .locator('[data-testid="explorer-project"]')
+    .filter({ hasText: projectName })
+    .locator('[data-testid="project-add-button"]')
+    .click();
+  await page.locator(`[data-testid="${menuTestId}"]`).click();
+}
+
+/**
+ * Create a document and wait for its tab to appear.
+ *
+ * Waiting for the editor alone is not enough: a project with no documents still
+ * shows the editor, so a `fill` issued while the asynchronous create is in
+ * flight would be overwritten the moment the new, empty document becomes active.
+ * The new tab is the concrete signal that the created document is on screen.
+ */
+async function createDocument(page, projectName, menuTestId) {
+  const tabsBefore = await page.locator('[data-testid="tab"]').count();
+  await addDocument(page, projectName, menuTestId);
+  await page.waitForFunction(
+    (expected) =>
+      document.querySelectorAll('[data-testid="tab"]').length === expected,
+    tabsBefore + 1,
+    { timeout: UI_TIMEOUT_MS },
+  );
+}
+
+/** Run one labelled scenario, recording its completion as a single check. */
+async function scenario(name, body) {
+  console.log(`\n${name}`);
+  try {
+    await body();
+    check(`${name} completed`, true);
+  } catch (error) {
+    check(
+      `${name} completed`,
+      false,
+      error instanceof Error ? error.message : String(error),
+    );
+  }
+}
+
 /** Start `vite preview` for the built bundle and resolve once it serves. */
 async function startPreviewServer() {
   const viteBin = join(ROOT, "node_modules", "vite", "bin", "vite.js");
@@ -104,20 +520,22 @@ async function startPreviewServer() {
     throw new Error(`Vite binary not found at ${viteBin}; run npm install.`);
   }
 
-  const child = spawn(
-    process.execPath,
-    // Bind explicitly to IPv4: Vite's default `localhost` can resolve to ::1
-    // only, which the fetch-based readiness poll below would never reach.
-    [
-      viteBin,
-      "preview",
-      "--host",
-      "127.0.0.1",
-      "--port",
-      String(PORT),
-      "--strictPort",
-    ],
-    { cwd: ROOT, stdio: ["ignore", "pipe", "pipe"] },
+  const child = trackChild(
+    spawn(
+      process.execPath,
+      // Bind explicitly to IPv4: Vite's default `localhost` can resolve to ::1
+      // only, which the fetch-based readiness poll below would never reach.
+      [
+        viteBin,
+        "preview",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        String(PORT),
+        "--strictPort",
+      ],
+      { cwd: ROOT, stdio: ["ignore", "pipe", "pipe"] },
+    ),
   );
 
   let serverLog = "";
@@ -146,9 +564,19 @@ async function startPreviewServer() {
   );
 }
 
-/** Drive the served app and record every check. */
-async function runChecks(browser) {
-  const page = await browser.newPage();
+/**
+ * Drive the served app and record every check.
+ *
+ * @param page - The page to drive. The caller owns it (and its context), because
+ *   the window size is part of the harness rather than of a check: the workspace
+ *   switcher sits above the project tree, and on Playwright's 720px-tall default
+ *   viewport the explorer would have to scroll the last project into view before
+ *   clicking its add button. A context menu dismisses itself on scroll, so it
+ *   would close between Playwright's stability check and the click. A window tall
+ *   enough to show the tree needs no scroll, which is why `main` opens the
+ *   browser with one.
+ */
+async function runChecks(page) {
   const consoleErrors = [];
   page.on("pageerror", (error) => consoleErrors.push(String(error)));
 
@@ -1001,7 +1429,13 @@ async function runChecks(browser) {
   check("importing the exported archive adds the project", true);
 
   // The imported project becomes the selected one, so the explorer shows its
-  // files and the first of them is loaded.
+  // files and the first of them is loaded. Scope the file counts to that
+  // project's own row: counting `explorer-diagram` across the whole explorer
+  // measures every other project's files too, which is what made this assertion
+  // fail once the suite had created projects of its own.
+  const importedRow = page.locator(
+    '[data-testid="explorer-project"][aria-current="true"]',
+  );
   const importedSource = await waitForText(
     page.locator('[data-testid="dsl-textarea"]'),
     (text) => text.includes("SEARCHMARKER"),
@@ -1011,10 +1445,23 @@ async function runChecks(browser) {
     "the imported document keeps its content",
     importedSource.includes("CartService"),
   );
+  // An import writes its files one by one, so the note can still be arriving when
+  // the diagram is already open. Waiting for it makes the count below a fact
+  // rather than a race.
+  await importedRow
+    .locator('[data-testid="explorer-note"]')
+    .first()
+    .waitFor({ state: "visible", timeout: UI_TIMEOUT_MS });
+  const importedDiagrams = await importedRow
+    .locator('[data-testid="explorer-diagram"]')
+    .count();
+  const importedNotes = await importedRow
+    .locator('[data-testid="explorer-note"]')
+    .count();
   check(
     "the imported project carries its files",
-    (await page.locator('[data-testid="explorer-diagram"]').count()) === 1 &&
-      (await page.locator('[data-testid="explorer-note"]').count()) === 1,
+    importedDiagrams === 1 && importedNotes === 1,
+    `${importedDiagrams} diagram(s), ${importedNotes} note(s)`,
   );
 
   console.log("\nProject intelligence:");
@@ -1181,12 +1628,24 @@ async function runChecks(browser) {
   // A second documentation language, created and rendered in the same shell.
   await page.locator('[data-testid="project-name-input"]').fill("Orders");
   await page.locator('[data-testid="create-project-button"]').click();
+  // Creating a document is asynchronous, and the editor was already on screen, so
+  // waiting for the editor alone would let the fill below race the create and be
+  // overwritten by the new, empty document. The tab appearing is the concrete
+  // signal that the created document is the one on screen (the same wait the
+  // "Workspace" and "Intel" sections already use).
+  const tabsBeforeFlow = await page.locator('[data-testid="tab"]').count();
   await page
     .locator('[data-testid="explorer-project"]')
     .filter({ hasText: "Orders" })
     .locator('[data-testid="project-add-button"]')
     .click();
   await page.locator('[data-testid="context-menu-new-event-flow"]').click();
+  await page.waitForFunction(
+    (expected) =>
+      document.querySelectorAll('[data-testid="tab"]').length === expected,
+    tabsBeforeFlow + 1,
+    { timeout: UI_TIMEOUT_MS },
+  );
   await page.locator('[data-testid="dsl-textarea"]').waitFor({
     state: "visible",
     timeout: UI_TIMEOUT_MS,
@@ -1308,6 +1767,549 @@ async function runChecks(browser) {
   await page.close();
 }
 
+/**
+ * Drive the authenticated server scenarios.
+ *
+ * Each scenario opens its own browser contexts, so cookies and sessions never
+ * leak between them: two contexts signed in as different people must not share a
+ * session, and an anonymous context must genuinely start with no session.
+ */
+async function runServerChecks(browser, idp) {
+  const owner = {
+    sub: "e2e-owner",
+    name: "E2E Owner",
+    email: "owner@e2e.test",
+  };
+  const viewer = {
+    sub: "e2e-viewer",
+    name: "E2E Viewer",
+    email: "viewer@e2e.test",
+  };
+
+  await scenario(
+    "Server scenario 1: a server project's diagram survives a reload",
+    async () => {
+      const context = await browser.newContext();
+      const page = await context.newPage();
+      try {
+        await page.goto(BASE_URL, { waitUntil: "domcontentloaded" });
+        await page.locator('[data-testid="app-shell"]').waitFor({
+          state: "visible",
+          timeout: UI_TIMEOUT_MS,
+        });
+
+        await signIn(page, idp, owner);
+        check(
+          "signing in through the local provider exposes the session",
+          true,
+        );
+
+        await createServerProject(page, "Alpha Server");
+        check("creating a server project opens it in the explorer", true);
+
+        await createDocument(page, "Alpha Server", "context-menu-new-diagram");
+        await page.locator('[data-testid="dsl-textarea"]').waitFor({
+          state: "visible",
+          timeout: UI_TIMEOUT_MS,
+        });
+        check("a sequence diagram can be created in a server project", true);
+
+        await page
+          .locator('[data-testid="dsl-textarea"]')
+          .fill(
+            [
+              "title Alpha Server",
+              "participant Client",
+              "participant Service",
+              `Client ->> Service: ${SERVER_MARKER}`,
+              "",
+            ].join("\n"),
+          );
+        const saved = await waitForServerContent(
+          page,
+          "Alpha Server",
+          (content) => content.includes(SERVER_MARKER),
+          "the server-side save",
+        );
+        check(
+          "the edit reaches the server, not just the browser",
+          saved.content.includes(SERVER_MARKER),
+        );
+
+        await page.reload({ waitUntil: "domcontentloaded" });
+        await openServerProject(page, "Alpha Server");
+        await page.locator('[data-testid="dsl-textarea"]').waitFor({
+          state: "visible",
+          timeout: UI_TIMEOUT_MS,
+        });
+        const reopened = await waitForInputValue(
+          page.locator('[data-testid="dsl-textarea"]'),
+          (value) => value.includes(SERVER_MARKER),
+          "the reopened diagram",
+        );
+        check(
+          "after a reload the project reopens its document",
+          reopened.includes(`Client ->> Service: ${SERVER_MARKER}`),
+        );
+      } finally {
+        await context.close();
+      }
+    },
+  );
+
+  await scenario(
+    "Server scenario 2: a server project's markdown document survives a reload",
+    async () => {
+      const context = await browser.newContext();
+      const page = await context.newPage();
+      try {
+        await page.goto(BASE_URL, { waitUntil: "domcontentloaded" });
+        await page.locator('[data-testid="app-shell"]').waitFor({
+          state: "visible",
+          timeout: UI_TIMEOUT_MS,
+        });
+        await signIn(page, idp, owner);
+
+        await createServerProject(page, "Docs Server");
+        await createDocument(page, "Docs Server", "context-menu-new-note");
+        await page.locator('[data-testid="markdown-textarea"]').waitFor({
+          state: "visible",
+          timeout: UI_TIMEOUT_MS,
+        });
+        check("a markdown document can be created in a server project", true);
+
+        await page
+          .locator('[data-testid="markdown-textarea"]')
+          .fill(
+            ["# Server Handbook", "", `Runbook ${MARKDOWN_MARKER}.`].join("\n"),
+          );
+        const saved = await waitForServerContent(
+          page,
+          "Docs Server",
+          (content) => content.includes(MARKDOWN_MARKER),
+          "the markdown save",
+        );
+        check(
+          "the markdown edit reaches the server",
+          saved.content.includes(MARKDOWN_MARKER),
+        );
+
+        await page.reload({ waitUntil: "domcontentloaded" });
+        await openServerProject(page, "Docs Server");
+        await page.locator('[data-testid="markdown-textarea"]').waitFor({
+          state: "visible",
+          timeout: UI_TIMEOUT_MS,
+        });
+        const reopened = await waitForInputValue(
+          page.locator('[data-testid="markdown-textarea"]'),
+          (value) => value.includes(MARKDOWN_MARKER),
+          "the reopened markdown document",
+        );
+        check(
+          "after a reload the markdown document reopens with its content",
+          reopened.includes(MARKDOWN_MARKER),
+        );
+      } finally {
+        await context.close();
+      }
+    },
+  );
+
+  await scenario(
+    "Server scenario 3: a stale write raises the conflict dialog",
+    async () => {
+      const ownerContext = await browser.newContext();
+      const otherContext = await browser.newContext();
+      const ownerPage = await ownerContext.newPage();
+      const otherPage = await otherContext.newPage();
+      try {
+        // The owner creates the shared document.
+        await ownerPage.goto(BASE_URL, { waitUntil: "domcontentloaded" });
+        await ownerPage.locator('[data-testid="app-shell"]').waitFor({
+          state: "visible",
+          timeout: UI_TIMEOUT_MS,
+        });
+        await signIn(ownerPage, idp, owner);
+        await createServerProject(ownerPage, "Conflict Server");
+        await createDocument(
+          ownerPage,
+          "Conflict Server",
+          "context-menu-new-diagram",
+        );
+        await ownerPage.locator('[data-testid="dsl-textarea"]').waitFor({
+          state: "visible",
+          timeout: UI_TIMEOUT_MS,
+        });
+        await ownerPage
+          .locator('[data-testid="dsl-textarea"]')
+          .fill(
+            [
+              "title Conflict",
+              "participant A",
+              "participant B",
+              `A ->> B: ${CONFLICT_BASE}`,
+              "",
+            ].join("\n"),
+          );
+        await waitForServerContent(
+          ownerPage,
+          "Conflict Server",
+          (content) => content.includes(CONFLICT_BASE),
+          "the first save",
+        );
+
+        // The second context reads the same document, and so holds the revision
+        // the first save produced.
+        await otherPage.goto(BASE_URL, { waitUntil: "domcontentloaded" });
+        await otherPage.locator('[data-testid="app-shell"]').waitFor({
+          state: "visible",
+          timeout: UI_TIMEOUT_MS,
+        });
+        await signIn(otherPage, idp, owner);
+        await openServerProject(otherPage, "Conflict Server");
+        await otherPage.locator('[data-testid="dsl-textarea"]').waitFor({
+          state: "visible",
+          timeout: UI_TIMEOUT_MS,
+        });
+        await waitForInputValue(
+          otherPage.locator('[data-testid="dsl-textarea"]'),
+          (value) => value.includes(CONFLICT_BASE),
+          "the second editor's read",
+        );
+        check("a second context opens the same server document", true);
+
+        // The owner writes first, moving the server past the revision the second
+        // context read.
+        await ownerPage
+          .locator('[data-testid="dsl-textarea"]')
+          .fill(
+            [
+              "title Conflict",
+              "participant A",
+              "participant B",
+              `A ->> B: ${CONFLICT_OWNER}`,
+              "",
+            ].join("\n"),
+          );
+        await waitForServerContent(
+          ownerPage,
+          "Conflict Server",
+          (content) => content.includes(CONFLICT_OWNER),
+          "the owner's second save",
+        );
+
+        // The second context saves from its now-stale revision.
+        await otherPage
+          .locator('[data-testid="dsl-textarea"]')
+          .fill(
+            [
+              "title Conflict",
+              "participant A",
+              "participant B",
+              `A ->> B: ${CONFLICT_LOCAL}`,
+              "",
+            ].join("\n"),
+          );
+        await otherPage
+          .locator('[data-testid="save-conflict-dialog"]')
+          .waitFor({
+            state: "visible",
+            timeout: UI_TIMEOUT_MS,
+          });
+        check("a write from a stale revision raises the conflict dialog", true);
+        check(
+          "the local edit is still in the editor while the dialog is open",
+          (
+            await otherPage.locator('[data-testid="dsl-textarea"]').inputValue()
+          ).includes(CONFLICT_LOCAL),
+        );
+
+        const afterConflict = await waitForServerContent(
+          otherPage,
+          "Conflict Server",
+          (content) => content.includes(CONFLICT_OWNER),
+          "the owner's content after the refused write",
+        );
+        check(
+          "the refused write did not reach the server",
+          !afterConflict.content.includes(CONFLICT_LOCAL),
+        );
+
+        await otherPage.locator('[data-testid="save-conflict-reload"]').click();
+        await otherPage
+          .locator('[data-testid="save-conflict-dialog"]')
+          .waitFor({ state: "detached", timeout: UI_TIMEOUT_MS });
+        const reloaded = await waitForInputValue(
+          otherPage.locator('[data-testid="dsl-textarea"]'),
+          (value) => value.includes(CONFLICT_OWNER),
+          "the reloaded server version",
+        );
+        check(
+          "reloading the server version shows the owner's content",
+          reloaded.includes(CONFLICT_OWNER),
+        );
+        check(
+          "the local edit is gone after taking the server version",
+          !reloaded.includes(CONFLICT_LOCAL),
+        );
+      } finally {
+        await ownerContext.close();
+        await otherContext.close();
+      }
+    },
+  );
+
+  await scenario(
+    "Server scenario 4: a VIEWER can read but cannot write",
+    async () => {
+      const ownerContext = await browser.newContext();
+      const viewerContext = await browser.newContext();
+      const ownerPage = await ownerContext.newPage();
+      const viewerPage = await viewerContext.newPage();
+      try {
+        await ownerPage.goto(BASE_URL, { waitUntil: "domcontentloaded" });
+        await ownerPage.locator('[data-testid="app-shell"]').waitFor({
+          state: "visible",
+          timeout: UI_TIMEOUT_MS,
+        });
+        await signIn(ownerPage, idp, owner);
+        await createServerProject(ownerPage, "Viewer Server");
+        await createDocument(
+          ownerPage,
+          "Viewer Server",
+          "context-menu-new-diagram",
+        );
+        await ownerPage.locator('[data-testid="dsl-textarea"]').waitFor({
+          state: "visible",
+          timeout: UI_TIMEOUT_MS,
+        });
+        await ownerPage
+          .locator('[data-testid="dsl-textarea"]')
+          .fill(
+            [
+              "title Viewer",
+              "participant A",
+              "participant B",
+              `A ->> B: ${VIEWER_MARKER}`,
+              "",
+            ].join("\n"),
+          );
+        await waitForServerContent(
+          ownerPage,
+          "Viewer Server",
+          (content) => content.includes(VIEWER_MARKER),
+          "the owner's save",
+        );
+
+        // The second person signs in, and the owner adds them as a viewer.
+        await viewerPage.goto(BASE_URL, { waitUntil: "domcontentloaded" });
+        await viewerPage.locator('[data-testid="app-shell"]').waitFor({
+          state: "visible",
+          timeout: UI_TIMEOUT_MS,
+        });
+        await signIn(viewerPage, idp, viewer);
+        const me = await apiRequest(viewerPage, "/api/me");
+        const viewerId = me.json?.user?.id;
+        check(
+          "the second sign-in created a distinct account",
+          typeof viewerId === "string" && viewerId !== "",
+        );
+
+        const owned = await currentServerResource(ownerPage, "Viewer Server");
+        const membership = await apiRequest(
+          ownerPage,
+          `/api/projects/${owned.projectId}/members/${viewerId}`,
+          { method: "PUT", body: JSON.stringify({ role: "VIEWER" }) },
+        );
+        check(
+          "the owner can add the second user as a VIEWER",
+          membership.status === 204,
+          `status ${membership.status}`,
+        );
+
+        // The viewer's project list was read before the membership existed, so a
+        // reload is what makes the shared project appear.
+        await viewerPage.reload({ waitUntil: "domcontentloaded" });
+        await openServerProject(viewerPage, "Viewer Server");
+        await viewerPage.locator('[data-testid="dsl-textarea"]').waitFor({
+          state: "visible",
+          timeout: UI_TIMEOUT_MS,
+        });
+        const read = await waitForInputValue(
+          viewerPage.locator('[data-testid="dsl-textarea"]'),
+          (value) => value.includes(VIEWER_MARKER),
+          "the viewer's read",
+        );
+        check(
+          "a viewer can open and read the project",
+          read.includes(VIEWER_MARKER),
+        );
+
+        // The viewer's edit is refused before it ever leaves the browser, and the
+        // shell says so rather than failing silently.
+        await viewerPage
+          .locator('[data-testid="dsl-textarea"]')
+          .fill(
+            [
+              "title Viewer",
+              "participant A",
+              "participant B",
+              "A ->> B: VIEWEREDIT",
+              "",
+            ].join("\n"),
+          );
+        await viewerPage.locator('[data-testid="save-error"]').waitFor({
+          state: "visible",
+          timeout: UI_TIMEOUT_MS,
+        });
+        check("the read-only editor surfaces the refused save", true);
+
+        const afterEdit = await currentServerResource(
+          viewerPage,
+          "Viewer Server",
+        );
+        check(
+          "the viewer's edit never reached the server",
+          afterEdit.content.includes(VIEWER_MARKER) &&
+            !afterEdit.content.includes("VIEWEREDIT"),
+        );
+
+        // More important than the UI: the server refuses the write itself, even
+        // with the revision it currently holds.
+        const refused = await apiRequest(
+          viewerPage,
+          `/api/projects/${afterEdit.projectId}/resources/${afterEdit.resource.id}`,
+          {
+            method: "PUT",
+            body: JSON.stringify({
+              content: "VIEWEROVERRIDE",
+              expectedRevision: afterEdit.resource.revision,
+            }),
+          },
+        );
+        check(
+          "the server refuses a viewer's write with 403",
+          refused.status === 403,
+          `status ${refused.status}`,
+        );
+
+        // The explorer's create affordance is refused too, which is what an
+        // operator actually clicks.
+        const viewerRow = viewerPage
+          .locator('[data-testid="explorer-project"]')
+          .filter({ hasText: "Viewer Server" });
+        const before = await viewerRow
+          .locator('[data-testid="explorer-diagram"]')
+          .count();
+        await addDocument(
+          viewerPage,
+          "Viewer Server",
+          "context-menu-new-diagram",
+        );
+        await viewerPage.locator('[data-testid="workspace-error"]').waitFor({
+          state: "visible",
+          timeout: UI_TIMEOUT_MS,
+        });
+        check(
+          "the read-only project refuses a create with a visible error",
+          true,
+        );
+        check(
+          "no diagram was created in the read-only project",
+          (await viewerRow
+            .locator('[data-testid="explorer-diagram"]')
+            .count()) === before,
+          `${before} -> ${await viewerRow
+            .locator('[data-testid="explorer-diagram"]')
+            .count()}`,
+        );
+      } finally {
+        await ownerContext.close();
+        await viewerContext.close();
+      }
+    },
+  );
+
+  await scenario(
+    "Server scenario 5: an anonymous visitor keeps the local workspace",
+    async () => {
+      const context = await browser.newContext();
+      const page = await context.newPage();
+      try {
+        await page.goto(BASE_URL, { waitUntil: "domcontentloaded" });
+        await page.locator('[data-testid="app-shell"]').waitFor({
+          state: "visible",
+          timeout: UI_TIMEOUT_MS,
+        });
+        await page
+          .locator('[data-testid="workspace-server-signed-out"]')
+          .waitFor({ state: "visible", timeout: UI_TIMEOUT_MS });
+        check(
+          "an anonymous visitor is told to sign in for server projects",
+          true,
+        );
+        check(
+          "the server section offers a sign-in button",
+          (await page.locator('[data-testid="workspace-sign-in"]').count()) ===
+            1,
+        );
+        check(
+          "no server projects are listed while signed out",
+          (await page
+            .locator('[data-testid="workspace-server-project"]')
+            .count()) === 0,
+        );
+
+        await page
+          .locator('[data-testid="project-name-input"]')
+          .fill("Anonymous Local");
+        await page.locator('[data-testid="create-project-button"]').click();
+        const row = page
+          .locator('[data-testid="explorer-project"]')
+          .filter({ hasText: "Anonymous Local" });
+        await row.waitFor({ state: "visible", timeout: UI_TIMEOUT_MS });
+        check("a local project can still be created while signed out", true);
+
+        await createDocument(
+          page,
+          "Anonymous Local",
+          "context-menu-new-diagram",
+        );
+        await page.locator('[data-testid="dsl-textarea"]').waitFor({
+          state: "visible",
+          timeout: UI_TIMEOUT_MS,
+        });
+        await page
+          .locator('[data-testid="dsl-textarea"]')
+          .fill(
+            [
+              "title Local Anonymous",
+              "participant One",
+              "participant Two",
+              `One ->> Two: ${LOCAL_MARKER}`,
+              "",
+            ].join("\n"),
+          );
+        await waitForText(
+          page.locator('[data-testid="preview-svg"]'),
+          (text) => text.includes(LOCAL_MARKER),
+          "the local diagram preview",
+        );
+        check(
+          "a local diagram still edits and previews while signed out",
+          true,
+        );
+        check(
+          "the local diagram is in the explorer",
+          (await row.locator('[data-testid="explorer-diagram"]').count()) === 1,
+        );
+      } finally {
+        await context.close();
+      }
+    },
+  );
+}
+
 async function main() {
   if (!existsSync(join(ROOT, "dist", "index.html"))) {
     throw new Error(
@@ -1315,14 +2317,44 @@ async function main() {
     );
   }
 
-  const server = await startPreviewServer();
+  const apiPort = await findFreePort(API_PORT);
+  const idpPort = await findFreePort(IDP_PORT);
+  const idp = await startIdentityProvider({ port: idpPort });
+  const projectVolume = await mkdtemp(join(tmpdir(), "sdm-e2e-projects-"));
+
+  // `vite preview` reads this while it builds its proxy table, and the child
+  // inherits the environment, so the browser's `/api` and `/auth` calls reach the
+  // API that belongs to *this* run.
+  process.env.SDM_API_TARGET = `http://127.0.0.1:${apiPort}`;
+
+  let api;
+  let server;
   let browser;
   try {
+    api = await startApiServer({
+      port: apiPort,
+      projectVolume,
+      issuer: idp.issuer,
+      clientId: idp.clientId,
+      clientSecret: idp.clientSecret,
+    });
+    server = await startPreviewServer();
     browser = await chromium.launch();
-    await runChecks(browser);
+    // The existing checks run in a window tall enough that the whole explorer
+    // tree is visible without scrolling; see `runChecks` for why that matters.
+    const checksContext = await browser.newContext({
+      viewport: { width: 1440, height: 1600 },
+    });
+    const checksPage = await checksContext.newPage();
+    await runChecks(checksPage);
+    await checksContext.close();
+    await runServerChecks(browser, idp);
   } finally {
-    await browser?.close();
-    server.kill("SIGTERM");
+    await browser?.close().catch(() => {});
+    server?.kill("SIGTERM");
+    api?.kill("SIGTERM");
+    await idp.close().catch(() => {});
+    await rm(projectVolume, { recursive: true, force: true }).catch(() => {});
   }
 
   console.log("");

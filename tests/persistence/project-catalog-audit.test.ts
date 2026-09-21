@@ -26,6 +26,7 @@ import { createFsProjectStorage } from "../../src/persistence/fs-project-storage
 import { createProjectRepository } from "../../src/persistence/project-repository";
 import { createUserRepository } from "../../src/persistence/user-repository";
 import { createAuditRepository } from "../../src/persistence/audit-repository";
+import { createIdGenerator } from "../../src/shared/ids/uuid";
 import type { AuditRepository } from "../../src/application/ports/audit-repository";
 import type { ApplicationContext } from "../../src/application/context";
 import type { Permission } from "../../src/domain/access/permissions";
@@ -81,6 +82,50 @@ async function owner(audit?: AuditRepository, onAuditFailure?: () => void) {
   const listing = await catalog.createProject(context, { name: "Audited" });
   return { catalog, context, projectId: listing.project.id };
 }
+
+describe("the audit trail's order", () => {
+  /**
+   * Regression for the flake that surfaced during Phase 4.
+   *
+   * `occurred_at` is the database's clock, and two rows can share it. The listing
+   * breaks the tie with `id DESC`, which is only "newest first" if ids are
+   * monotonic — otherwise the order is random and a caller reading the trail sees
+   * events out of order. This pins the tie-break with an explicitly identical
+   * timestamp, which is the case a fast machine hits by accident.
+   */
+  it("puts the later of two events first even when their timestamps are equal", async () => {
+    const audit = createAuditRepository(client);
+    const users = createUserRepository(client);
+    const user = await users.findOrCreateByExternalIdentity({
+      issuer: "https://idp.test",
+      subject: `order-${Math.random().toString(36).slice(2)}`,
+      displayName: "Order User",
+      email: null,
+    });
+    const project = await createProjectRepository(client).create({
+      ownerId: user.id,
+      name: "Ordered",
+    });
+
+    // Two rows written with the *same* occurred_at, exactly as two fast events
+    // would be. The ids come from the production generator.
+    const newId = createIdGenerator();
+    const stamp = new Date().toISOString();
+    for (const action of ["project.created", "resource.created"] as const) {
+      await client.query(
+        `INSERT INTO audit_events (id, occurred_at, user_id, auth_type, project_id, action)
+         VALUES ($1, $2, $3, 'session', $4, $5)`,
+        [newId(), stamp, user.id, project.id, action],
+      );
+    }
+
+    const listed = await audit.listForProject(project.id);
+    expect(listed.map((row) => row.action)).toEqual([
+      "resource.created",
+      "project.created",
+    ]);
+  });
+});
 
 describe("an audit write that fails", () => {
   it("does not turn a committed mutation into a reported failure", async () => {

@@ -130,7 +130,7 @@ real PKCE, no external dependency) and the real API, and drives Chromium through
 2. the same for a Markdown document;
 3. two browser contexts on one document: the first saves, the second saves from a
    stale revision and gets the conflict dialog, the server content is unchanged,
-   and *Reload server version* shows the first client's text;
+   and _Reload server version_ shows the first client's text;
 4. a second user added as `VIEWER`: reading works, and both the UI and the server
    refuse a write;
 5. a fresh anonymous context: local projects still work and the server section
@@ -140,6 +140,28 @@ Making the switcher fit meant the explorer scrolls on Playwright's 720-pixel
 viewport, which changes what a click on a context-menu item has to wait for; that
 was resolved in the harness with concrete waits on the tab/note a scenario
 created, never by raising a timeout.
+
+### Defects the stabilisation surfaced
+
+Making the gates reproducible found three things that were not on the mission's
+list:
+
+1. **A login dropped its own session cookie** (see Phase 4A above). Found because
+   the harness had to sign in through the real transport for the first time.
+2. **"Newest first" was not deterministic.** Listings order by
+   `(occurred_at DESC, id DESC)`, and `occurred_at` is the database's clock, which
+   collides at its own resolution — but ids were plain UUIDv7, whose 80-bit tail
+   is random, so the tie-break was random and an audit listing could return an
+   older event first. `createIdGenerator` is now monotonic within a millisecond
+   (a repeated tick advances the previous tail), which makes the tie-break mean
+   what it says and keeps primary-key inserts append-mostly. Pinned by
+   `tests/shared/ids/uuid.test.ts` and by an audit-ordering test that gives two
+   rows an explicitly identical timestamp.
+3. **A loaded machine failed a test _hook_ rather than an assertion.** The API and
+   persistence suites boot PostgreSQL-in-WASM and run every migration in
+   `beforeAll`; vitest's 10-second default was close enough to that work to fail
+   under load, which is a red suite that says nothing about the code. The hook
+   timeout is 30 seconds; the assertions keep the default.
 
 ---
 

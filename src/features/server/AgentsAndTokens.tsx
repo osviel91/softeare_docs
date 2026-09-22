@@ -24,6 +24,7 @@
 import { useEffect, useState } from "react";
 import type {
   ServerApiClient,
+  ServerCredential,
   ServerProject,
 } from "../../workspace/server/api-client";
 import type { AuthHook } from "./use-auth";
@@ -83,6 +84,23 @@ function when(value: string | null): string {
   if (value === null) return "—";
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString();
+}
+
+/** Describe whether a credential inherits all owner-visible projects or narrows them. */
+function projectAccess(
+  credential: ServerCredential,
+  projects: readonly ServerProject[],
+): string {
+  if (credential.allowedProjectIds === null) {
+    return "All accessible server projects";
+  }
+  const names = credential.allowedProjectIds.flatMap((id) => {
+    const project = projects.find((entry) => entry.id === id);
+    return project === undefined ? [] : [project.name];
+  });
+  return names.length > 0
+    ? names.join(", ")
+    : `${credential.allowedProjectIds.length} selected project${credential.allowedProjectIds.length === 1 ? "" : "s"}`;
 }
 
 /** Props for {@link AgentsAndTokens}. */
@@ -447,6 +465,7 @@ export default function AgentsAndTokens({
                             <tr>
                               <th scope="col">Name</th>
                               <th scope="col">Scopes</th>
+                              <th scope="col">Project access</th>
                               <th scope="col">Created</th>
                               <th scope="col">Last used</th>
                               <th scope="col">Expires</th>
@@ -468,6 +487,11 @@ export default function AgentsAndTokens({
                                 <td>{credential.name}</td>
                                 <td>
                                   <code>{credential.scopes.join(", ")}</code>
+                                </td>
+                                <td
+                                  data-testid={`credential-project-access-${credential.id}`}
+                                >
+                                  {projectAccess(credential, projects)}
                                 </td>
                                 <td>{when(credential.createdAt)}</td>
                                 <td>{when(credential.lastUsedAt)}</td>
@@ -598,31 +622,43 @@ export default function AgentsAndTokens({
                         ))}
                       </fieldset>
 
-                      {projects.length > 0 ? (
-                        <fieldset className="tokens__scopes">
-                          <legend>
-                            Allowed projects (leave all unticked for every
-                            project you can see)
-                          </legend>
-                          {projects.map((project) => (
-                            <label key={project.id} className="tokens__scope">
-                              <input
-                                type="checkbox"
-                                data-testid={`credential-project-${project.id}`}
-                                checked={allowedProjects.includes(project.id)}
-                                onChange={() =>
-                                  toggle(
-                                    project.id,
-                                    allowedProjects,
-                                    setAllowedProjects,
-                                  )
-                                }
-                              />
-                              <span>{project.name}</span>
-                            </label>
-                          ))}
-                        </fieldset>
-                      ) : null}
+                      <fieldset className="tokens__scopes">
+                        <legend>Project access</legend>
+                        {projects.length === 0 ? (
+                          <p data-testid="credential-projects-empty">
+                            This credential will automatically access every
+                            server project you own or join. Local browser and
+                            folder projects are not available to remote MCP. Use
+                            Back to workspace, then create a project in the
+                            Server section.
+                          </p>
+                        ) : (
+                          <>
+                            <p>
+                              Leave every project unticked to allow every server
+                              project you can access. Select projects only to
+                              restrict this credential.
+                            </p>
+                            {projects.map((project) => (
+                              <label key={project.id} className="tokens__scope">
+                                <input
+                                  type="checkbox"
+                                  data-testid={`credential-project-${project.id}`}
+                                  checked={allowedProjects.includes(project.id)}
+                                  onChange={() =>
+                                    toggle(
+                                      project.id,
+                                      allowedProjects,
+                                      setAllowedProjects,
+                                    )
+                                  }
+                                />
+                                <span>{project.name}</span>
+                              </label>
+                            ))}
+                          </>
+                        )}
+                      </fieldset>
 
                       <button
                         type="button"

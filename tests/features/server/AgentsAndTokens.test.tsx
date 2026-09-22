@@ -57,13 +57,30 @@ function credentialRecord(overrides: Record<string, unknown> = {}) {
 }
 
 /** A fake agents API, plus the requests it saw. */
-function fakeApi() {
+function fakeApi(
+  projects = [
+    {
+      id: "p1",
+      name: "OSIRIS",
+      slug: "osiris",
+      ownerId: "u1",
+      role: "OWNER",
+      resourceCount: 0,
+      createdAt: new Date(0).toISOString(),
+      updatedAt: new Date(0).toISOString(),
+    },
+  ],
+) {
   const calls: string[] = [];
+  const bodies: { path: string; body: unknown }[] = [];
   let revoked = false;
   const fetch = async (input: string, init?: RequestInit) => {
     const url = new URL(input, "http://app.test");
     const method = (init?.method ?? "GET").toUpperCase();
     calls.push(`${method} ${url.pathname}`);
+    if (typeof init?.body === "string") {
+      bodies.push({ path: url.pathname, body: JSON.parse(init.body) });
+    }
     if (url.pathname === "/api/agents" && method === "GET") {
       return reply(200, {
         agents: [AGENT],
@@ -133,24 +150,11 @@ function fakeApi() {
       return reply(200, { agent: AGENT });
     }
     if (url.pathname === "/api/projects") {
-      return reply(200, {
-        projects: [
-          {
-            id: "p1",
-            name: "OSIRIS",
-            slug: "osiris",
-            ownerId: "u1",
-            role: "OWNER",
-            resourceCount: 0,
-            createdAt: new Date(0).toISOString(),
-            updatedAt: new Date(0).toISOString(),
-          },
-        ],
-      });
+      return reply(200, { projects });
     }
     return reply(404, { error: { code: "not_found" } });
   };
-  return { fetch, calls, isRevoked: () => revoked };
+  return { fetch, calls, bodies, isRevoked: () => revoked };
 }
 
 /** An authenticated browser session. */
@@ -228,6 +232,39 @@ describe("agents screen", () => {
     await expandAgent();
     expect(screen.getByTestId("credential-c1")).toHaveTextContent("MacMini");
     expect(document.body.textContent).not.toContain(SECRET);
+  });
+
+  it("shows that an unrestricted credential inherits all server projects", async () => {
+    const api = fakeApi();
+    setup(api);
+    await expandAgent();
+    expect(
+      screen.getByTestId("credential-project-access-c1"),
+    ).toHaveTextContent("All accessible server projects");
+  });
+
+  it("explains server-project access when none exist", async () => {
+    const api = fakeApi([]);
+    setup(api);
+    await expandAgent();
+    expect(
+      await screen.findByTestId("credential-projects-empty"),
+    ).toHaveTextContent(
+      "Local browser and folder projects are not available to remote MCP",
+    );
+  });
+
+  it("restricts a new credential to selected server projects", async () => {
+    const api = fakeApi();
+    setup(api);
+    await expandAgent();
+    await userEvent.click(screen.getByTestId("credential-project-p1"));
+    await userEvent.click(screen.getByTestId("credential-create-a1"));
+    await screen.findByTestId("credential-secret");
+    expect(api.bodies).toContainEqual({
+      path: "/api/agents/a1/credentials",
+      body: expect.objectContaining({ allowedProjectIds: ["p1"] }),
+    });
   });
 
   it("creates a credential, shows the secret once and copies it", async () => {

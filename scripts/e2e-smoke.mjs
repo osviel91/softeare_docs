@@ -559,10 +559,10 @@ async function setNextIdentity(idp, subject) {
  */
 async function signIn(page, idp, subject) {
   await setNextIdentity(idp, subject);
-  const button = page.locator('[data-testid="workspace-sign-in"]');
+  const button = page.locator('[data-testid="toolbar-sign-in"]');
   await button.waitFor({ state: "visible", timeout: UI_TIMEOUT_MS });
   await button.click();
-  await page.locator('[data-testid="workspace-user"]').waitFor({
+  await page.locator('[data-testid="toolbar-account"]').waitFor({
     state: "visible",
     timeout: UI_TIMEOUT_MS,
   });
@@ -2364,17 +2364,18 @@ async function runServerChecks(browser, idp, apiBase, mcpBase) {
           state: "visible",
           timeout: UI_TIMEOUT_MS,
         });
-        await page
-          .locator('[data-testid="workspace-server-signed-out"]')
-          .waitFor({ state: "visible", timeout: UI_TIMEOUT_MS });
+        await page.locator('[data-testid="toolbar-sign-in"]').waitFor({
+          state: "visible",
+          timeout: UI_TIMEOUT_MS,
+        });
         check(
-          "an anonymous visitor is told to sign in for server projects",
+          "an anonymous visitor is offered toolbar sign-in",
           true,
         );
         check(
-          "the server section offers a sign-in button",
-          (await page.locator('[data-testid="workspace-sign-in"]').count()) ===
-            1,
+          "the server panel stays hidden while signed out",
+          (await page.locator('[data-testid="workspace-server-toggle"]').count()) ===
+            0,
         );
         check(
           "no server projects are listed while signed out",

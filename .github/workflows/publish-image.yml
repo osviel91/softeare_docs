@@ -167,7 +167,7 @@ jobs:
             dockerfile: Dockerfile.mcp
           - service: proxy
             context: ./deploy/reverse-proxy
-            dockerfile: Dockerfile
+            dockerfile: deploy/reverse-proxy/Dockerfile
     steps:
       - uses: actions/checkout@v4
 
@@ -217,7 +217,7 @@ jobs:
             tag_suffix: "-mcp"
           - service: proxy
             context: ./deploy/reverse-proxy
-            dockerfile: Dockerfile
+            dockerfile: deploy/reverse-proxy/Dockerfile
             image: ${{ github.repository }}/proxy
             tag_suffix: "-proxy"
     steps:

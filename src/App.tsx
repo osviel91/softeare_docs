@@ -62,6 +62,7 @@ import {
 } from "./workspace/transfer/project-archive";
 import { downloadBytes } from "./workspace/transfer/download";
 import { readFileBytes } from "./workspace/transfer/read-file";
+import { publishProject } from "./workspace/server/publish-project";
 import { diagramDisplayName, diagramTitle } from "./language/diagram-title";
 import { noteDisplayName, noteTitle } from "./language/markdown/note-title";
 import type { DiagramVersion } from "./domain/workspace/version";
@@ -722,6 +723,24 @@ export default function App() {
   const beginImportProject = useCallback(() => {
     importInputRef.current?.click();
   }, []);
+
+  const publishProjectToServer = useCallback(
+    async (project: Project): Promise<void> => {
+      try {
+        const published = await publishProject(apiClient, activeRepo, project);
+        await server.refresh();
+        await server.openProject(published);
+        setTransferError(null);
+      } catch (error) {
+        setTransferError(
+          `Could not publish “${project.name}”: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    },
+    [apiClient, activeRepo, server],
+  );
 
   const createNote = useCallback(
     async (projectId: string): Promise<NoteFile | null> => {
@@ -1752,6 +1771,17 @@ export default function App() {
     if (menu.kind === "project") {
       const { project } = menu;
       return [
+        ...(workspaceMode === "local" && auth.status === "authenticated"
+          ? [
+              {
+                id: "publish-project",
+                label: "Publish to server",
+                onSelect: () => {
+                  void publishProjectToServer(project);
+                },
+              },
+            ]
+          : []),
         {
           id: "rename-project",
           label: "Rename project…",
@@ -1847,6 +1877,9 @@ export default function App() {
     ];
   }, [
     menu,
+    workspaceMode,
+    auth.status,
+    publishProjectToServer,
     requestDeleteDiagram,
     requestDeleteNote,
     createDiagram,

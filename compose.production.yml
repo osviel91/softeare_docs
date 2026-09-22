@@ -42,7 +42,9 @@
 # ---------------------------------------------------------------------------
 services:
   reverse-proxy:
-    image: nginx:1.27-alpine
+    build:
+      context: ./deploy/reverse-proxy
+    image: "${PROXY_IMAGE:-sequencediagrams-proxy:phase6}"
     restart: unless-stopped
     depends_on:
       - web
@@ -50,9 +52,6 @@ services:
       - mcp
     ports:
       - "${PROXY_PORT:-8080}:8080"
-    volumes:
-      - ./deploy/reverse-proxy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
-      - ./deploy/reverse-proxy/proxy-headers.inc:/etc/nginx/conf.d/proxy-headers.inc:ro
     healthcheck:
       test:
         [

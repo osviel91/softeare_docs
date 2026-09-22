@@ -301,6 +301,7 @@ environment
 WEB_IMAGE=ghcr.io/osviel91/softeare_docs:sha-<short>
 API_IMAGE=ghcr.io/osviel91/softeare_docs/api:sha-<short>
 MCP_IMAGE=ghcr.io/osviel91/softeare_docs/mcp:sha-<short>
+PROXY_IMAGE=ghcr.io/osviel91/softeare_docs/proxy:sha-<short>
 ```
 
 Both paths also require `POSTGRES_PASSWORD`, `COOKIE_SECRET`, `TOKEN_PEPPER`,

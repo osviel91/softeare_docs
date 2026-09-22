@@ -165,6 +165,9 @@ jobs:
             dockerfile: Dockerfile.api
           - service: mcp
             dockerfile: Dockerfile.mcp
+          - service: proxy
+            context: ./deploy/reverse-proxy
+            dockerfile: Dockerfile
     steps:
       - uses: actions/checkout@v4
 
@@ -178,7 +181,7 @@ jobs:
       - name: Build for linux/amd64 and linux/arm64
         uses: docker/build-push-action@v6
         with:
-          context: .
+          context: ${{ matrix.context || '.' }}
           file: ${{ matrix.dockerfile }}
           platforms: linux/amd64,linux/arm64
           push: false
@@ -212,6 +215,11 @@ jobs:
             dockerfile: Dockerfile.mcp
             image: ${{ github.repository }}/mcp
             tag_suffix: "-mcp"
+          - service: proxy
+            context: ./deploy/reverse-proxy
+            dockerfile: Dockerfile
+            image: ${{ github.repository }}/proxy
+            tag_suffix: "-proxy"
     steps:
       - uses: actions/checkout@v4
 
@@ -248,7 +256,7 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
-          context: .
+          context: ${{ matrix.context || '.' }}
           file: ${{ matrix.dockerfile }}
           platforms: linux/amd64,linux/arm64
           push: ${{ github.event_name != 'pull_request' }}

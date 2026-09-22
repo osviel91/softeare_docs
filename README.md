@@ -616,6 +616,12 @@ change is: merge to `master`, let the workflow finish, then **Update the stack**
 in Portainer. There is no backend, database, or volume to migrate — the app is a
 static bundle and all state lives in the browser.
 
+For the full server stack, use a Git Repository stack with
+`compose.production.yml`, or configure these four published images in a Web
+editor stack: `WEB_IMAGE`, `API_IMAGE`, `MCP_IMAGE` and `PROXY_IMAGE`. The proxy
+is packaged with its nginx configuration, so the Web editor does not need any
+host bind mounts.
+
 The package is public for this repository, so a stack pulls it with no
 credentials configured. Should it ever be switched to private — or a fork
 publish its own — give Portainer a registry entry first (**Registries → Add

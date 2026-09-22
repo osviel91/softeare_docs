@@ -359,19 +359,26 @@ export function layoutDiagram(diagram: SequenceDiagram): DiagramLayout {
   const boxOffset = hasActor ? (bandHeight - PARTICIPANT_BOX_HEIGHT) / 2 : 0;
 
   const n = diagram.participants.length;
-  const participants: ParticipantLayout[] = diagram.participants.map(
-    (p, index) => ({
+  const headerGap = PARTICIPANT_SPACING - MIN_PARTICIPANT_WIDTH;
+  const participants: ParticipantLayout[] = [];
+  for (const p of diagram.participants) {
+    const width = participantBoxWidth(p.label);
+    const previous = participants.at(-1);
+    const x = previous
+      ? previous.x + Math.max(PARTICIPANT_SPACING, previous.width / 2 + headerGap + width / 2)
+      : MARGIN_X + Math.max(PARTICIPANT_SPACING / 2, width / 2);
+    participants.push({
       id: p.id,
       label: p.label,
       participantType: p.participantType,
-      x: MARGIN_X + index * PARTICIPANT_SPACING + PARTICIPANT_SPACING / 2,
+      x,
       topY: bandTop + (p.participantType === "actor" ? 0 : boxOffset),
       lifelineTop,
-      width: participantBoxWidth(p.label),
+      width,
       bottomY: 0, // filled in after the body is placed
       nodeId: nodeIdOf("participant", p.range),
-    }),
-  );
+    });
+  }
 
   /** Y center of the next message row. Fragments advance it by extra bands. */
   let cursorY = lifelineTop + MESSAGE_TOP_CLEARANCE;
@@ -383,7 +390,10 @@ export function layoutDiagram(diagram: SequenceDiagram): DiagramLayout {
   const openBars = new Map<ParticipantId, OpenBar[]>();
 
   const participantsById = new Map(participants.map((p) => [p.id, p]));
-  const baseWidth = MARGIN_X + n * PARTICIPANT_SPACING;
+  const baseWidth = Math.max(
+    MARGIN_X + n * PARTICIPANT_SPACING,
+    participants.at(-1)!.x + participants.at(-1)!.width / 2 + MARGIN_X,
+  );
 
   /** Place one message arrow at `y`. */
   const layoutMessage = (statement: MessageNode, y: number): void => {

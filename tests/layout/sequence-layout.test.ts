@@ -157,6 +157,32 @@ describe("layoutDiagram — participant placement", () => {
     );
     expect(layout.participants[0].width).toBeGreaterThan(72);
   });
+
+  it("separates long participant headers and keeps them within the canvas", () => {
+    const layout = layoutDiagram(
+      diagram({
+        participants: ["A", "B"].map((id) => ({
+          type: "participant",
+          participantType: "participant",
+          id,
+          label: `${id} ${"long label ".repeat(12)}`,
+          range: {
+            start: { line: 0, column: 0 },
+            end: { line: 0, column: 5 },
+          },
+        })),
+      }),
+    );
+    const [first, second] = layout.participants;
+
+    expect(second.x - second.width / 2).toBeGreaterThanOrEqual(
+      first.x + first.width / 2 + PARTICIPANT_SPACING - 72,
+    );
+    expect(first.x - first.width / 2).toBeGreaterThanOrEqual(MARGIN_X);
+    expect(layout.width).toBeGreaterThanOrEqual(
+      second.x + second.width / 2 + MARGIN_X,
+    );
+  });
 });
 
 describe("layoutDiagram — message rows and canvas size", () => {

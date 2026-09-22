@@ -61,7 +61,7 @@ export const MCP_INSTRUCTIONS = `This server exposes SequenceDiagrams projects t
 A project contains sequence diagrams (\`.seq\`), event flows (\`.eventseq\`) and markdown documents (\`.md\`).
 
 Work in this order:
-1. list_projects — the project ids every other tool addresses.
+1. list_projects — the project ids every other tool addresses. If it is empty and the credential has project:create, call create_project.
 2. get_project_index or list_resources — see what exists and what your token may do.
 3. read_diagram, read_documentation or read_resource — get the text *and its current revision*.
 4. Prefer the semantic tools for writing: upsert_sequence_diagram, upsert_event_flow and upsert_documentation parse and validate before they persist, and apply the revision for you. Use create_resource/update_resource only when you need raw control.

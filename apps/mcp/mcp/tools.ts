@@ -358,6 +358,39 @@ const MAX_INDEXED_DOCUMENTS = 500;
 /** Build every tool the MCP service exposes. */
 export function createMcpTools(): McpTool[] {
   return [
+    // ---- Level 0: bootstrap -------------------------------------------------
+
+    {
+      name: "create_project",
+      title: "Create a project",
+      description:
+        "Create a server project owned by this credential's user. Use this when list_projects is empty; the resulting project is immediately available to this credential.",
+      inputSchema: {
+        name: z.string().min(1).describe("The new project's name."),
+      },
+      annotations: { ...WRITE, title: "Create a project" },
+      requiredPermissions: ["project:create"],
+      async run(args, toolContext) {
+        const listing = await toolContext.catalog.createProject(
+          toolContext.context,
+          { name: stringArg(args, "name") },
+        );
+        return {
+          text: `Created project "${listing.project.name}" (id: ${listing.project.id}).`,
+          structured: {
+            project: {
+              id: listing.project.id,
+              name: listing.project.name,
+              slug: listing.project.slug,
+              ownerId: listing.project.ownerId,
+              resourceCount: listing.resourceCount,
+            },
+            role: listing.role,
+          },
+        };
+      },
+    },
+
     // ---- Level 1: discovery ------------------------------------------------
 
     {

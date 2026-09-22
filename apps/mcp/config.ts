@@ -322,6 +322,7 @@ export function limitFor(config: McpConfig, type: ResourceType): number {
 export function classForTool(toolName: string): RateLimitClass {
   if (toolName === "delete_resource") return "delete";
   if (
+    toolName === "create_project" ||
     toolName === "create_resource" ||
     toolName === "update_resource" ||
     toolName === "move_resource" ||

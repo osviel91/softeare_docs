@@ -77,6 +77,35 @@ describe("the remote MCP service over Streamable HTTP", () => {
     await client.close();
   });
 
+  it("creates a project when the credential has project:create", async () => {
+    const bootstrapOwner = await harness.aUser("Bootstrap owner");
+    const bootstrapToken = (
+      await harness.aToken(bootstrapOwner, ["project:create", "project:read"])
+    ).token;
+    const client = await connect(bootstrapToken);
+    const { tools } = await client.listTools();
+    expect(tools.map((tool) => tool.name)).toContain("create_project");
+
+    const created = await client.callTool({
+      name: "create_project",
+      arguments: { name: "Created through MCP" },
+    });
+    expect(created.isError).toBeFalsy();
+    expect(structured(created).project.name).toBe("Created through MCP");
+    expect(structured(created).role).toBe("OWNER");
+
+    const listed = await client.callTool({
+      name: "list_projects",
+      arguments: {},
+    });
+    expect(structured(listed).projects).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "Created through MCP", role: "OWNER" }),
+      ]),
+    );
+    await client.close();
+  });
+
   it("lists projects and reports the caller's role", async () => {
     const client = await connect(token);
     const result = await client.callTool({

@@ -38,6 +38,7 @@ services:
       OIDC_ISSUER: "${OIDC_ISSUER:-}"
       OIDC_CLIENT_ID: "${OIDC_CLIENT_ID:-}"
       OIDC_CLIENT_SECRET: "${OIDC_CLIENT_SECRET:-}"
+      PLATFORM_ADMIN_EMAIL: "${PLATFORM_ADMIN_EMAIL:-}"
     ports:
       - "${API_PORT:-4000}:4000"
     volumes:

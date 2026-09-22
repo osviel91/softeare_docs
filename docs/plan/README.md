@@ -15,7 +15,7 @@ _decisions_; these explain the _intent_.
 | [Server migration, Phase 4](server-migration-4.md)                                                      | Implemented | `596e265` + `dd44687`             |
 | [Server migration, Phase 5 — PATs + remote MCP](server-migration-5.md)                                  | Implemented | `0335271` + `204f385` + `c46b91f` |
 | [Server migration, Phase 6 — production MCP service & mutation reliability](server-migration-6.md)      | Implemented | Phase 6 checkpoint                |
-| [Local accounts and workspaces](local-accounts-and-workspaces.md)                                          | In progress | Phase 1                            |
+| [Local accounts and workspaces](local-accounts-and-workspaces.md)                                          | In progress | Phase 3 foundation (`bf0411b`)     |
 
 ## How a phase is run
 

@@ -25,7 +25,7 @@
 
 - Static local-first deployment: `docker compose up --build -d` serves the web image on `http://localhost:8080` (override with `WEB_PORT`). It has no backend, database, or server-side state.
 - Portainer static deployment uses `deploy/portainer-stack.yml`; set `IMAGE_TAG` (prefer immutable `sha-<short>`) and optionally `WEB_PORT`. Published web images are `ghcr.io/osviel91/softeare_docs`.
-- Full server deployment: set the required secrets and public URLs in `.env`, then run `docker compose -f compose.production.yml up --build -d`. It runs reverse proxy, web, API, remote MCP, and PostgreSQL; API and MCP share the `project-data` volume but never call each other over HTTP.
+- Full server deployment: set the required secrets and public URLs in `.env`, optionally set `PLATFORM_ADMIN_EMAIL`, then run `docker compose -f compose.production.yml up --build -d`. It runs reverse proxy, web, API, remote MCP, and PostgreSQL; API and MCP share the `project-data` volume but never call each other over HTTP.
 - The production composition requires `POSTGRES_PASSWORD`, `COOKIE_SECRET`, `TOKEN_PEPPER`, `API_PUBLIC_URL`, `MCP_PUBLIC_URL`, and all OIDC values. For published images, set `WEB_IMAGE`, `API_IMAGE`, `MCP_IMAGE`, and `PROXY_IMAGE` to pinned GHCR tags instead of building on the host.
 
 ## Boundaries

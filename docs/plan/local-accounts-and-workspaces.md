@@ -21,18 +21,22 @@ observable browser workflow and automated tests.
 
 ## Phases
 
-### Phase 1 — Approval-aware authentication
+### Phase 1 — Approval-aware authentication (partially implemented)
 
 Deliver a complete browser-testable account flow:
 
-- Local registration form.
-- Local login form.
-- Google login continuing through the existing OIDC flow.
-- Pending-account response after either authentication method.
-- Platform-admin bootstrap command.
-- Minimal admin user list and activate/suspend controls.
-- `/api/me` exposes the account status needed by the browser.
-- Audit events for registration, activation, suspension, and rejected login.
+- [ ] Local registration form.
+- [ ] Local login form.
+- [x] Google login continuing through the existing OIDC flow.
+- [x] Pending-account response after Google authentication.
+- [x] Platform-admin bootstrap through `PLATFORM_ADMIN_EMAIL`.
+- [x] Minimal admin user list and activate/suspend controls.
+- [x] `/api/me` exposes the account status needed by the browser.
+- [ ] Audit events for registration, activation, suspension, and rejected login.
+
+Delivered checkpoint: approval-aware Google authentication, account status handling,
+platform-admin API and browser controls (`6bb15c5`, `49680f4`). Local credentials
+remain Phase 2 work.
 
 Acceptance workflow:
 
@@ -42,7 +46,7 @@ Acceptance workflow:
 4. Sign in again and access the authenticated application.
 5. Suspend the user and observe that the existing session is rejected.
 
-### Phase 2 — User and identity storage
+### Phase 2 — User and identity storage (not started)
 
 - Move provider identities into `user_identities`.
 - Add `local_credentials` with `scrypt` password hashes.
@@ -50,18 +54,20 @@ Acceptance workflow:
 - Preserve existing Google users through a migration.
 - Add repository and migration tests.
 
-### Phase 3 — Workspace foundation
+### Phase 3 — Workspace foundation (foundation delivered)
 
-- Add `workspaces` and `workspace_members`.
-- Create one default workspace per existing and newly activated user.
-- Add workspace listing, creation, rename, and deletion rules.
-- Move projects under `projects.workspace_id`.
-- Migrate existing projects into owner default workspaces.
+- [x] Add `workspaces` and `workspace_members`.
+- [x] Create one default workspace per existing and newly created user.
+- [ ] Add workspace listing, creation, rename, and deletion rules.
+- [x] Add `projects.workspace_id`.
+- [x] Migrate existing projects into owner default workspaces.
+- [x] List workspaces and manage member roles (`ADMIN`, `EDITOR`, `VIEWER`).
 
-Acceptance workflow: a user creates, renames, selects, and lists workspaces;
-another user cannot see them.
+Acceptance workflow status: the foundation and membership management are
+deployed, but workspace creation, rename, deletion and selection are still
+pending.
 
-### Phase 4 — Workspace-aware projects
+### Phase 4 — Workspace-aware projects (not started)
 
 - Create projects inside a selected workspace.
 - List projects only through accessible workspaces.
@@ -71,7 +77,7 @@ another user cannot see them.
 Acceptance workflow: switching workspaces changes the visible project list and
 does not leak projects from another workspace.
 
-### Phase 5 — Invitations
+### Phase 5 — Invitations (not started)
 
 - Add `workspace_invitations`.
 - Generate long random tokens and store only token hashes.
@@ -85,17 +91,18 @@ Acceptance workflow: an admin creates a link, a recipient creates a local or
 Google account, a mismatched email is refused, and the correct account receives
 the role after approval.
 
-### Phase 6 — Workspace administration
+### Phase 6 — Workspace administration (partially implemented)
 
-- Workspace owner is an administrator automatically.
-- Workspace administrators list, invite, change roles, and remove members.
-- Platform administrators can intervene in any workspace.
-- Add workspace and membership audit events.
+- [x] Default workspace creator is an administrator automatically.
+- [x] Workspace administrators list, change roles, and remove members.
+- [ ] Workspace administrators invite members.
+- [ ] Platform administrators can intervene in any workspace.
+- [ ] Add workspace and membership audit events.
 
 Acceptance workflow: workspace admins can manage members, regular members
 cannot, and platform administrators retain emergency access.
 
-### Phase 7 — Configuration backend
+### Phase 7 — Configuration backend (not started)
 
 - Add a typed admin configuration boundary.
 - Add settings only when their behavior is defined.
@@ -110,3 +117,10 @@ Do not build a generic key/value settings editor.
 Each phase must pass its focused tests and browser workflow before deployment.
 The phase checkpoint also runs `npm test`, `npm run typecheck`, `npm run lint`,
 `npm run format:check`, and `npm run build`.
+
+## Current checkpoint
+
+`bf0411b` is the deployed workspace-foundation checkpoint. It passed the full
+Vitest suite, typecheck, web/API builds, and `npm run test:containers`. Project
+authorization still uses project membership; invitations, local credentials and
+workspace-aware project listing are intentionally not part of this checkpoint.

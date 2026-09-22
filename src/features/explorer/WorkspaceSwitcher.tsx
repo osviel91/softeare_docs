@@ -1,5 +1,5 @@
 /** Choose the local or authenticated server workspace that feeds the editor. */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { AuthState } from "../server/use-auth";
 import type {
   ServerAdminUser,
@@ -52,7 +52,17 @@ export default function WorkspaceSwitcher({
   onSetUserStatus,
 }: WorkspaceSwitcherProps) {
   const [pendingName, setPendingName] = useState("");
+  const [localExpanded, setLocalExpanded] = useState(mode !== "server");
+  const [serverExpanded, setServerExpanded] = useState(mode === "server");
   const name = pendingName.trim();
+
+  useEffect(() => {
+    if (auth.status === "authenticated" || mode === "server") {
+      setServerExpanded(true);
+    } else {
+      setLocalExpanded(true);
+    }
+  }, [auth.status, mode]);
 
   const create = (): void => {
     if (name === "") return;
@@ -65,8 +75,18 @@ export default function WorkspaceSwitcher({
       <h2 className="workspaces__title">Workspaces</h2>
 
       <section className="workspaces__group" aria-label="Local workspaces">
-        <h3 className="workspaces__group-title">Local</h3>
-        <ul className="workspaces__list">
+        <h3 className="workspaces__group-title">
+          <button
+            type="button"
+            className="workspaces__group-toggle"
+            data-testid="workspace-local-toggle"
+            aria-expanded={localExpanded}
+            onClick={() => setLocalExpanded((expanded) => !expanded)}
+          >
+            Local <span aria-hidden="true">{localExpanded ? "▾" : "▸"}</span>
+          </button>
+        </h3>
+        {localExpanded && <ul className="workspaces__list">
           <li>
             <button
               type="button"
@@ -92,11 +112,25 @@ export default function WorkspaceSwitcher({
               {folderName ? `Folder: ${folderName}` : "Open local folder…"}
             </button>
           </li>
-        </ul>
+        </ul>}
       </section>
 
       <section className="workspaces__group" aria-label="Server workspaces">
-        <h3 className="workspaces__group-title">Server</h3>
+        {auth.status === "authenticated" ? (
+          <h3 className="workspaces__group-title">
+            <button
+              type="button"
+              className="workspaces__group-toggle"
+              data-testid="workspace-server-toggle"
+              aria-expanded={serverExpanded}
+              onClick={() => setServerExpanded((expanded) => !expanded)}
+            >
+              Server <span aria-hidden="true">{serverExpanded ? "▾" : "▸"}</span>
+            </button>
+          </h3>
+        ) : (
+          <h3 className="workspaces__group-title">Server</h3>
+        )}
 
         {auth.status === "loading" && (
           <p className="workspaces__note" data-testid="workspace-server-loading">
@@ -115,7 +149,7 @@ export default function WorkspaceSwitcher({
           </div>
         )}
 
-        {auth.status === "authenticated" &&
+        {auth.status === "authenticated" && serverExpanded &&
           (auth.user?.accountStatus === "PENDING" || auth.user?.accountStatus === "SUSPENDED") &&
           !auth.user?.platformAdmin && (
             <p className="workspaces__note" data-testid="workspace-account-pending">

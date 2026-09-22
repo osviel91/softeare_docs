@@ -352,8 +352,8 @@ function renderEventBox(
 }
 
 /**
- * Render one fan-out edge: a line from the event box's right edge to this
- * consumer's box, ending in an arrowhead.
+ * Render one fan-out branch from the shared spine to this consumer's box,
+ * ending in an arrowhead.
  *
  * One line per consumer (never one line with a count) is what makes the fan-out
  * explicit. The line leaves the event box at the consumer's own height, so the
@@ -362,16 +362,15 @@ function renderEventBox(
 function renderFanout(
   consumer: EventEndpointLayout,
   box: EventBoxGeometry,
-  eventBox: EventBoxGeometry,
+  spineX: number,
   palette: EventFlowPalette,
 ): string {
   const y = box.y + box.height / 2;
-  const startX = eventBox.x + eventBox.width;
   const channelAttribute =
     consumer.channel === undefined
       ? ""
       : ` data-channel="${escapeXml(consumer.channel.name)}" data-channel-kind="${escapeXml(consumer.channel.kind)}"`;
-  const line = `<line class="fanout-edge" data-eventflow-edge="consumer" x1="${startX.toFixed(2)}" y1="${y.toFixed(2)}" x2="${box.x.toFixed(2)}" y2="${y.toFixed(2)}" stroke="${palette.line}" stroke-width="${STROKE_WIDTH}"/>`;
+  const line = `<line class="fanout-edge" data-eventflow-edge="consumer" x1="${spineX.toFixed(2)}" y1="${y.toFixed(2)}" x2="${box.x.toFixed(2)}" y2="${y.toFixed(2)}" stroke="${palette.line}" stroke-width="${STROKE_WIDTH}"/>`;
   const rect = boxRect(
     box,
     "eventflow-service eventflow-service--consumer",
@@ -381,6 +380,35 @@ function renderFanout(
   );
   const text = boxText(box, consumer.name, 11, palette.label);
   return `<g class="eventflow-consumer" data-service-name="${escapeXml(consumer.name)}"${channelAttribute}>${line}${arrowHead(box.x, y, palette)}${rect}${text}</g>`;
+}
+
+/** Render the event-to-consumer trunk, spine, and its individual branches. */
+function renderFanoutConnectors(
+  row: EventRowLayout,
+  palette: EventFlowPalette,
+): string {
+  const endpoints = row.consumers.flatMap((consumer, index) => {
+    const box = row.consumerBoxes[index];
+    return box ? [{ consumer, box }] : [];
+  });
+  if (endpoints.length === 0) return "";
+
+  const eventRight = row.eventBox.x + row.eventBox.width;
+  const eventCenterY = row.eventBox.y + row.eventBox.height / 2;
+  const spineX = (eventRight + endpoints[0].box.x) / 2;
+  const centers = endpoints.map(({ box }) => box.y + box.height / 2);
+  const parts = [
+    `<line class="fanout-trunk" x1="${eventRight.toFixed(2)}" y1="${eventCenterY.toFixed(2)}" x2="${spineX.toFixed(2)}" y2="${eventCenterY.toFixed(2)}" stroke="${palette.line}" stroke-width="${STROKE_WIDTH}"/>`,
+  ];
+  if (centers.length > 1) {
+    parts.push(
+      `<line class="fanout-spine" x1="${spineX.toFixed(2)}" y1="${Math.min(...centers).toFixed(2)}" x2="${spineX.toFixed(2)}" y2="${Math.max(...centers).toFixed(2)}" stroke="${palette.line}" stroke-width="${STROKE_WIDTH}"/>`,
+    );
+  }
+  endpoints.forEach(({ consumer, box }) =>
+    parts.push(renderFanout(consumer, box, spineX, palette)),
+  );
+  return parts.join("");
 }
 
 /** Render one event row: cycle tag, producer path, event box, then the fan-out. */
@@ -395,10 +423,7 @@ function renderRow(
   if (row.cyclic ?? layoutCyclic) parts.push(renderCycleTag(row, palette));
   parts.push(renderProducerPath(row, palette));
   parts.push(renderEventBox(row, palette));
-  row.consumers.forEach((consumer, index) => {
-    const box = row.consumerBoxes[index];
-    if (box) parts.push(renderFanout(consumer, box, row.eventBox, palette));
-  });
+  parts.push(renderFanoutConnectors(row, palette));
   return `<g class="eventflow-row" data-event="${escapeXml(row.event)}">${parts.join("")}</g>`;
 }
 

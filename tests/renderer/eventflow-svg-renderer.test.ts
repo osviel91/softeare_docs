@@ -166,6 +166,30 @@ describe("renderEventFlowToSvg — fan-out", () => {
     ).toHaveLength(consumers);
   });
 
+  it("connects consumer branches through one trunk and spine", () => {
+    const layout = layoutOf(FAN_OUT);
+    const row = layout.rows[0];
+    const doc = documentOf(renderEventFlowToSvg(layout));
+    const trunk = doc.querySelector(".fanout-trunk");
+    const spine = doc.querySelector(".fanout-spine");
+    const branches = Array.from(doc.querySelectorAll(".fanout-edge"));
+
+    expect(trunk).not.toBeNull();
+    expect(spine).not.toBeNull();
+    expect(trunk?.getAttribute("x1")).toBe(
+      (row.eventBox.x + row.eventBox.width).toFixed(2),
+    );
+    expect(trunk?.getAttribute("y1")).toBe(
+      (row.eventBox.y + row.eventBox.height / 2).toFixed(2),
+    );
+    expect(branches).toHaveLength(row.consumers.length);
+    expect(
+      branches.every(
+        (branch) => branch.getAttribute("x1") === spine?.getAttribute("x1"),
+      ),
+    ).toBe(true);
+  });
+
   it("gives every fan-out edge an arrowhead that lands on the consumer box", () => {
     const layout = layoutOf(FAN_OUT);
     const svg = renderEventFlowToSvg(layout);

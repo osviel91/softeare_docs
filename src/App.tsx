@@ -31,6 +31,7 @@ import Explorer, { type MenuPosition } from "./features/explorer/Explorer";
 import WorkspaceSwitcher, {
   type WorkspaceMode,
 } from "./features/explorer/WorkspaceSwitcher";
+import type { ServerAdminUser } from "./workspace/server/api-client";
 import TabBar from "./features/tabs/TabBar";
 import DocsPage from "./features/docs/DocsPage";
 import ConfirmDialog from "./features/ui/ConfirmDialog";
@@ -232,6 +233,22 @@ export default function App() {
   const apiClient = useMemo(() => new ServerApiClient(), []);
   const auth = useAuth(apiClient);
   const server = useServerWorkspaces(apiClient, auth);
+  const [adminUsers, setAdminUsers] = useState<ServerAdminUser[]>([]);
+  useEffect(() => {
+    if (auth.user?.platformAdmin !== true) {
+      setAdminUsers([]);
+      return;
+    }
+    void apiClient.listAdminUsers().then(setAdminUsers).catch(() => setAdminUsers([]));
+  }, [apiClient, auth.user?.platformAdmin]);
+  const setAdminUserStatus = useCallback(
+    (userId: string, status: ServerAdminUser["status"]) => {
+      void apiClient.setUserStatus(userId, status).then((updated) => {
+        setAdminUsers((users) => users.map((user) => user.id === updated.id ? updated : user));
+      });
+    },
+    [apiClient],
+  );
   const [page, setPage] = useState<AppPage>("workspace");
   const [view, setView] = useState<EditorView>("code");
   const [autoUpdate, setAutoUpdate] = useState(true);
@@ -2153,6 +2170,8 @@ export default function App() {
                     serverOpenError={server.openError}
                     onOpenLocal={openLocalWorkspace}
                     onOpenFolder={openFolder}
+                    onSignIn={auth.signIn}
+                    onSignOut={auth.signOut}
                     onOpenServerProject={(project) => {
                       void server.openProject(project);
                     }}
@@ -2163,6 +2182,8 @@ export default function App() {
                       void server.refresh();
                     }}
                     onDownloadLocalCopy={exportProjectCommand}
+                    adminUsers={adminUsers}
+                    onSetUserStatus={setAdminUserStatus}
                   />
                 }
                 onAddMenu={(project, position) =>

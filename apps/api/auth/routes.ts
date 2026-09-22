@@ -190,6 +190,21 @@ export function createAuthRoutes(
         }
 
         const user = await users.findOrCreateByExternalIdentity(identity);
+        if (
+          config.platformAdminEmail !== null &&
+          user.email?.toLowerCase() === config.platformAdminEmail &&
+          (!user.platformAdmin || user.status !== "ACTIVE")
+        ) {
+          await dependencies.sql.query(
+            "UPDATE users SET platform_admin = true, status = 'ACTIVE', updated_at = now() WHERE id = $1",
+            [user.id],
+          );
+        } else if (config.platformAdminEmail !== null && user.status === "ACTIVE") {
+          await dependencies.sql.query(
+            "UPDATE users SET status = 'PENDING', updated_at = now() WHERE id = $1",
+            [user.id],
+          );
+        }
         const sessionId = crypto.randomUUID();
         const token = createSessionToken(sessionId);
         await sessions.create({

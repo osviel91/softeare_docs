@@ -104,6 +104,19 @@ export async function createApp(
       tokenPepper: config.tokenPepper,
     }));
 
+  const adminEmail = config.platformAdminEmail;
+  if (adminEmail !== null) {
+    const matching = (await runtime.users.list()).find(
+      (user) => user.email?.toLowerCase() === adminEmail,
+    );
+    if (matching && (!matching.platformAdmin || matching.status !== "ACTIVE")) {
+      await runtime.sql.query(
+        "UPDATE users SET platform_admin = true, status = 'ACTIVE', updated_at = now() WHERE id = $1",
+        [matching.id],
+      );
+    }
+  }
+
   // A process that starts finishes what a previous one left half-done.
   await recoverServerRuntime(runtime, (error, operationId) => {
     process.stderr.write(

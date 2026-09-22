@@ -58,6 +58,8 @@ export interface Principal {
   displayName?: string;
   /** Email, when the identity provider supplies one. Advisory, not identity. */
   email?: string;
+  accountStatus?: "PENDING" | "ACTIVE" | "SUSPENDED";
+  platformAdmin?: boolean;
   /**
    * Projects this credential is restricted to. Absent or empty means "no
    * restriction beyond membership", which is the session case.

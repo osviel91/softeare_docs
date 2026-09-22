@@ -6,9 +6,8 @@
  * identitySubject)`, never an email address: an email can be changed, reused, or
  * reissued by a provider, so it can never be an immutable key.
  *
- * A user carried no password and no credential of any kind. This application
- * does not authenticate anybody itself — it maps an already-authenticated
- * identity onto an internal record and then authorizes that record.
+ * Authentication methods are separate from this record. This record owns the
+ * approval state and platform-admin flag shared by every method.
  */
 
 /** An internal user, as stored. */
@@ -23,9 +22,14 @@ export interface User {
   displayName: string;
   /** Email, when the provider supplies one. Advisory, never identity. */
   email: string | null;
+  status: AccountStatus;
+  platformAdmin: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
+
+/** Whether a user may use server workspaces. */
+export type AccountStatus = "PENDING" | "ACTIVE" | "SUSPENDED";
 
 /** The identity claims an OIDC provider asserted, before mapping to a user. */
 export interface ExternalIdentity {

@@ -66,6 +66,8 @@ export interface ServerConfig {
    * through it. Omitted means "use the platform's `fetch`".
    */
   oidcFetch?: FetchLike;
+  /** Email that receives the first platform-admin account. */
+  platformAdminEmail: string | null;
 }
 
 /** A configuration error: the server must not start. */
@@ -181,6 +183,7 @@ export function loadConfig(
     projectVolume,
     oidc,
     secureCookies,
+    platformAdminEmail: optional(env, "PLATFORM_ADMIN_EMAIL")?.toLowerCase() ?? null,
     ...(options?.oidcFetch === undefined
       ? {}
       : { oidcFetch: options.oidcFetch }),

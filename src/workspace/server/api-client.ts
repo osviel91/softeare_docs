@@ -30,6 +30,17 @@ export interface AuthenticatedUser {
   email: string | null;
   authType: string;
   scopes: readonly string[];
+  accountStatus?: "PENDING" | "ACTIVE" | "SUSPENDED";
+  platformAdmin?: boolean;
+}
+
+export interface ServerAdminUser {
+  id: string;
+  displayName: string;
+  email: string | null;
+  status: "PENDING" | "ACTIVE" | "SUSPENDED";
+  platformAdmin: boolean;
+  createdAt?: string;
 }
 
 /** A project listing, as the API renders it. */
@@ -169,6 +180,26 @@ export class ServerApiClient {
       "/api/me",
     );
     return body.user ?? null;
+  }
+
+  async listAdminUsers(): Promise<ServerAdminUser[]> {
+    const body = await this.request<{ users: ServerAdminUser[] }>(
+      "GET",
+      "/api/admin/users",
+    );
+    return body.users ?? [];
+  }
+
+  async setUserStatus(
+    userId: string,
+    status: ServerAdminUser["status"],
+  ): Promise<ServerAdminUser> {
+    const body = await this.request<{ user: ServerAdminUser }>(
+      "PATCH",
+      `/api/admin/users/${encodeURIComponent(userId)}`,
+      { status },
+    );
+    return body.user;
   }
 
   /** Every project the caller is a member of. */

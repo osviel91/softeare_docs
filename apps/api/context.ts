@@ -17,7 +17,7 @@ import type {
   AuthType,
   Principal,
 } from "../../src/application/context";
-import { unauthorized } from "../../src/application/errors";
+import { forbidden, unauthorized } from "../../src/application/errors";
 import type {
   SessionRepository,
   SessionWithUser,
@@ -79,6 +79,7 @@ export async function resolveSession(
   }
   if (record.revokedAt !== null) return { state: "invalid" };
   if (record.expiresAt.getTime() <= Date.now()) return { state: "invalid" };
+  if (record.user.status === "SUSPENDED") return { state: "invalid" };
   return { state: "valid", session: record };
 }
 
@@ -123,6 +124,8 @@ export function principalFromSession(session: SessionWithUser): Principal {
   if (session.user.displayName !== "")
     principal.displayName = session.user.displayName;
   if (session.user.email !== null) principal.email = session.user.email;
+  principal.accountStatus = session.user.status;
+  principal.platformAdmin = session.user.platformAdmin;
   return principal;
 }
 
@@ -141,6 +144,9 @@ export async function requireContext(
   }
   if (lookup.state === "invalid") {
     throw unauthorized("Your session is no longer valid. Sign in again.");
+  }
+  if (lookup.session.user.status !== "ACTIVE" && !lookup.session.user.platformAdmin) {
+    throw forbidden("Your account is awaiting administrator approval.");
   }
   // Touching `last_seen_at` is best-effort: a write failure must not fail a
   // request that is otherwise authorized.

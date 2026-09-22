@@ -98,11 +98,59 @@ export function createRouter(dependencies: AppDependencies): Router {
         user: {
           id: context.principal.subjectUserId,
           displayName: context.principal.displayName ?? "",
-          email: context.principal.email ?? null,
+           email: context.principal.email ?? null,
+           accountStatus: context.principal.accountStatus ?? "ACTIVE",
+           platformAdmin: context.principal.platformAdmin === true,
           authType: context.principal.authType,
           scopes: [...context.principal.scopes],
         },
         principal: principalView(context),
+      });
+    }),
+  );
+
+  // ---- Platform administration ---------------------------------------------
+
+  router.get("/api/admin/users", async (request) =>
+    guarded(correlationId(request), async () => {
+      const context = await contextOf(request);
+      if (context.principal.platformAdmin !== true) {
+        return errorResponse(403, "forbidden", "Platform administrator access is required.");
+      }
+      const users = await dependencies.users.list();
+      return json(200, {
+        users: users.map((user) => ({
+          id: user.id,
+          displayName: user.displayName,
+          email: user.email,
+          status: user.status,
+          platformAdmin: user.platformAdmin,
+          createdAt: user.createdAt.toISOString(),
+        })),
+      });
+    }),
+  );
+
+  router.patch("/api/admin/users/:userId", async (request, params) =>
+    guarded(correlationId(request), async () => {
+      const context = await contextOf(request);
+      if (context.principal.platformAdmin !== true) {
+        return errorResponse(403, "forbidden", "Platform administrator access is required.");
+      }
+      const body = parseJsonBody(request.body);
+      const status = body.status;
+      if (status !== "PENDING" && status !== "ACTIVE" && status !== "SUSPENDED") {
+        return errorResponse(422, "invalid", "Status must be PENDING, ACTIVE or SUSPENDED.");
+      }
+      const user = await dependencies.users.setStatus(params.userId, status);
+      return json(200, {
+        user: {
+          id: user.id,
+          displayName: user.displayName,
+          email: user.email,
+          status: user.status,
+          platformAdmin: user.platformAdmin,
+        },
       });
     }),
   );

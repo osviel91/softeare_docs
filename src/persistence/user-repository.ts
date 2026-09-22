@@ -13,7 +13,7 @@
  * loser's insert fails, which is why `findOrCreateByExternalIdentity` retries
  * with a lookup instead of trusting its own read.
  */
-import type { ExternalIdentity, User } from "../domain/user/user";
+import type { AccountStatus, ExternalIdentity, User } from "../domain/user/user";
 import type { SqlClient } from "./sql-client";
 import { createIdGenerator, type IdGenerator } from "../shared/ids/uuid";
 import { toUser } from "./rows";
@@ -36,6 +36,9 @@ export interface UserRepository {
     id: string,
     profile: { displayName: string; email: string | null },
   ): Promise<User>;
+
+  list(): Promise<User[]>;
+  setStatus(id: string, status: AccountStatus): Promise<User>;
 }
 
 export interface UserRepositoryOptions {
@@ -117,6 +120,23 @@ export function createUserRepository(
           WHERE id = $1
       RETURNING *`,
         [id, profile.displayName, profile.email],
+      );
+      const row = result.rows[0];
+      if (!row) throw new Error(`No user with id ${id}.`);
+      return toUser(row);
+    },
+
+    async list() {
+      const result = await client.query(
+        "SELECT * FROM users ORDER BY created_at ASC, id ASC",
+      );
+      return result.rows.map(toUser);
+    },
+
+    async setStatus(id, status) {
+      const result = await client.query(
+        "UPDATE users SET status = $2, updated_at = now() WHERE id = $1 RETURNING *",
+        [id, status],
       );
       const row = result.rows[0];
       if (!row) throw new Error(`No user with id ${id}.`);

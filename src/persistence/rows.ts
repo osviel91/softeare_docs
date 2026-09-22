@@ -64,6 +64,8 @@ export function toUser(row: SqlRow): User {
     identitySubject: text(row, "identity_subject"),
     displayName: text(row, "display_name"),
     email: textOrNull(row, "email"),
+    status: text(row, "status") as User["status"],
+    platformAdmin: row.platform_admin === true || row.platform_admin === "true",
     createdAt: timestamp(row, "created_at"),
     updatedAt: timestamp(row, "updated_at"),
   };

@@ -236,12 +236,11 @@ async function waitForCall(
 }
 
 describe("App — anonymous browser", () => {
-  it("keeps local mode working and asks for a sign-in for server projects", async () => {
+  it("keeps local mode working and offers sign-in from the toolbar", async () => {
     render(<App />);
 
-    // The server section explains what it would take; no project is offered.
-    await screen.findByTestId("workspace-server-signed-out");
-    expect(screen.getByTestId("workspace-sign-in")).toBeInTheDocument();
+    await screen.findByTestId("toolbar-sign-in");
+    expect(screen.queryByTestId("workspace-server-toggle")).toBeNull();
     expect(screen.queryAllByTestId("workspace-server-project")).toHaveLength(0);
 
     // Local mode still works exactly as before.
@@ -300,6 +299,9 @@ describe("App — authenticated browser", () => {
     expect(screen.getByTestId("workspace-server-project")).toHaveAttribute(
       "aria-current",
       "true",
+    );
+    expect(screen.getByTestId("explorer-mode")).toHaveTextContent(
+      "Server project: Payments",
     );
     // Opening read the access record and the resource, and nothing more.
     expect(state.calls.map((call) => `${call.method} ${call.path}`)).toContain(

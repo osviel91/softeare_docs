@@ -31,8 +31,6 @@ function renderSwitcher(
   const handlers = {
     onOpenLocal: vi.fn(),
     onOpenFolder: vi.fn(),
-    onSignIn: vi.fn(),
-    onSignOut: vi.fn(),
     onOpenServerProject: vi.fn(),
     onCreateServerProject: vi.fn(),
   };
@@ -48,21 +46,22 @@ function renderSwitcher(
 }
 
 describe("WorkspaceSwitcher", () => {
-  it("keeps local mode usable without asking anyone to sign in", () => {
+  it("keeps local mode usable and hides server sources while anonymous", () => {
     const handlers = renderSwitcher({ folderSupported: true });
     fireEvent.click(screen.getByTestId("workspace-local"));
     expect(handlers.onOpenLocal).toHaveBeenCalledTimes(1);
-    expect(screen.getByTestId("workspace-server-signed-out")).toHaveTextContent(
-      "Sign in to access server projects",
-    );
-    // No server project list is offered while anonymous.
+    expect(screen.queryByTestId("workspace-server-toggle")).toBeNull();
     expect(screen.queryAllByTestId("workspace-server-project")).toHaveLength(0);
   });
 
-  it("starts the sign-in flow when asked", () => {
-    const handlers = renderSwitcher();
-    fireEvent.click(screen.getByTestId("workspace-sign-in"));
-    expect(handlers.onSignIn).toHaveBeenCalledTimes(1);
+  it("collapses local sources", () => {
+    renderSwitcher();
+    fireEvent.click(screen.getByTestId("workspace-local-toggle"));
+    expect(screen.getByTestId("workspace-local-toggle")).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    expect(screen.queryByTestId("workspace-local")).toBeNull();
   });
 
   it("lists the signed-in user's projects and opens the chosen one", () => {
@@ -81,7 +80,6 @@ describe("WorkspaceSwitcher", () => {
       activeServerProjectId: "p2",
     });
 
-    expect(screen.getByTestId("workspace-user")).toHaveTextContent("Ada");
     const rows = screen.getAllByTestId("workspace-server-project");
     expect(rows.map((row) => row.textContent?.replace("☁", ""))).toEqual([
       "Payments",
@@ -147,5 +145,26 @@ describe("WorkspaceSwitcher", () => {
     ).toHaveTextContent("The projects could not be loaded.");
     fireEvent.click(screen.getByTestId("workspace-server-projects-retry"));
     expect(onReloadServerProjects).toHaveBeenCalledTimes(1);
+  });
+
+  it("offers the open server project as a local ZIP download", () => {
+    const onDownloadLocalCopy = vi.fn();
+    renderSwitcher({
+      mode: "server",
+      auth: {
+        status: "authenticated",
+        user: {
+          id: "u1",
+          displayName: "Ada",
+          email: null,
+          authType: "session",
+          scopes: [],
+        },
+      },
+      onDownloadLocalCopy,
+    });
+
+    fireEvent.click(screen.getByTestId("workspace-download-local-copy"));
+    expect(onDownloadLocalCopy).toHaveBeenCalledTimes(1);
   });
 });

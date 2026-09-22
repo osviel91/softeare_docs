@@ -182,7 +182,7 @@ describe("App — local folder (Phase 5)", () => {
     // The folder name flows from the picker into the explorer header.
     await waitFor(() => {
       expect(screen.getByTestId("explorer-mode")).toHaveTextContent(
-        "Test Folder",
+        "Local folder: Test Folder",
       );
     });
 
@@ -260,7 +260,7 @@ describe("App — local folder (Phase 5)", () => {
     });
     await waitFor(() => {
       expect(screen.getByTestId("explorer-mode")).toHaveTextContent(
-        "Test Folder",
+        "Local folder: Test Folder",
       );
     });
 
@@ -270,7 +270,7 @@ describe("App — local folder (Phase 5)", () => {
     });
     await waitFor(() => {
       expect(screen.getByTestId("explorer-mode")).toHaveTextContent(
-        "In-browser projects",
+        "Browser local",
       );
     });
   });

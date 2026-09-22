@@ -2073,19 +2073,45 @@ export default function App() {
           </span>
         )}
 
-        <button
-          type="button"
-          className="button app__command-button"
-          data-testid="command-palette-button"
-          aria-label="Open command palette"
-          title={`Open command palette (${bindingLabel(COMMAND_PALETTE_BINDING)})`}
-          onClick={open}
-        >
-          Commands…
-          <kbd className="app__command-shortcut" data-testid="palette-hint">
-            {bindingLabel(COMMAND_PALETTE_BINDING)}
-          </kbd>
-        </button>
+        <div className="app__toolbar-actions">
+          {auth.status === "anonymous" ? (
+            <button
+              type="button"
+              className="button app__auth-button"
+              data-testid="toolbar-sign-in"
+              onClick={auth.signIn}
+            >
+              Sign in
+            </button>
+          ) : auth.status === "authenticated" ? (
+            <div className="app__account" data-testid="toolbar-account">
+              <span>{auth.user?.displayName || auth.user?.id || "Signed in"}</span>
+              <button
+                type="button"
+                className="app__sign-out"
+                data-testid="toolbar-sign-out"
+                onClick={() => {
+                  void auth.signOut();
+                }}
+              >
+                Sign out
+              </button>
+            </div>
+          ) : null}
+          <button
+            type="button"
+            className="button app__command-button"
+            data-testid="command-palette-button"
+            aria-label="Open command palette"
+            title={`Open command palette (${bindingLabel(COMMAND_PALETTE_BINDING)})`}
+            onClick={open}
+          >
+            Commands…
+            <kbd className="app__command-shortcut" data-testid="palette-hint">
+              {bindingLabel(COMMAND_PALETTE_BINDING)}
+            </kbd>
+          </button>
+        </div>
       </header>
 
       {page === "docs" ? (
@@ -2127,10 +2153,6 @@ export default function App() {
                     serverOpenError={server.openError}
                     onOpenLocal={openLocalWorkspace}
                     onOpenFolder={openFolder}
-                    onSignIn={auth.signIn}
-                    onSignOut={() => {
-                      void auth.signOut();
-                    }}
                     onOpenServerProject={(project) => {
                       void server.openProject(project);
                     }}
@@ -2140,6 +2162,7 @@ export default function App() {
                     onReloadServerProjects={() => {
                       void server.refresh();
                     }}
+                    onDownloadLocalCopy={exportProjectCommand}
                   />
                 }
                 onAddMenu={(project, position) =>
@@ -2162,6 +2185,13 @@ export default function App() {
                 onUnhideAll={unhideAll}
                 onOpenFolder={openFolder}
                 folderName={openedFolder?.folderName ?? null}
+                workspaceLabel={
+                  server.active
+                    ? `Server project: ${server.active.project.name}`
+                    : openedFolder
+                      ? `Local folder: ${openedFolder.folderName}`
+                      : "Browser local"
+                }
                 folderSupported={supportsFileSystemAccess()}
               />
             </section>

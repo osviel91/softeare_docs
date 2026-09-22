@@ -127,11 +127,43 @@ body {
   border-radius: var(--radius-sm);
 }
 
-.app__command-button {
+.app__toolbar-actions {
   margin-left: auto;
   display: inline-flex;
   align-items: center;
   gap: 8px;
+}
+
+.app__account {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 220px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.app__account > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app__sign-out {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  font: inherit;
+  font-size: 11px;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.app__sign-out:hover {
+  color: var(--text);
+  background: var(--bg-hover);
 }
 
 .app__command-shortcut,
@@ -2776,31 +2808,38 @@ body {
    ========================================================================== */
 .workspaces {
   flex: 0 0 auto;
-  padding: 10px 12px 12px;
+  padding: 6px 12px;
   border-bottom: 1px solid var(--border);
   background: var(--bg-inset);
 }
 
-.workspaces__title {
-  margin: 0 0 8px;
-  font-size: 11.5px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--text-faint);
-}
-
 .workspaces__group + .workspaces__group {
-  margin-top: 10px;
+  border-top: 1px solid var(--border);
 }
 
 .workspaces__group-title {
-  margin: 0 0 4px;
+  margin: 0;
+}
+
+.workspaces__group-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 7px 0 5px;
+  font: inherit;
   font-size: 10.5px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--text-faint);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.workspaces__group-toggle:hover {
+  color: var(--text);
 }
 
 .workspaces__list {
@@ -2859,39 +2898,6 @@ body {
   gap: 6px;
 }
 
-.workspaces__user {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 6px;
-  font-size: 11.5px;
-  color: var(--text-muted);
-}
-
-.workspaces__user-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.workspaces__sign-out {
-  flex: 0 0 auto;
-  padding: 2px 7px;
-  font: inherit;
-  font-size: 11px;
-  color: var(--text-muted);
-  background: transparent;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-}
-
-.workspaces__sign-out:hover {
-  color: var(--text);
-  background: var(--bg-hover);
-}
-
 .workspaces__create {
   display: flex;
   gap: 6px;
@@ -2932,6 +2938,24 @@ body {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   cursor: pointer;
+}
+
+.workspaces__download {
+  width: 100%;
+  margin: 8px 0 4px;
+  padding: 5px 7px;
+  font: inherit;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.workspaces__download:hover {
+  color: var(--text);
+  background: var(--bg-hover);
 }
 
 /* A retry or dismiss action inside the status bar's error item. */

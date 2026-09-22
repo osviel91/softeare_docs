@@ -104,6 +104,8 @@ export interface ExplorerProps {
   onOpenFolder?: () => void;
   /** The opened folder's name, or `null` for in-browser projects. */
   folderName?: string | null;
+  /** Human-readable description of the workspace backing the current tree. */
+  workspaceLabel?: string;
   /** Whether the browser supports the File System Access API. */
   folderSupported?: boolean;
   /**
@@ -149,6 +151,7 @@ export default function Explorer({
   onUnhideAll,
   onOpenFolder,
   folderName = null,
+  workspaceLabel,
   folderSupported = false,
   switcher,
 }: ExplorerProps) {
@@ -213,7 +216,8 @@ export default function Explorer({
         ? notes.filter((note) => note.projectId === projectId)
         : allNotes.filter((note) => note.projectId === projectId);
 
-  const modeLabel = folderName ? `“${folderName}”` : "In-browser projects";
+  const modeLabel =
+    workspaceLabel ?? (folderName ? `“${folderName}”` : "In-browser projects");
 
   return (
     <nav className="explorer" data-testid="explorer">

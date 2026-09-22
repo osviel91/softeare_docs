@@ -97,12 +97,16 @@ class FakeDirectory {
     throw new Error(`no such file: ${name}`);
   }
 
-  async getDirectoryHandle(name: string): Promise<FsDirectoryHandle> {
+  async getDirectoryHandle(
+    name: string,
+    options?: { create?: boolean },
+  ): Promise<FsDirectoryHandle> {
     const existing = this.children.get(name);
     if (existing && existing.kind === "directory") return existing;
     if (existing && existing.kind === "file") {
       throw new Error(`entry exists as file: ${name}`);
     }
+    if (!options?.create) throw new Error(`no such directory: ${name}`);
     const dir = new FakeDirectory(name);
     // FakeDirectory is decoupled from the workspace adapter contract (its async
     // `entries()` must satisfy the adapter's `for await` in jsdom), so cast it
@@ -188,6 +192,28 @@ describe("App — local folder (Phase 5)", () => {
       expect(projects).toHaveLength(1);
       expect(projects[0]).toHaveTextContent("Onboarding");
     });
+  });
+
+  it("creates a project in an empty folder", async () => {
+    const emptyRoot = new FakeDirectory("Empty Folder");
+    vi.spyOn(window, "showDirectoryPicker").mockResolvedValue(
+      emptyRoot as unknown as FileSystemDirectoryHandle,
+    );
+    render(<App />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("open-folder-button"));
+    });
+    fireEvent.change(screen.getByTestId("project-name-input"), {
+      target: { value: "Docs" },
+    });
+    fireEvent.click(screen.getByTestId("create-project-button"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("project-name")).toHaveTextContent("Docs");
+    });
+    expect(emptyRoot.children.get("Docs")?.kind).toBe("directory");
+    expect(screen.queryByTestId("workspace-error")).toBeNull();
   });
 
   it("renames a diagram from the title in its source, live", async () => {

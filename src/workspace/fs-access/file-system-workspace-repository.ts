@@ -198,7 +198,9 @@ export function createFileSystemWorkspaceRepository(
     const name = segments.pop() as string;
     let dir = root;
     for (const segment of segments) {
-      dir = await dir.getDirectoryHandle(segment);
+      dir = await dir.getDirectoryHandle(segment, {
+        createIfNotExists: true,
+      });
     }
     return { dir, name };
   }
@@ -271,7 +273,7 @@ export function createFileSystemWorkspaceRepository(
       const segments = relPath.split("/");
       const dirName = segments.pop() as string;
       const { dir } = await resolveParent(relPath);
-      await dir.getDirectoryHandle(dirName);
+      await dir.getDirectoryHandle(dirName, { createIfNotExists: true });
       return ok({ id: relPath, name: dirName, datasetIds: [], noteIds: [] });
     } catch (error) {
       return err(toRepoError(error));

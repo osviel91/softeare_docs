@@ -1,10 +1,7 @@
 /** Choose the local or authenticated server workspace that feeds the editor. */
 import { useEffect, useState } from "react";
 import type { AuthState } from "../server/use-auth";
-import type {
-  ServerAdminUser,
-  ServerProject,
-} from "../../workspace/server/api-client";
+import type { ServerProject } from "../../workspace/server/api-client";
 
 export type WorkspaceMode = "local" | "folder" | "server";
 
@@ -26,8 +23,7 @@ export interface WorkspaceSwitcherProps {
   onCreateServerProject: (name: string) => void;
   onReloadServerProjects?: () => void;
   onDownloadLocalCopy?: () => void;
-  adminUsers?: ServerAdminUser[];
-  onSetUserStatus?: (userId: string, status: ServerAdminUser["status"]) => void;
+  onOpenSettings?: () => void;
 }
 
 export default function WorkspaceSwitcher({
@@ -48,8 +44,7 @@ export default function WorkspaceSwitcher({
   onCreateServerProject,
   onReloadServerProjects,
   onDownloadLocalCopy,
-  adminUsers = [],
-  onSetUserStatus,
+  onOpenSettings,
 }: WorkspaceSwitcherProps) {
   const [pendingName, setPendingName] = useState("");
   const [localExpanded, setLocalExpanded] = useState(mode !== "server");
@@ -118,15 +113,29 @@ export default function WorkspaceSwitcher({
       <section className="workspaces__group" aria-label="Server workspaces">
         {auth.status === "authenticated" ? (
           <h3 className="workspaces__group-title">
-            <button
-              type="button"
-              className="workspaces__group-toggle"
-              data-testid="workspace-server-toggle"
-              aria-expanded={serverExpanded}
-              onClick={() => setServerExpanded((expanded) => !expanded)}
-            >
-              Server <span aria-hidden="true">{serverExpanded ? "▾" : "▸"}</span>
-            </button>
+            <span className="workspaces__group-heading">
+              <button
+                type="button"
+                className="workspaces__group-toggle"
+                data-testid="workspace-server-toggle"
+                aria-expanded={serverExpanded}
+                onClick={() => setServerExpanded((expanded) => !expanded)}
+              >
+                Server <span aria-hidden="true">{serverExpanded ? "▾" : "▸"}</span>
+              </button>
+              {onOpenSettings && (
+                <button
+                  type="button"
+                  className="workspaces__settings"
+                  data-testid="workspace-settings"
+                  aria-label="Open workspace settings"
+                  title="Workspace settings"
+                  onClick={onOpenSettings}
+                >
+                  ⚙
+                </button>
+              )}
+            </span>
           </h3>
         ) : (
           <h3 className="workspaces__group-title">Server</h3>
@@ -169,28 +178,6 @@ export default function WorkspaceSwitcher({
                   Sign out
                 </button>
               </div>
-
-              {auth.user?.platformAdmin && onSetUserStatus && (
-                <details data-testid="workspace-admin-users">
-                  <summary>Platform administration</summary>
-                  <ul className="workspaces__list">
-                    {adminUsers.map((user) => (
-                      <li key={user.id}>
-                        <span>{user.email ?? user.displayName}</span>
-                        <select
-                          aria-label={`Status for ${user.email ?? user.displayName}`}
-                          value={user.status}
-                          onChange={(event) => onSetUserStatus(user.id, event.target.value as ServerAdminUser["status"])}
-                        >
-                          <option value="PENDING">Pending</option>
-                          <option value="ACTIVE">Active</option>
-                          <option value="SUSPENDED">Suspended</option>
-                        </select>
-                      </li>
-                    ))}
-                  </ul>
-                </details>
-              )}
 
               <form
                 className="workspaces__create"

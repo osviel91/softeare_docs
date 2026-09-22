@@ -167,4 +167,26 @@ describe("WorkspaceSwitcher", () => {
     fireEvent.click(screen.getByTestId("workspace-download-local-copy"));
     expect(onDownloadLocalCopy).toHaveBeenCalledTimes(1);
   });
+
+  it("opens server settings without expanding the sidebar", () => {
+    const onOpenSettings = vi.fn();
+    renderSwitcher({
+      auth: {
+        status: "authenticated",
+        user: {
+          id: "u1",
+          displayName: "Ada",
+          email: null,
+          authType: "session",
+          scopes: [],
+        },
+      },
+      onOpenSettings,
+    });
+
+    fireEvent.click(screen.getByTestId("workspace-settings"));
+
+    expect(onOpenSettings).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId("workspace-admin-users")).toBeNull();
+  });
 });

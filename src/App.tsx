@@ -160,6 +160,7 @@ import { ServerApiClient } from "./workspace/server/api-client";
 import { useAuth } from "./features/server/use-auth";
 import { useServerWorkspaces } from "./features/server/use-server-workspaces";
 import AgentsAndTokens from "./features/server/AgentsAndTokens";
+import PlatformAdministration from "./features/server/PlatformAdministration";
 import { RevisionConflictError } from "./workspace/server/api-errors";
 import { supportsForcedWrite } from "./workspace/server/server-workspace-repository";
 
@@ -172,11 +173,11 @@ type EditorView = "code" | "outline" | "problems" | "overview" | "history";
  * Which page the shell shows. The editor, explorer and preview make up the
  * workspace; the documentation is a page of its own rather than a panel inside
  * the editor pane, because it is reference material about the tools rather than
- * something you edit alongside a diagram. Access tokens are a third page,
- * reachable only while signed in, because they are account settings rather than
- * editing tools.
+ * something you edit alongside a diagram. Access tokens and workspace settings
+ * are separate pages because they are account administration rather than editing
+ * tools.
  */
-type AppPage = "workspace" | "docs" | "tokens";
+type AppPage = "workspace" | "docs" | "tokens" | "settings";
 
 /**
  * A destructive action waiting for confirmation. The dialog is opened when the
@@ -1563,6 +1564,9 @@ export default function App() {
   /** Open the agents/access-token page (only meaningful while signed in). */
   const openTokens = useCallback((): void => setPage("tokens"), []);
 
+  /** Open workspace and account settings. */
+  const openSettings = useCallback((): void => setPage("settings"), []);
+
   const registry = useCommands({
     createEmptyDiagram: workspace.createEmptyDiagram,
     createEmptyNote: createNote,
@@ -2086,7 +2090,11 @@ export default function App() {
           </>
         ) : (
           <span className="app__page-title" data-testid="docs-page-title">
-            {page === "tokens" ? "Agents & access tokens" : "Documentation"}
+            {page === "tokens"
+              ? "Agents & access tokens"
+              : page === "settings"
+                ? "Workspace settings"
+                : "Documentation"}
           </span>
         )}
 
@@ -2139,6 +2147,13 @@ export default function App() {
           auth={auth}
           onBack={() => setPage("workspace")}
         />
+      ) : page === "settings" ? (
+        <PlatformAdministration
+          auth={auth}
+          adminUsers={adminUsers}
+          onSetUserStatus={setAdminUserStatus}
+          onBack={() => setPage("workspace")}
+        />
       ) : (
         <>
           <main className="app__workspace">
@@ -2182,8 +2197,7 @@ export default function App() {
                       void server.refresh();
                     }}
                     onDownloadLocalCopy={exportProjectCommand}
-                    adminUsers={adminUsers}
-                    onSetUserStatus={setAdminUserStatus}
+                     onOpenSettings={openSettings}
                   />
                 }
                 onAddMenu={(project, position) =>

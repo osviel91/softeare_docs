@@ -2821,6 +2821,12 @@ body {
   margin: 0;
 }
 
+.workspaces__group-heading {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .workspaces__group-toggle {
   display: flex;
   align-items: center;
@@ -2836,6 +2842,25 @@ body {
   background: transparent;
   border: 0;
   cursor: pointer;
+}
+
+.workspaces__settings {
+  flex: 0 0 auto;
+  padding: 4px 6px;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--text-faint);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.workspaces__settings:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+  border-color: var(--border);
 }
 
 .workspaces__group-toggle:hover {
@@ -2956,6 +2981,161 @@ body {
 .workspaces__download:hover {
   color: var(--text);
   background: var(--bg-hover);
+}
+
+/* --- Workspace settings -------------------------------------------------- */
+.settings-page {
+  overflow: auto;
+  flex: 1 1 auto;
+  width: min(900px, 100%);
+  margin: 0 auto;
+  padding: 42px 48px 64px;
+}
+
+.settings-page__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 30px;
+}
+
+.settings-page__eyebrow,
+.settings-card__eyebrow {
+  margin: 0 0 7px;
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.settings-page__title {
+  margin: 0;
+  font-size: clamp(26px, 4vw, 36px);
+  letter-spacing: -0.03em;
+}
+
+.settings-page__lead {
+  max-width: 600px;
+  margin: 10px 0 0;
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.settings-card {
+  margin-bottom: 18px;
+  padding: 24px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+}
+
+.settings-card__heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.settings-card h2 {
+  margin: 0;
+  font-size: 19px;
+  letter-spacing: -0.02em;
+}
+
+.settings-card__muted {
+  margin: 9px 0 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.settings-card__badge,
+.settings-card__count {
+  flex: 0 0 auto;
+  padding: 5px 9px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.settings-card__count {
+  color: var(--text-muted);
+  background: var(--bg-inset);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.settings-users {
+  display: grid;
+  gap: 8px;
+  margin-top: 22px;
+}
+
+.settings-user {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 13px 14px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.settings-user > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.settings-user strong,
+.settings-user span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-user span {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.settings-user select {
+  min-width: 130px;
+  padding: 6px 8px;
+  color: var(--text);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-size: 12px;
+}
+
+@media (max-width: 640px) {
+  .settings-page {
+    padding: 28px 20px 48px;
+  }
+
+  .settings-page__header {
+    flex-direction: column;
+  }
+
+  .settings-user {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .settings-user select {
+    width: 100%;
+  }
 }
 
 /* A retry or dismiss action inside the status bar's error item. */

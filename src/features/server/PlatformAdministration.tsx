@@ -1,10 +1,22 @@
 import type { AuthState } from "./use-auth";
-import type { ServerAdminUser } from "../../workspace/server/api-client";
+import type {
+  ServerAdminUser,
+  ServerWorkspace,
+  ServerWorkspaceMember,
+} from "../../workspace/server/api-client";
 
 export interface PlatformAdministrationProps {
   auth: AuthState;
   adminUsers: ServerAdminUser[];
   onSetUserStatus: (userId: string, status: ServerAdminUser["status"]) => void;
+  workspaces: ServerWorkspace[];
+  workspaceMembersByWorkspaceId: Record<string, ServerWorkspaceMember[]>;
+  onSetWorkspaceMemberRole: (
+    workspaceId: string,
+    userId: string,
+    role: ServerWorkspaceMember["role"],
+  ) => void;
+  onRemoveWorkspaceMember: (workspaceId: string, userId: string) => void;
   onBack: () => void;
 }
 
@@ -12,6 +24,10 @@ export default function PlatformAdministration({
   auth,
   adminUsers,
   onSetUserStatus,
+  workspaces,
+  workspaceMembersByWorkspaceId,
+  onSetWorkspaceMemberRole,
+  onRemoveWorkspaceMember,
   onBack,
 }: PlatformAdministrationProps) {
   const user = auth.user;
@@ -41,6 +57,59 @@ export default function PlatformAdministration({
         </div>
         <p className="settings-card__muted">{user?.email ?? "No email address available"}</p>
       </section>
+
+      {workspaces.map((workspace) => (
+        <section className="settings-card" aria-labelledby={`workspace-${workspace.id}-title`} key={workspace.id}>
+          <div className="settings-card__heading">
+            <div>
+              <p className="settings-card__eyebrow">Workspace members</p>
+              <h2 id={`workspace-${workspace.id}-title`}>{workspace.name}</h2>
+            </div>
+            <span className="settings-card__badge">{workspace.role}</span>
+          </div>
+          <p className="settings-card__muted">
+            Manage who can access this workspace and what they can do.
+          </p>
+          <div className="settings-users" role="list">
+            {(workspaceMembersByWorkspaceId[workspace.id] ?? []).map((member) => (
+              <div className="settings-user" role="listitem" key={member.userId}>
+                <div>
+                  <strong>{member.displayName}</strong>
+                  <span>{member.email ?? "No email address"}</span>
+                </div>
+                {workspace.role === "ADMIN" ? (
+                  <div className="settings-user__actions">
+                    <select
+                      aria-label={`Workspace role for ${member.email ?? member.displayName}`}
+                      value={member.role}
+                      onChange={(event) => onSetWorkspaceMemberRole(
+                        workspace.id,
+                        member.userId,
+                        event.target.value as ServerWorkspaceMember["role"],
+                      )}
+                    >
+                      <option value="ADMIN">Admin</option>
+                      <option value="EDITOR">Editor</option>
+                      <option value="VIEWER">Viewer</option>
+                    </select>
+                    {member.userId !== user?.id && (
+                      <button
+                        type="button"
+                        className="button button--small button--danger-text"
+                        onClick={() => onRemoveWorkspaceMember(workspace.id, member.userId)}
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <span className="settings-user__role">{member.role}</span>
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
+      ))}
 
       {user?.platformAdmin ? (
         <section className="settings-card" aria-labelledby="settings-admin-title" data-testid="workspace-admin-users">

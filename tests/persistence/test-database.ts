@@ -45,6 +45,16 @@ export async function insertTestUser(
       values.email ?? null,
     ],
   );
+  await client.query(
+    `INSERT INTO workspaces (id, name) VALUES ($1, $2)
+     ON CONFLICT (id) DO NOTHING`,
+    [values.id, `${values.displayName ?? "Test User"} Workspace`],
+  );
+  await client.query(
+    `INSERT INTO workspace_members (workspace_id, user_id, role)
+     VALUES ($1, $1, 'ADMIN') ON CONFLICT (workspace_id, user_id) DO NOTHING`,
+    [values.id],
+  );
   return values.id;
 }
 

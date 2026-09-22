@@ -31,7 +31,11 @@ import Explorer, { type MenuPosition } from "./features/explorer/Explorer";
 import WorkspaceSwitcher, {
   type WorkspaceMode,
 } from "./features/explorer/WorkspaceSwitcher";
-import type { ServerAdminUser } from "./workspace/server/api-client";
+import type {
+  ServerAdminUser,
+  ServerWorkspace,
+  ServerWorkspaceMember,
+} from "./workspace/server/api-client";
 import TabBar from "./features/tabs/TabBar";
 import DocsPage from "./features/docs/DocsPage";
 import ConfirmDialog from "./features/ui/ConfirmDialog";
@@ -235,6 +239,8 @@ export default function App() {
   const auth = useAuth(apiClient);
   const server = useServerWorkspaces(apiClient, auth);
   const [adminUsers, setAdminUsers] = useState<ServerAdminUser[]>([]);
+  const [serverWorkspaces, setServerWorkspaces] = useState<ServerWorkspace[]>([]);
+  const [workspaceMembersByWorkspaceId, setWorkspaceMembersByWorkspaceId] = useState<Record<string, ServerWorkspaceMember[]>>({});
   useEffect(() => {
     if (auth.user?.platformAdmin !== true) {
       setAdminUsers([]);
@@ -242,10 +248,61 @@ export default function App() {
     }
     void apiClient.listAdminUsers().then(setAdminUsers).catch(() => setAdminUsers([]));
   }, [apiClient, auth.user?.platformAdmin]);
+  useEffect(() => {
+    if (auth.status !== "authenticated") {
+      setServerWorkspaces([]);
+      setWorkspaceMembersByWorkspaceId({});
+      return;
+    }
+    let cancelled = false;
+    void apiClient.listWorkspaces().then((workspaces) => {
+      if (cancelled) return;
+      setServerWorkspaces(workspaces);
+      void Promise.all(workspaces.map(async (workspace) => {
+        try {
+          return [workspace.id, await apiClient.listWorkspaceMembers(workspace.id)] as const;
+        } catch {
+          return [workspace.id, []] as const;
+        }
+      })).then((entries) => {
+        if (!cancelled) setWorkspaceMembersByWorkspaceId(Object.fromEntries(entries));
+      });
+    }).catch(() => {
+      if (!cancelled) {
+        setServerWorkspaces([]);
+        setWorkspaceMembersByWorkspaceId({});
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [apiClient, auth.status]);
   const setAdminUserStatus = useCallback(
     (userId: string, status: ServerAdminUser["status"]) => {
       void apiClient.setUserStatus(userId, status).then((updated) => {
         setAdminUsers((users) => users.map((user) => user.id === updated.id ? updated : user));
+      });
+    },
+    [apiClient],
+  );
+  const setWorkspaceMemberRole = useCallback(
+    (workspaceId: string, userId: string, role: ServerWorkspaceMember["role"]) => {
+      void apiClient.setWorkspaceMemberRole(workspaceId, userId, role).then((updated) => {
+        setWorkspaceMembersByWorkspaceId((membersByWorkspace) => ({
+          ...membersByWorkspace,
+          [workspaceId]: (membersByWorkspace[workspaceId] ?? []).map((member) => member.userId === updated.userId ? updated : member),
+        }));
+      });
+    },
+    [apiClient],
+  );
+  const removeWorkspaceMember = useCallback(
+    (workspaceId: string, userId: string) => {
+      void apiClient.removeWorkspaceMember(workspaceId, userId).then(() => {
+        setWorkspaceMembersByWorkspaceId((membersByWorkspace) => ({
+          ...membersByWorkspace,
+          [workspaceId]: (membersByWorkspace[workspaceId] ?? []).filter((member) => member.userId !== userId),
+        }));
       });
     },
     [apiClient],
@@ -2152,6 +2209,10 @@ export default function App() {
           auth={auth}
           adminUsers={adminUsers}
           onSetUserStatus={setAdminUserStatus}
+          workspaces={serverWorkspaces}
+          workspaceMembersByWorkspaceId={workspaceMembersByWorkspaceId}
+          onSetWorkspaceMemberRole={setWorkspaceMemberRole}
+          onRemoveWorkspaceMember={removeWorkspaceMember}
           onBack={() => setPage("workspace")}
         />
       ) : (

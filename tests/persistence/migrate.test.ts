@@ -50,7 +50,7 @@ describe("migrate", () => {
     const client = await createPgliteClient();
     try {
       const report = await migrate(client);
-      expect(report.applied).toEqual([1, 2, 3, 4]);
+       expect(report.applied).toEqual([1, 2, 3, 4, 5]);
       expect(report.present).toEqual([]);
       const tables = await client.query(
         `SELECT table_name FROM information_schema.tables
@@ -67,7 +67,9 @@ describe("migrate", () => {
         "resources",
         "schema_migrations",
         "sessions",
-        "users",
+         "users",
+         "workspaces",
+         "workspace_members",
         "workspace_operations",
         "idempotency_records",
       ]) {
@@ -86,7 +88,7 @@ describe("migrate", () => {
       await migrate(client);
       const second = await migrate(client);
       expect(second.applied).toEqual([]);
-       expect(second.present).toEqual([1, 2, 3, 4]);
+        expect(second.present).toEqual([1, 2, 3, 4, 5]);
     } finally {
       await client.close();
     }
@@ -172,7 +174,7 @@ describe("schema constraints", () => {
     try {
       await insertTestUser(client, { id: testUuid(1) });
       await client.query(
-        "INSERT INTO projects (id, owner_id, name, slug) VALUES ($1, $2, $3, $4)",
+        "INSERT INTO projects (id, owner_id, workspace_id, name, slug) VALUES ($1, $2, $2, $3, $4)",
         [testUuid(10), testUuid(1), "Payments", "payments"],
       );
       await expect(
@@ -191,7 +193,7 @@ describe("schema constraints", () => {
     try {
       await insertTestUser(client, { id: testUuid(1) });
       await client.query(
-        "INSERT INTO projects (id, owner_id, name, slug) VALUES ($1, $2, $3, $4)",
+        "INSERT INTO projects (id, owner_id, workspace_id, name, slug) VALUES ($1, $2, $2, $3, $4)",
         [testUuid(10), testUuid(1), "Payments", "payments"],
       );
       await expect(
@@ -210,7 +212,7 @@ describe("schema constraints", () => {
     try {
       await insertTestUser(client, { id: testUuid(1) });
       await client.query(
-        "INSERT INTO projects (id, owner_id, name, slug) VALUES ($1, $2, $3, $4)",
+        "INSERT INTO projects (id, owner_id, workspace_id, name, slug) VALUES ($1, $2, $2, $3, $4)",
         [testUuid(10), testUuid(1), "Payments", "payments"],
       );
       const bad = [
@@ -239,7 +241,7 @@ describe("schema constraints", () => {
     try {
       await insertTestUser(client, { id: testUuid(1) });
       await client.query(
-        "INSERT INTO projects (id, owner_id, name, slug) VALUES ($1, $2, $3, $4)",
+        "INSERT INTO projects (id, owner_id, workspace_id, name, slug) VALUES ($1, $2, $2, $3, $4)",
         [testUuid(10), testUuid(1), "Payments", "payments"],
       );
       await expect(
@@ -258,7 +260,7 @@ describe("schema constraints", () => {
     try {
       await insertTestUser(client, { id: testUuid(1) });
       await client.query(
-        "INSERT INTO projects (id, owner_id, name, slug) VALUES ($1, $2, $3, $4)",
+        "INSERT INTO projects (id, owner_id, workspace_id, name, slug) VALUES ($1, $2, $2, $3, $4)",
         [testUuid(10), testUuid(1), "Payments", "payments"],
       );
       await client.query(
@@ -283,7 +285,7 @@ describe("schema constraints", () => {
       for (const [index, id] of ["payments", "ledger"].entries()) {
         const projectId = testUuid(10 + index);
         await client.query(
-          "INSERT INTO projects (id, owner_id, name, slug) VALUES ($1, $2, $3, $4)",
+          "INSERT INTO projects (id, owner_id, workspace_id, name, slug) VALUES ($1, $2, $2, $3, $4)",
           [projectId, testUuid(1), `Project ${id}`, id],
         );
         await client.query(
@@ -306,7 +308,7 @@ describe("schema constraints", () => {
       await insertTestUser(client, { id: testUuid(1) });
       await insertTestUser(client, { id: testUuid(2) });
       await client.query(
-        "INSERT INTO projects (id, owner_id, name, slug) VALUES ($1, $2, $3, $4)",
+        "INSERT INTO projects (id, owner_id, workspace_id, name, slug) VALUES ($1, $2, $2, $3, $4)",
         [testUuid(10), testUuid(1), "Payments", "payments"],
       );
       await client.query(

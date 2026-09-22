@@ -91,18 +91,32 @@ export function createUserRepository(
       }
 
       try {
-        const result = await client.query(
-          `INSERT INTO users (id, identity_issuer, identity_subject, display_name, email)
-           VALUES ($1, $2, $3, $4, $5)
-           RETURNING *`,
-          [
-            newId(),
-            identity.issuer,
-            identity.subject,
-            identity.displayName,
-            identity.email,
-          ],
-        );
+        const id = newId();
+        const result = await client.transaction(async (tx) => {
+          const inserted = await tx.query(
+            `INSERT INTO users (id, identity_issuer, identity_subject, display_name, email)
+             VALUES ($1, $2, $3, $4, $5)
+             RETURNING *`,
+            [
+              id,
+              identity.issuer,
+              identity.subject,
+              identity.displayName,
+              identity.email,
+            ],
+          );
+          await tx.query(
+            `INSERT INTO workspaces (id, name)
+             VALUES ($1, $2)`,
+            [id, `${identity.displayName || "Personal"} Workspace`],
+          );
+          await tx.query(
+            `INSERT INTO workspace_members (workspace_id, user_id, role)
+             VALUES ($1, $1, 'ADMIN')`,
+            [id],
+          );
+          return inserted;
+        });
         return toUser(result.rows[0]);
       } catch (error) {
         // A concurrent first login won the race. The identity is now present, so

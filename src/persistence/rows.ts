@@ -13,6 +13,8 @@ import type { ProjectRole } from "../domain/access/permissions";
 import type { ResourceType } from "../domain/workspace/resource-id";
 import type { SqlRow } from "./sql-client";
 import { isProjectRole } from "../domain/access/permissions";
+import type { ServerWorkspace, WorkspaceMember, WorkspaceRole } from "../domain/workspace/server-workspace";
+import { isWorkspaceRole } from "../domain/workspace/server-workspace";
 
 /** Read a required string column. */
 function text(row: SqlRow, column: string): string {
@@ -89,6 +91,34 @@ export function toProjectRole(value: unknown): ProjectRole {
     throw new Error(`Unknown project role in the database: ${String(value)}`);
   }
   return value;
+}
+
+export function toWorkspaceRole(value: unknown): WorkspaceRole {
+  if (!isWorkspaceRole(value)) {
+    throw new Error(`Unknown workspace role in the database: ${String(value)}`);
+  }
+  return value;
+}
+
+export function toServerWorkspace(row: SqlRow): ServerWorkspace {
+  return {
+    id: text(row, "id"),
+    name: text(row, "name"),
+    createdAt: timestamp(row, "created_at"),
+    updatedAt: timestamp(row, "updated_at"),
+    role: toWorkspaceRole(row.role),
+  };
+}
+
+export function toWorkspaceMember(row: SqlRow): WorkspaceMember {
+  return {
+    workspaceId: text(row, "workspace_id"),
+    userId: text(row, "user_id"),
+    displayName: text(row, "display_name"),
+    email: textOrNull(row, "email"),
+    role: toWorkspaceRole(row.role),
+    createdAt: timestamp(row, "created_at"),
+  };
 }
 
 /** Map a `resources.type` column. */

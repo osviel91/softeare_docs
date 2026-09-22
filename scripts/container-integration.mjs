@@ -123,8 +123,15 @@ function seedCredential() {
      VALUES ('${userId}', 'https://idp.invalid/realms/it', 'integration', 'Integration', NULL);`,
   );
   sql(
-    `INSERT INTO projects (id, owner_id, name, slug)
-     VALUES ('${projectId}', '${userId}', 'Integration Project', 'integration-project');`,
+    `INSERT INTO workspaces (id, name) VALUES ('${userId}', 'Integration Workspace');`,
+  );
+  sql(
+    `INSERT INTO workspace_members (workspace_id, user_id, role)
+     VALUES ('${userId}', '${userId}', 'ADMIN');`,
+  );
+  sql(
+    `INSERT INTO projects (id, owner_id, workspace_id, name, slug)
+     VALUES ('${projectId}', '${userId}', '${userId}', 'Integration Project', 'integration-project');`,
   );
   sql(
     `INSERT INTO project_members (project_id, user_id, role)

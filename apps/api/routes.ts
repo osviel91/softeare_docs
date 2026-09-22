@@ -28,6 +28,8 @@ import { createAuthRoutes, oidcClientFor } from "./auth/routes";
 import { registerAgentRoutes } from "./agents/routes";
 import type { ProjectRole } from "../../src/domain/access/permissions";
 import { isProjectRole } from "../../src/domain/access/permissions";
+import type { WorkspaceRole } from "../../src/domain/workspace/server-workspace";
+import { isWorkspaceRole } from "../../src/domain/workspace/server-workspace";
 import { invalid } from "../../src/application/errors";
 import type { AppDependencies } from "./app";
 
@@ -152,6 +154,50 @@ export function createRouter(dependencies: AppDependencies): Router {
           platformAdmin: user.platformAdmin,
         },
       });
+    }),
+  );
+
+  // ---- Server workspaces ----------------------------------------------------
+
+  router.get("/api/workspaces", async (request) =>
+    guarded(correlationId(request), async () => {
+      const context = await contextOf(request);
+      const workspaces = await dependencies.workspaceService.listWorkspaces(context);
+      return json(200, { workspaces: workspaces.map(workspaceView) });
+    }),
+  );
+
+  router.get("/api/workspaces/:workspaceId/members", async (request, params) =>
+    guarded(correlationId(request), async () => {
+      const context = await contextOf(request);
+      const members = await dependencies.workspaceService.listMembers(context, params.workspaceId);
+      return json(200, { members: members.map(workspaceMemberView) });
+    }),
+  );
+
+  router.put("/api/workspaces/:workspaceId/members/:userId", async (request, params) =>
+    guarded(correlationId(request), async () => {
+      const context = await contextOf(request);
+      const body = parseJsonBody(request.body);
+      const role = requireBodyString(body, "role");
+      if (!isWorkspaceRole(role)) {
+        return errorResponse(422, "invalid", "The role must be ADMIN, EDITOR or VIEWER.");
+      }
+      const member = await dependencies.workspaceService.setMember(
+        context,
+        params.workspaceId,
+        params.userId,
+        role,
+      );
+      return json(200, { member: workspaceMemberView(member) });
+    }),
+  );
+
+  router.delete("/api/workspaces/:workspaceId/members/:userId", async (request, params) =>
+    guarded(correlationId(request), async () => {
+      const context = await contextOf(request);
+      await dependencies.workspaceService.removeMember(context, params.workspaceId, params.userId);
+      return json(204, null);
     }),
   );
 
@@ -397,6 +443,40 @@ function projectView(listing: {
     ...projectFieldsView(listing.project),
     role: listing.role,
     resourceCount: listing.resourceCount,
+  };
+}
+
+function workspaceView(workspace: {
+  id: string;
+  name: string;
+  role: WorkspaceRole;
+  createdAt: Date;
+  updatedAt: Date;
+}): Record<string, unknown> {
+  return {
+    id: workspace.id,
+    name: workspace.name,
+    role: workspace.role,
+    createdAt: workspace.createdAt.toISOString(),
+    updatedAt: workspace.updatedAt.toISOString(),
+  };
+}
+
+function workspaceMemberView(member: {
+  workspaceId: string;
+  userId: string;
+  displayName: string;
+  email: string | null;
+  role: WorkspaceRole;
+  createdAt: Date;
+}): Record<string, unknown> {
+  return {
+    workspaceId: member.workspaceId,
+    userId: member.userId,
+    displayName: member.displayName,
+    email: member.email,
+    role: member.role,
+    createdAt: member.createdAt.toISOString(),
   };
 }
 

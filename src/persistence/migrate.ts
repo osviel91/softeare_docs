@@ -16,6 +16,7 @@ import { up as initialSchema } from "./migrations/0001-initial-schema";
 import { up as agentCredentials } from "./migrations/0002-agent-credentials";
 import { up as workspaceOperations } from "./migrations/0003-workspace-operations";
 import { up as accountApproval } from "./migrations/0004-account-approval";
+import { up as workspaces } from "./migrations/0005-workspaces";
 
 /** One migration: a stable name and the SQL that applies it. */
 export interface Migration {
@@ -33,6 +34,7 @@ export const MIGRATIONS: readonly Migration[] = [
   { version: 2, name: "agent-credentials", sql: agentCredentials },
   { version: 3, name: "workspace-operations", sql: workspaceOperations },
   { version: 4, name: "account-approval", sql: accountApproval },
+  { version: 5, name: "workspaces", sql: workspaces },
 ];
 
 /**

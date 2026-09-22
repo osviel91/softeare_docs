@@ -55,6 +55,25 @@ export interface ServerProject {
   updatedAt: string;
 }
 
+export type ServerWorkspaceRole = "ADMIN" | "EDITOR" | "VIEWER";
+
+export interface ServerWorkspace {
+  id: string;
+  name: string;
+  role: ServerWorkspaceRole;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ServerWorkspaceMember {
+  workspaceId: string;
+  userId: string;
+  displayName: string;
+  email: string | null;
+  role: ServerWorkspaceRole;
+  createdAt: string;
+}
+
 /** The type a server resource can carry. */
 export type ServerResourceType =
   "sequence-diagram" | "event-flow" | "markdown-document";
@@ -200,6 +219,39 @@ export class ServerApiClient {
       { status },
     );
     return body.user;
+  }
+
+  async listWorkspaces(): Promise<ServerWorkspace[]> {
+    const body = await this.request<{ workspaces: ServerWorkspace[] }>("GET", "/api/workspaces");
+    return body.workspaces ?? [];
+  }
+
+  async listWorkspaceMembers(workspaceId: string): Promise<ServerWorkspaceMember[]> {
+    const body = await this.request<{ members: ServerWorkspaceMember[] }>(
+      "GET",
+      `/api/workspaces/${encodeURIComponent(workspaceId)}/members`,
+    );
+    return body.members ?? [];
+  }
+
+  async setWorkspaceMemberRole(
+    workspaceId: string,
+    userId: string,
+    role: ServerWorkspaceRole,
+  ): Promise<ServerWorkspaceMember> {
+    const body = await this.request<{ member: ServerWorkspaceMember }>(
+      "PUT",
+      `/api/workspaces/${encodeURIComponent(workspaceId)}/members/${encodeURIComponent(userId)}`,
+      { role },
+    );
+    return body.member;
+  }
+
+  async removeWorkspaceMember(workspaceId: string, userId: string): Promise<void> {
+    await this.request<unknown>(
+      "DELETE",
+      `/api/workspaces/${encodeURIComponent(workspaceId)}/members/${encodeURIComponent(userId)}`,
+    );
   }
 
   /** Every project the caller is a member of. */

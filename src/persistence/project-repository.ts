@@ -144,9 +144,15 @@ export function createProjectRepository(
       const id = newId();
 
       return client.transaction(async (tx) => {
+        await tx.query(
+          `INSERT INTO workspaces (id, name)
+           VALUES ($1, $2)
+           ON CONFLICT (id) DO NOTHING`,
+          [input.ownerId, `${name} Workspace`],
+        );
         const inserted = await tx.query(
-          `INSERT INTO projects (id, owner_id, name, slug)
-           VALUES ($1, $2, $3, $4)
+          `INSERT INTO projects (id, owner_id, workspace_id, name, slug)
+           VALUES ($1, $2, $2, $3, $4)
            RETURNING *`,
           [id, input.ownerId, name, slug],
         );

@@ -26,6 +26,7 @@ import { createPostgresClient, type PostgresOptions } from "./postgres-client";
 import { createPgliteClient, type PgliteOptions } from "./pglite-client";
 import { createUserRepository } from "./user-repository";
 import { createProjectRepository } from "./project-repository";
+import { createWorkspaceRepository } from "./workspace-repository";
 import { createSessionRepository } from "./session-repository";
 import { createAuditRepository } from "./audit-repository";
 import {
@@ -73,6 +74,7 @@ export interface ServerRuntime {
   sql: SqlClient;
   users: ReturnType<typeof createUserRepository>;
   projects: ReturnType<typeof createProjectRepository>;
+  workspaces: ReturnType<typeof createWorkspaceRepository>;
   sessions: ReturnType<typeof createSessionRepository>;
   audit: ReturnType<typeof createAuditRepository>;
   agentIdentities: ReturnType<typeof createAgentIdentityRepository>;
@@ -129,6 +131,7 @@ export async function createServerRuntime(
   await assertProjectVolumeUsable(config.projectVolume);
 
   const projects = createProjectRepository(sql);
+  const workspaces = createWorkspaceRepository(sql);
   const storageFor = (projectId: string) =>
     createFsProjectStorage({
       root: path.join(config.projectVolume, projectId),
@@ -151,6 +154,7 @@ export async function createServerRuntime(
     sql,
     users: createUserRepository(sql),
     projects,
+    workspaces,
     sessions: createSessionRepository(sql),
     audit: createAuditRepository(sql),
     agentIdentities: createAgentIdentityRepository(sql),

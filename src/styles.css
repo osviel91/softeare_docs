@@ -3119,6 +3119,20 @@ body {
   font-size: 12px;
 }
 
+.settings-user__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.settings-user__role {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 650;
+  text-transform: uppercase;
+}
+
 @media (max-width: 640px) {
   .settings-page {
     padding: 28px 20px 48px;
@@ -3135,6 +3149,11 @@ body {
 
   .settings-user select {
     width: 100%;
+  }
+
+  .settings-user__actions {
+    align-items: stretch;
+    flex-direction: column;
   }
 }
 

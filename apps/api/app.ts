@@ -20,6 +20,7 @@ import {
   type ServerRuntime,
 } from "../../src/persistence/server-runtime";
 import { createProjectCatalog } from "../../src/application/project-catalog";
+import { createWorkspaceService } from "../../src/application/workspace-service";
 import { createAgentService } from "../../src/application/agent-service";
 import { createCredentialMint } from "./auth/agent-credential";
 import type { ServerConfig } from "./config";
@@ -32,6 +33,7 @@ export interface AppDependencies {
   sql: ServerRuntime["sql"];
   users: ServerRuntime["users"];
   projects: ServerRuntime["projects"];
+  workspaces: ServerRuntime["workspaces"];
   sessions: ServerRuntime["sessions"];
   audit: ServerRuntime["audit"];
   /** Agent identities: the automation principals a user owns. */
@@ -49,6 +51,7 @@ export interface AppDependencies {
    * so one instance serves every request.
    */
   catalog: ReturnType<typeof createProjectCatalog>;
+  workspaceService: ReturnType<typeof createWorkspaceService>;
   /** Where a project's files live. Never derived from a request. */
   storageFor: ServerRuntime["storageFor"];
   /**
@@ -132,6 +135,7 @@ export async function createApp(
     sql: runtime.sql,
     users: runtime.users,
     projects: runtime.projects,
+    workspaces: runtime.workspaces,
     sessions: runtime.sessions,
     audit: runtime.audit,
     agentIdentities: runtime.agentIdentities,
@@ -152,6 +156,7 @@ export async function createApp(
       storage: runtime.storageFor,
       mutations: runtime.mutations,
     }),
+    workspaceService: createWorkspaceService(runtime.workspaces),
     storageFor: runtime.storageFor,
     locationFor: runtime.locationFor,
     ping: runtime.ping,

@@ -2,8 +2,7 @@
  * The workspace switcher's contract (Phase 4A).
  *
  * The two things worth pinning down are the ones a user notices: anonymous people
- * are told how to reach server projects instead of being shown an empty section,
- * and a signed-in person can see theirs and open one. Everything else is layout.
+ * can see local sources and server projects. Everything else is layout.
  */
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
@@ -35,10 +34,9 @@ function renderSwitcher(
     onCreateServerProject: vi.fn(),
   };
   render(
-    <WorkspaceSwitcher
-      mode="local"
-      auth={{ status: "anonymous", user: null }}
-      {...handlers}
+      <WorkspaceSwitcher
+        mode="local"
+        {...handlers}
       {...overrides}
     />,
   );
@@ -46,12 +44,11 @@ function renderSwitcher(
 }
 
 describe("WorkspaceSwitcher", () => {
-  it("keeps local mode usable and hides server sources while anonymous", () => {
+  it("lists local sources", () => {
     const handlers = renderSwitcher({ folderSupported: true });
     fireEvent.click(screen.getByTestId("workspace-local"));
     expect(handlers.onOpenLocal).toHaveBeenCalledTimes(1);
-    expect(screen.queryByTestId("workspace-server-toggle")).toBeNull();
-    expect(screen.queryAllByTestId("workspace-server-project")).toHaveLength(0);
+    expect(screen.getByTestId("workspace-server-toggle")).toBeInTheDocument();
   });
 
   it("collapses local sources", () => {
@@ -66,16 +63,7 @@ describe("WorkspaceSwitcher", () => {
 
   it("lists the signed-in user's projects and opens the chosen one", () => {
     const handlers = renderSwitcher({
-      auth: {
-        status: "authenticated",
-        user: {
-          id: "u1",
-          displayName: "Ada",
-          email: "ada@example.test",
-          authType: "session",
-          scopes: [],
-        },
-      },
+      mode: "server",
       serverProjects: [project("p1", "Payments"), project("p2", "OSIRIS")],
       activeServerProjectId: "p2",
     });
@@ -97,16 +85,7 @@ describe("WorkspaceSwitcher", () => {
 
   it("creates a server project by name and clears the field", () => {
     const handlers = renderSwitcher({
-      auth: {
-        status: "authenticated",
-        user: {
-          id: "u1",
-          displayName: "Ada",
-          email: null,
-          authType: "session",
-          scopes: [],
-        },
-      },
+      mode: "server",
     });
 
     const input = screen.getByTestId(
@@ -126,16 +105,7 @@ describe("WorkspaceSwitcher", () => {
   it("shows a load failure with a way to retry", () => {
     const onReloadServerProjects = vi.fn();
     renderSwitcher({
-      auth: {
-        status: "authenticated",
-        user: {
-          id: "u1",
-          displayName: "Ada",
-          email: null,
-          authType: "session",
-          scopes: [],
-        },
-      },
+      mode: "server",
       serverProjectsError: "The projects could not be loaded.",
       onReloadServerProjects,
     });
@@ -151,16 +121,6 @@ describe("WorkspaceSwitcher", () => {
     const onDownloadLocalCopy = vi.fn();
     renderSwitcher({
       mode: "server",
-      auth: {
-        status: "authenticated",
-        user: {
-          id: "u1",
-          displayName: "Ada",
-          email: null,
-          authType: "session",
-          scopes: [],
-        },
-      },
       onDownloadLocalCopy,
     });
 
@@ -171,16 +131,6 @@ describe("WorkspaceSwitcher", () => {
   it("opens server settings without expanding the sidebar", () => {
     const onOpenSettings = vi.fn();
     renderSwitcher({
-      auth: {
-        status: "authenticated",
-        user: {
-          id: "u1",
-          displayName: "Ada",
-          email: null,
-          authType: "session",
-          scopes: [],
-        },
-      },
       onOpenSettings,
     });
 
@@ -189,4 +139,5 @@ describe("WorkspaceSwitcher", () => {
     expect(onOpenSettings).toHaveBeenCalledTimes(1);
     expect(screen.queryByTestId("workspace-admin-users")).toBeNull();
   });
+
 });

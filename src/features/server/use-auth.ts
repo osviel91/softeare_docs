@@ -29,6 +29,14 @@ export interface AuthState {
 export interface AuthHook extends AuthState {
   /** Leave for the provider's sign-in page, returning here afterwards. */
   signIn(): void;
+  /** Authenticate with a local email/password account. */
+  signInLocal?: (email: string, password: string) => Promise<void>;
+  /** Create a pending local account. */
+  registerLocal?: (
+    email: string,
+    password: string,
+    displayName: string,
+  ) => Promise<string>;
   /** Revoke the session server-side and become anonymous. */
   signOut(): Promise<void>;
   /** Ask the server again — after a redirect back from the provider, say. */
@@ -76,6 +84,30 @@ export function useAuth(client: ServerApiClient): AuthHook {
     window.location.assign(client.loginUrl(returnTo));
   }, [client]);
 
+  const signInLocal = useCallback(
+    async (email: string, password: string): Promise<void> => {
+      await client.loginLocal({ email, password });
+      await refresh();
+    },
+    [client, refresh],
+  );
+
+  const registerLocal = useCallback(
+    async (
+      email: string,
+      password: string,
+      displayName: string,
+    ): Promise<string> => {
+      const result = await client.registerLocalAccount({
+        email,
+        password,
+        displayName,
+      });
+      return result.message;
+    },
+    [client],
+  );
+
   const signOut = useCallback(async (): Promise<void> => {
     try {
       await client.logout();
@@ -87,5 +119,5 @@ export function useAuth(client: ServerApiClient): AuthHook {
     }
   }, [client]);
 
-  return { ...state, signIn, signOut, refresh };
+  return { ...state, signIn, signInLocal, registerLocal, signOut, refresh };
 }

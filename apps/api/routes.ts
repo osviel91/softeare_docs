@@ -73,6 +73,8 @@ export function createRouter(dependencies: AppDependencies): Router {
 
   router.get("/auth/login", (request) => auth.login(request));
   router.get("/auth/callback", (request) => auth.callback(request));
+  router.post("/auth/register", (request) => auth.register(request));
+  router.post("/auth/local-login", (request) => auth.localLogin(request));
   router.post("/auth/logout", (request) => auth.logout(request));
   router.get("/auth/logout", (request) => auth.endSession(request));
 
@@ -100,9 +102,9 @@ export function createRouter(dependencies: AppDependencies): Router {
         user: {
           id: context.principal.subjectUserId,
           displayName: context.principal.displayName ?? "",
-           email: context.principal.email ?? null,
-           accountStatus: context.principal.accountStatus ?? "ACTIVE",
-           platformAdmin: context.principal.platformAdmin === true,
+          email: context.principal.email ?? null,
+          accountStatus: context.principal.accountStatus ?? "ACTIVE",
+          platformAdmin: context.principal.platformAdmin === true,
           authType: context.principal.authType,
           scopes: [...context.principal.scopes],
         },
@@ -117,7 +119,11 @@ export function createRouter(dependencies: AppDependencies): Router {
     guarded(correlationId(request), async () => {
       const context = await contextOf(request);
       if (context.principal.platformAdmin !== true) {
-        return errorResponse(403, "forbidden", "Platform administrator access is required.");
+        return errorResponse(
+          403,
+          "forbidden",
+          "Platform administrator access is required.",
+        );
       }
       const users = await dependencies.users.list();
       return json(200, {
@@ -137,12 +143,24 @@ export function createRouter(dependencies: AppDependencies): Router {
     guarded(correlationId(request), async () => {
       const context = await contextOf(request);
       if (context.principal.platformAdmin !== true) {
-        return errorResponse(403, "forbidden", "Platform administrator access is required.");
+        return errorResponse(
+          403,
+          "forbidden",
+          "Platform administrator access is required.",
+        );
       }
       const body = parseJsonBody(request.body);
       const status = body.status;
-      if (status !== "PENDING" && status !== "ACTIVE" && status !== "SUSPENDED") {
-        return errorResponse(422, "invalid", "Status must be PENDING, ACTIVE or SUSPENDED.");
+      if (
+        status !== "PENDING" &&
+        status !== "ACTIVE" &&
+        status !== "SUSPENDED"
+      ) {
+        return errorResponse(
+          422,
+          "invalid",
+          "Status must be PENDING, ACTIVE or SUSPENDED.",
+        );
       }
       const user = await dependencies.users.setStatus(params.userId, status);
       return json(200, {
@@ -162,7 +180,8 @@ export function createRouter(dependencies: AppDependencies): Router {
   router.get("/api/workspaces", async (request) =>
     guarded(correlationId(request), async () => {
       const context = await contextOf(request);
-      const workspaces = await dependencies.workspaceService.listWorkspaces(context);
+      const workspaces =
+        await dependencies.workspaceService.listWorkspaces(context);
       return json(200, { workspaces: workspaces.map(workspaceView) });
     }),
   );
@@ -170,35 +189,50 @@ export function createRouter(dependencies: AppDependencies): Router {
   router.get("/api/workspaces/:workspaceId/members", async (request, params) =>
     guarded(correlationId(request), async () => {
       const context = await contextOf(request);
-      const members = await dependencies.workspaceService.listMembers(context, params.workspaceId);
+      const members = await dependencies.workspaceService.listMembers(
+        context,
+        params.workspaceId,
+      );
       return json(200, { members: members.map(workspaceMemberView) });
     }),
   );
 
-  router.put("/api/workspaces/:workspaceId/members/:userId", async (request, params) =>
-    guarded(correlationId(request), async () => {
-      const context = await contextOf(request);
-      const body = parseJsonBody(request.body);
-      const role = requireBodyString(body, "role");
-      if (!isWorkspaceRole(role)) {
-        return errorResponse(422, "invalid", "The role must be ADMIN, EDITOR or VIEWER.");
-      }
-      const member = await dependencies.workspaceService.setMember(
-        context,
-        params.workspaceId,
-        params.userId,
-        role,
-      );
-      return json(200, { member: workspaceMemberView(member) });
-    }),
+  router.put(
+    "/api/workspaces/:workspaceId/members/:userId",
+    async (request, params) =>
+      guarded(correlationId(request), async () => {
+        const context = await contextOf(request);
+        const body = parseJsonBody(request.body);
+        const role = requireBodyString(body, "role");
+        if (!isWorkspaceRole(role)) {
+          return errorResponse(
+            422,
+            "invalid",
+            "The role must be ADMIN, EDITOR or VIEWER.",
+          );
+        }
+        const member = await dependencies.workspaceService.setMember(
+          context,
+          params.workspaceId,
+          params.userId,
+          role,
+        );
+        return json(200, { member: workspaceMemberView(member) });
+      }),
   );
 
-  router.delete("/api/workspaces/:workspaceId/members/:userId", async (request, params) =>
-    guarded(correlationId(request), async () => {
-      const context = await contextOf(request);
-      await dependencies.workspaceService.removeMember(context, params.workspaceId, params.userId);
-      return json(204, null);
-    }),
+  router.delete(
+    "/api/workspaces/:workspaceId/members/:userId",
+    async (request, params) =>
+      guarded(correlationId(request), async () => {
+        const context = await contextOf(request);
+        await dependencies.workspaceService.removeMember(
+          context,
+          params.workspaceId,
+          params.userId,
+        );
+        return json(204, null);
+      }),
   );
 
   // ---- Projects -------------------------------------------------------------

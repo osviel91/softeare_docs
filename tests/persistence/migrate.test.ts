@@ -50,7 +50,7 @@ describe("migrate", () => {
     const client = await createPgliteClient();
     try {
       const report = await migrate(client);
-       expect(report.applied).toEqual([1, 2, 3, 4, 5]);
+      expect(report.applied).toEqual([1, 2, 3, 4, 5, 6]);
       expect(report.present).toEqual([]);
       const tables = await client.query(
         `SELECT table_name FROM information_schema.tables
@@ -67,9 +67,10 @@ describe("migrate", () => {
         "resources",
         "schema_migrations",
         "sessions",
-         "users",
-         "workspaces",
-         "workspace_members",
+        "users",
+        "workspaces",
+        "workspace_members",
+        "local_credentials",
         "workspace_operations",
         "idempotency_records",
       ]) {
@@ -82,13 +83,34 @@ describe("migrate", () => {
     }
   });
 
+  it("creates workspace-backed local credential storage", async () => {
+    const client = await createPgliteClient();
+    try {
+      await migrate(client);
+      const columns = await client.query(
+        `SELECT column_name FROM information_schema.columns
+         WHERE table_name = 'local_credentials' ORDER BY ordinal_position`,
+      );
+      expect(columns.rows.map((row) => String(row.column_name))).toEqual([
+        "user_id",
+        "email",
+        "password_salt",
+        "password_hash",
+        "created_at",
+        "updated_at",
+      ]);
+    } finally {
+      await client.close();
+    }
+  });
+
   it("is idempotent: running it twice changes nothing", async () => {
     const client = await createPgliteClient();
     try {
       await migrate(client);
       const second = await migrate(client);
       expect(second.applied).toEqual([]);
-        expect(second.present).toEqual([1, 2, 3, 4, 5]);
+      expect(second.present).toEqual([1, 2, 3, 4, 5, 6]);
     } finally {
       await client.close();
     }

@@ -6,7 +6,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import App from "../src/App";
+import App from "./app-harness";
 
 /**
  * In-browser projects (no folder open). jsdom has no IndexedDB, so the app uses

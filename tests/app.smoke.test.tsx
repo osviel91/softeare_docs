@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
-import App from "../src/App";
+import App from "./app-harness";
 
 describe("App shell", () => {
   it("renders the product name in the toolbar", () => {

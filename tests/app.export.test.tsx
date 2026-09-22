@@ -6,7 +6,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import App from "../src/App";
+import App from "./app-harness";
 import { readZip } from "../src/workspace/transfer/zip";
 
 // Capture what the shell hands to the browser rather than performing a download.

@@ -25,8 +25,8 @@ observable browser workflow and automated tests.
 
 Deliver a complete browser-testable account flow:
 
-- [ ] Local registration form.
-- [ ] Local login form.
+- [x] Local registration form.
+- [x] Local login form.
 - [x] Google login continuing through the existing OIDC flow.
 - [x] Pending-account response after Google authentication.
 - [x] Platform-admin bootstrap through `PLATFORM_ADMIN_EMAIL`.
@@ -34,9 +34,9 @@ Deliver a complete browser-testable account flow:
 - [x] `/api/me` exposes the account status needed by the browser.
 - [ ] Audit events for registration, activation, suspension, and rejected login.
 
-Delivered checkpoint: approval-aware Google authentication, account status handling,
-platform-admin API and browser controls (`6bb15c5`, `49680f4`). Local credentials
-remain Phase 2 work.
+Delivered checkpoint: approval-aware Google and local authentication, account status
+handling, platform-admin API and browser controls (`6bb15c5`, `49680f4`). Audit events
+remain outstanding.
 
 Acceptance workflow:
 
@@ -46,13 +46,17 @@ Acceptance workflow:
 4. Sign in again and access the authenticated application.
 5. Suspend the user and observe that the existing session is rejected.
 
-### Phase 2 — User and identity storage (not started)
+### Phase 2 — User and identity storage (delivered)
 
-- Move provider identities into `user_identities`.
-- Add `local_credentials` with `scrypt` password hashes.
-- Add account status and activation metadata.
-- Preserve existing Google users through a migration.
-- Add repository and migration tests.
+- [x] Move provider identities into `user_identities`.
+- [x] Add `local_credentials` with `scrypt` password hashes.
+- [x] Add account status and activation metadata.
+- [x] Preserve existing Google users through a migration.
+- [x] Add repository and migration tests.
+
+Acceptance workflow status: local registration creates a pending account, pending
+accounts cannot log in, and an activated account can log in through an HttpOnly
+session.
 
 ### Phase 3 — Workspace foundation (foundation delivered)
 
@@ -120,7 +124,8 @@ The phase checkpoint also runs `npm test`, `npm run typecheck`, `npm run lint`,
 
 ## Current checkpoint
 
-`bf0411b` is the deployed workspace-foundation checkpoint. It passed the full
-Vitest suite, typecheck, web/API builds, and `npm run test:containers`. Project
-authorization still uses project membership; invitations, local credentials and
-workspace-aware project listing are intentionally not part of this checkpoint.
+`bf0411b` is the deployed workspace-foundation checkpoint. The current working tree
+also delivers local credentials and passes the full Vitest suite, typecheck, web/API
+builds, and container verification. Project authorization still uses project
+membership; invitations and workspace-aware project listing remain intentionally
+undelivered.

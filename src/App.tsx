@@ -165,6 +165,7 @@ import { useAuth } from "./features/server/use-auth";
 import { useServerWorkspaces } from "./features/server/use-server-workspaces";
 import AgentsAndTokens from "./features/server/AgentsAndTokens";
 import PlatformAdministration from "./features/server/PlatformAdministration";
+import LoginScreen from "./features/server/LoginScreen";
 import { RevisionConflictError } from "./workspace/server/api-errors";
 import { supportsForcedWrite } from "./workspace/server/server-workspace-repository";
 
@@ -239,14 +240,20 @@ export default function App() {
   const auth = useAuth(apiClient);
   const server = useServerWorkspaces(apiClient, auth);
   const [adminUsers, setAdminUsers] = useState<ServerAdminUser[]>([]);
-  const [serverWorkspaces, setServerWorkspaces] = useState<ServerWorkspace[]>([]);
-  const [workspaceMembersByWorkspaceId, setWorkspaceMembersByWorkspaceId] = useState<Record<string, ServerWorkspaceMember[]>>({});
+  const [serverWorkspaces, setServerWorkspaces] = useState<ServerWorkspace[]>(
+    [],
+  );
+  const [workspaceMembersByWorkspaceId, setWorkspaceMembersByWorkspaceId] =
+    useState<Record<string, ServerWorkspaceMember[]>>({});
   useEffect(() => {
     if (auth.user?.platformAdmin !== true) {
       setAdminUsers([]);
       return;
     }
-    void apiClient.listAdminUsers().then(setAdminUsers).catch(() => setAdminUsers([]));
+    void apiClient
+      .listAdminUsers()
+      .then(setAdminUsers)
+      .catch(() => setAdminUsers([]));
   }, [apiClient, auth.user?.platformAdmin]);
   useEffect(() => {
     if (auth.status !== "authenticated") {
@@ -255,24 +262,33 @@ export default function App() {
       return;
     }
     let cancelled = false;
-    void apiClient.listWorkspaces().then((workspaces) => {
-      if (cancelled) return;
-      setServerWorkspaces(workspaces);
-      void Promise.all(workspaces.map(async (workspace) => {
-        try {
-          return [workspace.id, await apiClient.listWorkspaceMembers(workspace.id)] as const;
-        } catch {
-          return [workspace.id, []] as const;
+    void apiClient
+      .listWorkspaces()
+      .then((workspaces) => {
+        if (cancelled) return;
+        setServerWorkspaces(workspaces);
+        void Promise.all(
+          workspaces.map(async (workspace) => {
+            try {
+              return [
+                workspace.id,
+                await apiClient.listWorkspaceMembers(workspace.id),
+              ] as const;
+            } catch {
+              return [workspace.id, []] as const;
+            }
+          }),
+        ).then((entries) => {
+          if (!cancelled)
+            setWorkspaceMembersByWorkspaceId(Object.fromEntries(entries));
+        });
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setServerWorkspaces([]);
+          setWorkspaceMembersByWorkspaceId({});
         }
-      })).then((entries) => {
-        if (!cancelled) setWorkspaceMembersByWorkspaceId(Object.fromEntries(entries));
       });
-    }).catch(() => {
-      if (!cancelled) {
-        setServerWorkspaces([]);
-        setWorkspaceMembersByWorkspaceId({});
-      }
-    });
     return () => {
       cancelled = true;
     };
@@ -280,19 +296,29 @@ export default function App() {
   const setAdminUserStatus = useCallback(
     (userId: string, status: ServerAdminUser["status"]) => {
       void apiClient.setUserStatus(userId, status).then((updated) => {
-        setAdminUsers((users) => users.map((user) => user.id === updated.id ? updated : user));
+        setAdminUsers((users) =>
+          users.map((user) => (user.id === updated.id ? updated : user)),
+        );
       });
     },
     [apiClient],
   );
   const setWorkspaceMemberRole = useCallback(
-    (workspaceId: string, userId: string, role: ServerWorkspaceMember["role"]) => {
-      void apiClient.setWorkspaceMemberRole(workspaceId, userId, role).then((updated) => {
-        setWorkspaceMembersByWorkspaceId((membersByWorkspace) => ({
-          ...membersByWorkspace,
-          [workspaceId]: (membersByWorkspace[workspaceId] ?? []).map((member) => member.userId === updated.userId ? updated : member),
-        }));
-      });
+    (
+      workspaceId: string,
+      userId: string,
+      role: ServerWorkspaceMember["role"],
+    ) => {
+      void apiClient
+        .setWorkspaceMemberRole(workspaceId, userId, role)
+        .then((updated) => {
+          setWorkspaceMembersByWorkspaceId((membersByWorkspace) => ({
+            ...membersByWorkspace,
+            [workspaceId]: (membersByWorkspace[workspaceId] ?? []).map(
+              (member) => (member.userId === updated.userId ? updated : member),
+            ),
+          }));
+        });
     },
     [apiClient],
   );
@@ -301,7 +327,9 @@ export default function App() {
       void apiClient.removeWorkspaceMember(workspaceId, userId).then(() => {
         setWorkspaceMembersByWorkspaceId((membersByWorkspace) => ({
           ...membersByWorkspace,
-          [workspaceId]: (membersByWorkspace[workspaceId] ?? []).filter((member) => member.userId !== userId),
+          [workspaceId]: (membersByWorkspace[workspaceId] ?? []).filter(
+            (member) => member.userId !== userId,
+          ),
         }));
       });
     },
@@ -2032,6 +2060,14 @@ export default function App() {
 
   const folderOpen = openedFolder !== null;
 
+  const hasAppAccess =
+    auth.status === "authenticated" &&
+    (auth.user?.platformAdmin === true ||
+      auth.user?.accountStatus === undefined ||
+      auth.user?.accountStatus === "ACTIVE");
+
+  if (!hasAppAccess) return <LoginScreen auth={auth} />;
+
   return (
     <div className="app" data-testid="app-shell">
       <header className="app__toolbar">
@@ -2156,18 +2192,11 @@ export default function App() {
         )}
 
         <div className="app__toolbar-actions">
-          {auth.status === "anonymous" ? (
-            <button
-              type="button"
-              className="button app__auth-button"
-              data-testid="toolbar-sign-in"
-              onClick={auth.signIn}
-            >
-              Sign in
-            </button>
-          ) : auth.status === "authenticated" ? (
+          {auth.status === "authenticated" ? (
             <div className="app__account" data-testid="toolbar-account">
-              <span>{auth.user?.displayName || auth.user?.id || "Signed in"}</span>
+              <span>
+                {auth.user?.displayName || auth.user?.id || "Signed in"}
+              </span>
               <button
                 type="button"
                 className="app__sign-out"
@@ -2238,7 +2267,6 @@ export default function App() {
                     mode={workspaceMode}
                     folderName={openedFolder?.folderName ?? null}
                     folderSupported={supportsFileSystemAccess()}
-                    auth={auth}
                     serverProjects={server.projects}
                     serverProjectsLoading={server.projectsLoading}
                     serverProjectsError={server.projectsError}
@@ -2246,8 +2274,6 @@ export default function App() {
                     serverOpenError={server.openError}
                     onOpenLocal={openLocalWorkspace}
                     onOpenFolder={openFolder}
-                    onSignIn={auth.signIn}
-                    onSignOut={auth.signOut}
                     onOpenServerProject={(project) => {
                       void server.openProject(project);
                     }}
@@ -2258,7 +2284,7 @@ export default function App() {
                       void server.refresh();
                     }}
                     onDownloadLocalCopy={exportProjectCommand}
-                     onOpenSettings={openSettings}
+                    onOpenSettings={openSettings}
                   />
                 }
                 onAddMenu={(project, position) =>

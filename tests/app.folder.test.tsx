@@ -6,7 +6,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import App from "../src/App";
+import App from "./app-harness";
 import type {
   FsDirectoryHandle,
   FsEntryHandle,

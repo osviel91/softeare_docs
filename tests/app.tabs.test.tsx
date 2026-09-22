@@ -6,7 +6,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import App from "../src/App";
+import App from "./app-harness";
 
 /**
  * A project holds diagrams and markdown documents, and both kinds open into the

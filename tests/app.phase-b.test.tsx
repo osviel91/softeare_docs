@@ -6,7 +6,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import App from "../src/App";
+import App from "./app-harness";
 
 /**
  * Phase B: the project-intelligence surfaces, driven through the real shell.

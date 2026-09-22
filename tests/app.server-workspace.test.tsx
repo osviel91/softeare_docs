@@ -236,25 +236,12 @@ async function waitForCall(
 }
 
 describe("App — anonymous browser", () => {
-  it("keeps local mode working and offers sign-in from the toolbar", async () => {
+  it("stays on the login screen until authentication succeeds", async () => {
     render(<App />);
 
-    await screen.findByTestId("toolbar-sign-in");
+    await screen.findByTestId("login-page");
+    expect(screen.queryByTestId("app-shell")).toBeNull();
     expect(screen.queryByTestId("workspace-server-toggle")).toBeNull();
-    expect(screen.queryAllByTestId("workspace-server-project")).toHaveLength(0);
-
-    // Local mode still works exactly as before.
-    fireEvent.change(screen.getByTestId("project-name-input"), {
-      target: { value: "Local" },
-    });
-    fireEvent.click(screen.getByTestId("create-project-button"));
-    await waitFor(() => {
-      expect(screen.getByTestId("project-name")).toHaveTextContent("Local");
-    });
-    expect(screen.getByTestId("workspace-local")).toHaveAttribute(
-      "aria-current",
-      "true",
-    );
   });
 });
 
@@ -277,6 +264,7 @@ describe("App — authenticated browser", () => {
     ]);
     render(<App />);
 
+    fireEvent.click(await screen.findByTestId("workspace-server-toggle"));
     const row = await screen.findByTestId("workspace-server-project");
     expect(row).toHaveTextContent("Payments");
     await act(async () => {

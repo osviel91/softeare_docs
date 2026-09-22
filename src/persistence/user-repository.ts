@@ -13,7 +13,11 @@
  * loser's insert fails, which is why `findOrCreateByExternalIdentity` retries
  * with a lookup instead of trusting its own read.
  */
-import type { AccountStatus, ExternalIdentity, User } from "../domain/user/user";
+import type {
+  AccountStatus,
+  ExternalIdentity,
+  User,
+} from "../domain/user/user";
 import type { SqlClient } from "./sql-client";
 import { createIdGenerator, type IdGenerator } from "../shared/ids/uuid";
 import { toUser } from "./rows";
@@ -24,6 +28,17 @@ export interface UserRepository {
 
   /** Find a user by the identity a provider asserts. */
   findByIdentity(issuer: string, subject: string): Promise<User | null>;
+
+  /** Find a local account and its password verifier by normalized email. */
+  findLocalByEmail(email: string): Promise<LocalLoginRecord | null>;
+
+  /** Create a pending local account, credential, and default workspace atomically. */
+  createLocalAccount(input: {
+    email: string;
+    displayName: string;
+    passwordSalt: string;
+    passwordHash: string;
+  }): Promise<User>;
 
   /**
    * Map an external identity onto an internal user, creating one on first login
@@ -39,6 +54,12 @@ export interface UserRepository {
 
   list(): Promise<User[]>;
   setStatus(id: string, status: AccountStatus): Promise<User>;
+}
+
+export interface LocalLoginRecord {
+  user: User;
+  passwordSalt: string;
+  passwordHash: string;
 }
 
 export interface UserRepositoryOptions {
@@ -75,6 +96,53 @@ export function createUserRepository(
     },
 
     findByIdentity,
+
+    async findLocalByEmail(email) {
+      const result = await client.query(
+        `SELECT u.*, c.password_salt, c.password_hash
+           FROM users u
+           JOIN local_credentials c ON c.user_id = u.id
+          WHERE c.email = $1`,
+        [email],
+      );
+      const row = result.rows[0];
+      if (!row) return null;
+      return {
+        user: toUser(row),
+        passwordSalt: String(row.password_salt),
+        passwordHash: String(row.password_hash),
+      };
+    },
+
+    async createLocalAccount(input) {
+      const id = newId();
+      const result = await client.transaction(async (tx) => {
+        const inserted = await tx.query(
+          `INSERT INTO users
+             (id, identity_issuer, identity_subject, display_name, email, status)
+           VALUES ($1, 'local', $2, $3, $2, 'PENDING')
+           RETURNING *`,
+          [id, input.email, input.displayName],
+        );
+        await tx.query(`INSERT INTO workspaces (id, name) VALUES ($1, $2)`, [
+          id,
+          `${input.displayName} Workspace`,
+        ]);
+        await tx.query(
+          `INSERT INTO workspace_members (workspace_id, user_id, role)
+           VALUES ($1, $1, 'ADMIN')`,
+          [id],
+        );
+        await tx.query(
+          `INSERT INTO local_credentials
+             (user_id, email, password_salt, password_hash)
+           VALUES ($1, $2, $3, $4)`,
+          [id, input.email, input.passwordSalt, input.passwordHash],
+        );
+        return inserted;
+      });
+      return toUser(result.rows[0]);
+    },
 
     async findOrCreateByExternalIdentity(identity) {
       const existing = await findByIdentity(identity.issuer, identity.subject);

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
-import App from "../../../src/App";
+import App from "../../app-harness";
 
 /** Read the diagram text currently shown in the preview. */
 function previewText(): string {

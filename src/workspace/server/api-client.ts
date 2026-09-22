@@ -201,6 +201,29 @@ export class ServerApiClient {
     return body.user ?? null;
   }
 
+  async registerLocalAccount(input: {
+    email: string;
+    password: string;
+    displayName?: string;
+  }): Promise<{ status: "PENDING"; message: string }> {
+    return this.request<{ status: "PENDING"; message: string }>(
+      "POST",
+      "/auth/register",
+      input,
+    );
+  }
+
+  async loginLocal(input: {
+    email: string;
+    password: string;
+  }): Promise<{ status: "authenticated" }> {
+    return this.request<{ status: "authenticated" }>(
+      "POST",
+      "/auth/local-login",
+      input,
+    );
+  }
+
   async listAdminUsers(): Promise<ServerAdminUser[]> {
     const body = await this.request<{ users: ServerAdminUser[] }>(
       "GET",
@@ -222,11 +245,16 @@ export class ServerApiClient {
   }
 
   async listWorkspaces(): Promise<ServerWorkspace[]> {
-    const body = await this.request<{ workspaces: ServerWorkspace[] }>("GET", "/api/workspaces");
+    const body = await this.request<{ workspaces: ServerWorkspace[] }>(
+      "GET",
+      "/api/workspaces",
+    );
     return body.workspaces ?? [];
   }
 
-  async listWorkspaceMembers(workspaceId: string): Promise<ServerWorkspaceMember[]> {
+  async listWorkspaceMembers(
+    workspaceId: string,
+  ): Promise<ServerWorkspaceMember[]> {
     const body = await this.request<{ members: ServerWorkspaceMember[] }>(
       "GET",
       `/api/workspaces/${encodeURIComponent(workspaceId)}/members`,
@@ -247,7 +275,10 @@ export class ServerApiClient {
     return body.member;
   }
 
-  async removeWorkspaceMember(workspaceId: string, userId: string): Promise<void> {
+  async removeWorkspaceMember(
+    workspaceId: string,
+    userId: string,
+  ): Promise<void> {
     await this.request<unknown>(
       "DELETE",
       `/api/workspaces/${encodeURIComponent(workspaceId)}/members/${encodeURIComponent(userId)}`,

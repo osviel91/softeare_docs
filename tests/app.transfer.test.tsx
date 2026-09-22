@@ -7,7 +7,7 @@ import {
   within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import App from "../src/App";
+import App from "./app-harness";
 import type {
   DiagramFile,
   NoteFile,

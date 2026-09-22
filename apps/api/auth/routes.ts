@@ -27,6 +27,7 @@ import {
   clearCookie,
   errorResponse,
   json,
+  parseJsonBody,
   redirect,
 } from "../http/http";
 import type { ServerRequest, ServerResponse } from "../http/http";
@@ -52,11 +53,14 @@ import {
   type OidcClient,
 } from "./oidc";
 import { OidcError } from "./oidc";
+import { hashPassword, verifyPassword } from "./password";
 
 /** The routes the authentication surface exposes. */
 export interface AuthRoutes {
   login(request: ServerRequest): Promise<ServerResponse>;
   callback(request: ServerRequest): Promise<ServerResponse>;
+  register(request: ServerRequest): Promise<ServerResponse>;
+  localLogin(request: ServerRequest): Promise<ServerResponse>;
   logout(request: ServerRequest): Promise<ServerResponse>;
   endSession(request: ServerRequest): Promise<ServerResponse>;
 }
@@ -101,6 +105,27 @@ export function createAuthRoutes(
   const failedLogin = (requestId: string, reason: string): ServerResponse => {
     process.stderr.write(`${requestId} login failed: ${reason}\n`);
     return redirect("/?auth=failed", 303);
+  };
+
+  const createSessionCookie = async (
+    request: ServerRequest,
+    userId: string,
+  ) => {
+    const sessionId = crypto.randomUUID();
+    const token = createSessionToken(sessionId);
+    await sessions.create({
+      id: sessionId,
+      userId,
+      tokenHash: hashSessionToken(token),
+      expiresAt: new Date(Date.now() + config.sessionTtlSeconds * 1000),
+      userAgent: userAgentOf(request),
+    });
+    return cookie(SESSION_COOKIE, token, {
+      httpOnly: true,
+      secure: config.secureCookies,
+      sameSite: "Lax",
+      maxAgeSeconds: config.sessionTtlSeconds,
+    });
   };
 
   return {
@@ -199,35 +224,109 @@ export function createAuthRoutes(
             "UPDATE users SET platform_admin = true, status = 'ACTIVE', updated_at = now() WHERE id = $1",
             [user.id],
           );
-        } else if (config.platformAdminEmail !== null && user.status === "ACTIVE") {
+        } else if (
+          config.platformAdminEmail !== null &&
+          user.status === "ACTIVE"
+        ) {
           await dependencies.sql.query(
             "UPDATE users SET status = 'PENDING', updated_at = now() WHERE id = $1",
             [user.id],
           );
         }
-        const sessionId = crypto.randomUUID();
-        const token = createSessionToken(sessionId);
-        await sessions.create({
-          id: sessionId,
-          userId: user.id,
-          tokenHash: hashSessionToken(token),
-          expiresAt: new Date(Date.now() + config.sessionTtlSeconds * 1000),
-          userAgent: userAgentOf(request),
-        });
+        const sessionCookie = await createSessionCookie(request, user.id);
         const response = redirect(safeReturnTo(transaction.returnTo), 303);
         return {
           ...response,
-          headers: [
-            ...response.headers,
-            cookie(SESSION_COOKIE, token, {
-              httpOnly: true,
-              secure: config.secureCookies,
-              sameSite: "Lax",
-              maxAgeSeconds: config.sessionTtlSeconds,
-            }),
-            clearLogin(),
-          ],
+          headers: [...response.headers, sessionCookie, clearLogin()],
         };
+      });
+    },
+
+    async register(request) {
+      return guarded(correlationId(request), async () => {
+        const body = parseJsonBody(request.body);
+        const email = normalizedEmail(body.email);
+        const password = typeof body.password === "string" ? body.password : "";
+        if (!isEmail(email)) {
+          return errorResponse(422, "invalid", "Enter a valid email address.");
+        }
+        if (password.length < 12) {
+          return errorResponse(
+            422,
+            "invalid",
+            "Password must be at least 12 characters.",
+          );
+        }
+        const existing = await users.findLocalByEmail(email);
+        if (existing) {
+          return errorResponse(
+            409,
+            "conflict",
+            "An account with that email already exists.",
+          );
+        }
+        const displayName =
+          typeof body.displayName === "string" && body.displayName.trim() !== ""
+            ? body.displayName.trim().slice(0, 120)
+            : email.split("@", 1)[0];
+        const passwordData = await hashPassword(password);
+        try {
+          await users.createLocalAccount({
+            email,
+            displayName,
+            passwordSalt: passwordData.salt,
+            passwordHash: passwordData.hash,
+          });
+        } catch {
+          return errorResponse(
+            409,
+            "conflict",
+            "An account with that email already exists.",
+          );
+        }
+        return json(202, {
+          status: "PENDING",
+          message: "Your account is awaiting administrator approval.",
+        });
+      });
+    },
+
+    async localLogin(request) {
+      return guarded(correlationId(request), async () => {
+        const body = parseJsonBody(request.body);
+        const email = normalizedEmail(body.email);
+        const password = typeof body.password === "string" ? body.password : "";
+        const record = isEmail(email)
+          ? await users.findLocalByEmail(email)
+          : null;
+        const valid = record
+          ? await verifyPassword(
+              password,
+              record.passwordSalt,
+              record.passwordHash,
+            )
+          : false;
+        if (!record || !valid) {
+          return errorResponse(
+            401,
+            "unauthorized",
+            "Invalid email or password.",
+          );
+        }
+        if (record.user.status !== "ACTIVE" && !record.user.platformAdmin) {
+          return errorResponse(
+            403,
+            "forbidden",
+            record.user.status === "PENDING"
+              ? "Your account is awaiting administrator approval."
+              : "This account cannot sign in.",
+          );
+        }
+        const sessionCookie = await createSessionCookie(
+          request,
+          record.user.id,
+        );
+        return json(200, { status: "authenticated" }, [sessionCookie]);
       });
     },
 
@@ -262,4 +361,12 @@ export function createAuthRoutes(
       });
     },
   };
+}
+
+function normalizedEmail(value: unknown): string {
+  return typeof value === "string" ? value.trim().toLowerCase() : "";
+}
+
+function isEmail(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }

@@ -30,14 +30,14 @@ an administrator assignment.
 _Avoid_: Project member
 
 **Workspace administrator**:
- A workspace member with the `ADMIN` role, allowed to manage that workspace's
- members. Invitation management will use the same authority when invitations
- are introduced.
+A workspace member with the `ADMIN` role, allowed to manage that workspace's
+members. Invitation management will use the same authority when invitations
+are introduced.
 _Avoid_: Platform administrator, project owner
 
 **Workspace role**:
- The role a user has inside one workspace: `ADMIN`, `EDITOR`, or `VIEWER`.
- Workspace roles are separate from project roles.
+The role a user has inside one workspace: `ADMIN`, `EDITOR`, or `VIEWER`.
+Workspace roles are separate from project roles.
 _Avoid_: Project role
 
 **Invitation**:
@@ -47,8 +47,8 @@ accepted.
 _Avoid_: Invite code, access token
 
 **Default workspace**:
- The one workspace automatically created for every user. It cannot be deleted,
- but it can be renamed.
+The one workspace automatically created for every user. It cannot be deleted,
+but it can be renamed.
 _Avoid_: Personal project, home project
 
 ## Current boundaries
@@ -58,5 +58,6 @@ _Avoid_: Personal project, home project
 - Workspace administrators can list members, change roles, and remove members.
 - Projects have a workspace association, but project authorization still uses
   project membership until the workspace-aware project phase is delivered.
-- Local password credentials, invitations, workspace creation and workspace
-  selection are not yet part of the delivered model.
+- Local password credentials use scrypt hashes and approval-controlled sessions.
+- Invitations, workspace creation and workspace selection are not yet part of the
+  delivered model.

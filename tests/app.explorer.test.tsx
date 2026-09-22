@@ -7,7 +7,7 @@ import {
   within,
 } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import App from "../src/App";
+import App from "./app-harness";
 
 /** Create an in-browser project named `name` and wait for its header. */
 async function createProject(name: string): Promise<void> {

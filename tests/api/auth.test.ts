@@ -497,6 +497,55 @@ describe("the OIDC client", () => {
   });
 });
 
+describe("local account authentication", () => {
+  it("registers pending, blocks pending login, then logs in after approval", async () => {
+    const router = createRouter(dependencies);
+    const email = `local-${Date.now()}@example.test`;
+    const password = "a-secure-password-123";
+    const register = await router.handle(
+      request("POST", "/auth/register", {
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          email: email.toUpperCase(),
+          password,
+          displayName: "Local Ada",
+        }),
+      }),
+    );
+    expect(register.status).toBe(202);
+
+    const pendingLogin = await router.handle(
+      request("POST", "/auth/local-login", {
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      }),
+    );
+    expect(pendingLogin.status).toBe(403);
+
+    const local = await dependencies.users.findLocalByEmail(email);
+    expect(local?.user.status).toBe("PENDING");
+    await dependencies.users.setStatus(local!.user.id, "ACTIVE");
+
+    const login = await router.handle(
+      request("POST", "/auth/local-login", {
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      }),
+    );
+    expect(login.status).toBe(200);
+    const session = cookieFrom(login.headers, SESSION_COOKIE);
+    expect(session).not.toBeNull();
+
+    const me = await router.handle(
+      request("GET", "/api/me", {
+        headers: { cookie: `${SESSION_COOKIE}=${session}` },
+      }),
+    );
+    expect(me.status).toBe(200);
+    expect(JSON.parse(me.body).user.email).toBe(email);
+  });
+});
+
 describe("ID token claim checking", () => {
   // Read lazily: the provider is created in `beforeAll`, after collection.
   const expectations = () => ({

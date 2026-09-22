@@ -38,8 +38,8 @@
 #
 # Required environment (see `.env.example`): POSTGRES_PASSWORD, COOKIE_SECRET,
 # TOKEN_PEPPER, API_PUBLIC_URL, MCP_PUBLIC_URL, OIDC_ISSUER, OIDC_CLIENT_ID,
-# OIDC_CLIENT_SECRET, PLATFORM_ADMIN_EMAIL. TOKEN_PEPPER must be independent
-# of COOKIE_SECRET.
+# OIDC_CLIENT_SECRET. PLATFORM_ADMIN_EMAIL is optional; TOKEN_PEPPER must be
+# independent of COOKIE_SECRET.
 # ---------------------------------------------------------------------------
 services:
   reverse-proxy:
@@ -102,7 +102,7 @@ services:
       OIDC_ISSUER: "${OIDC_ISSUER:?set OIDC_ISSUER}"
       OIDC_CLIENT_ID: "${OIDC_CLIENT_ID:?set OIDC_CLIENT_ID}"
       OIDC_CLIENT_SECRET: "${OIDC_CLIENT_SECRET:?set OIDC_CLIENT_SECRET}"
-      PLATFORM_ADMIN_EMAIL: "${PLATFORM_ADMIN_EMAIL:?set PLATFORM_ADMIN_EMAIL}"
+      PLATFORM_ADMIN_EMAIL: "${PLATFORM_ADMIN_EMAIL:-}"
       TRUSTED_PROXIES: "172.16.0.0/12"
     expose:
       - "4000"

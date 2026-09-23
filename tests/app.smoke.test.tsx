@@ -6,7 +6,7 @@ describe("App shell", () => {
   it("renders the product name in the toolbar", () => {
     render(<App />);
     expect(screen.getByTestId("app-shell")).toBeInTheDocument();
-    expect(screen.getAllByText("SequenceDiagrams Manager").length).toBe(2);
+    expect(screen.getAllByText("Software Docs Manager").length).toBe(2);
   });
 
   it("renders the three workspace panes", () => {

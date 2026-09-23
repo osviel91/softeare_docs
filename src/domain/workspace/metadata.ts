@@ -33,6 +33,11 @@ import {
   type ResourceId,
   type ResourceType,
 } from "./resource-id";
+import {
+  normalizeResourceMetadata,
+  parseResourceMetadata,
+  type ResourceMetadata,
+} from "./resource-metadata";
 
 /** The `format` marker written into a project metadata file. */
 export const PROJECT_METADATA_FORMAT = "sequencediagrams-project";
@@ -59,6 +64,8 @@ export interface ResourceRecord {
   title?: string;
   /** Free-form labels for filtering, carried through untouched. */
   tags?: string[];
+  /** Semantic metadata for the resource, absent in legacy manifests. */
+  metadata?: ResourceMetadata;
 }
 
 /** A project's persisted identity record. */
@@ -138,6 +145,8 @@ export function parseProjectMetadata(value: unknown): ProjectMetadata | null {
         (tag): tag is string => typeof tag === "string",
       );
     }
+    const semanticMetadata = parseResourceMetadata(item.metadata);
+    if (semanticMetadata) resource.metadata = semanticMetadata;
     resources.push(resource);
   }
   return {
@@ -181,7 +190,8 @@ function sameRecords(a: ResourceRecord[], b: ResourceRecord[]): boolean {
       record.path === other.path &&
       record.type === other.type &&
       record.title === other.title &&
-      (record.tags ?? []).join("\u0000") === (other.tags ?? []).join("\u0000")
+      (record.tags ?? []).join("\u0000") === (other.tags ?? []).join("\u0000") &&
+      JSON.stringify(record.metadata ?? {}) === JSON.stringify(other.metadata ?? {})
     );
   });
 }
@@ -220,7 +230,8 @@ export function reconcileMetadata(
       };
       const title = file.title ?? existing.title;
       if (title !== undefined) next.title = title;
-      if (existing.tags) next.tags = existing.tags;
+       if (existing.tags) next.tags = existing.tags;
+       if (existing.metadata) next.metadata = normalizeResourceMetadata(existing.metadata);
       resources.push(next);
       continue;
     }

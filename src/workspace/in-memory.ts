@@ -12,6 +12,7 @@
  * stay in sync, and deleting a project removes both kinds of file.
  */
 import type { ProjectMetadata } from "../domain/workspace/metadata";
+import { normalizeResourceMetadata } from "../domain/workspace/resource-metadata";
 import type {
   DiagramFile,
   NoteFile,
@@ -207,7 +208,13 @@ export function createInMemoryWorkspaceRepository(): WorkspaceRepository {
       diagram: DiagramFile,
     ): Promise<Result<DiagramFile, Error>> {
       try {
-        const stored: DiagramFile = { ...diagram, projectId };
+        const stored: DiagramFile = {
+          ...diagram,
+          projectId,
+          ...(diagram.metadata === undefined
+            ? {}
+            : { metadata: normalizeResourceMetadata(diagram.metadata) }),
+        };
         diagrams.set(diagram.id, stored);
         link(projectId, "datasetIds", diagram.id);
         return ok(stored);
@@ -367,7 +374,13 @@ export function createInMemoryWorkspaceRepository(): WorkspaceRepository {
       note: NoteFile,
     ): Promise<Result<NoteFile, Error>> {
       try {
-        const stored: NoteFile = { ...note, projectId };
+        const stored: NoteFile = {
+          ...note,
+          projectId,
+          ...(note.metadata === undefined
+            ? {}
+            : { metadata: normalizeResourceMetadata(note.metadata) }),
+        };
         notes.set(note.id, stored);
         link(projectId, "noteIds", note.id);
         return ok(stored);

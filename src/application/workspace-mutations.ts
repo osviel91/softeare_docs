@@ -59,6 +59,7 @@ import {
 } from "./authorization";
 import type { AuditAction } from "./ports/audit-repository";
 import type { ResourceType } from "../domain/workspace/resource-id";
+import type { ResourceMetadata } from "../domain/workspace/resource-metadata";
 import { createIdGenerator, type IdGenerator } from "../shared/ids/uuid";
 import { isOk } from "../shared/result/result";
 import type { JsonValue } from "../shared/json/json-value";
@@ -126,6 +127,7 @@ export interface WorkspaceMutationService {
       path: string;
       type: ResourceType;
       content: string;
+      metadata?: ResourceMetadata;
       idempotencyKey?: string;
     },
   ): Promise<ResourceView>;
@@ -137,6 +139,7 @@ export interface WorkspaceMutationService {
     input: {
       content: string;
       expectedRevision: number;
+      metadata?: ResourceMetadata;
       idempotencyKey?: string;
     },
   ): Promise<ResourceView>;
@@ -404,6 +407,7 @@ export function createWorkspaceMutationService(
     targetPath: string;
     content?: string;
     resourceType?: ResourceType;
+    metadata?: ResourceMetadata;
     expectedRevision: number | null;
     idempotencyKey?: string;
     auditAction: AuditAction;
@@ -439,6 +443,7 @@ export function createWorkspaceMutationService(
         ...(params.resourceType === undefined
           ? {}
           : { resourceType: params.resourceType }),
+        ...(params.metadata === undefined ? {} : { metadata: params.metadata }),
         audit: auditFor(
           params.context,
           params.auditAction,
@@ -552,6 +557,7 @@ export function createWorkspaceMutationService(
         targetPath: input.path,
         content: input.content,
         resourceType: input.type,
+        ...(input.metadata === undefined ? {} : { metadata: input.metadata }),
         expectedRevision: null,
         auditAction: "resource.created",
         ...(input.idempotencyKey === undefined
@@ -575,6 +581,7 @@ export function createWorkspaceMutationService(
         targetPath: record.path,
         content: input.content,
         resourceType: record.type,
+        ...(input.metadata === undefined ? {} : { metadata: input.metadata }),
         expectedRevision: input.expectedRevision,
         auditAction: "resource.updated",
         ...(input.idempotencyKey === undefined

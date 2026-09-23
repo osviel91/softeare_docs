@@ -50,7 +50,7 @@ describe("migrate", () => {
     const client = await createPgliteClient();
     try {
       const report = await migrate(client);
-      expect(report.applied).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+      expect(report.applied).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
       expect(report.present).toEqual([]);
       const tables = await client.query(
         `SELECT table_name FROM information_schema.tables
@@ -79,6 +79,11 @@ describe("migrate", () => {
       }
       // Migration 0002 replaced the user-owned token table with the agent model.
       expect(names).not.toContain("personal_access_tokens");
+      const resourceColumns = await client.query(
+        `SELECT column_name FROM information_schema.columns
+         WHERE table_name = 'resources' AND column_name = 'metadata'`,
+      );
+      expect(resourceColumns.rows).toHaveLength(1);
     } finally {
       await client.close();
     }
@@ -170,7 +175,7 @@ describe("migrate", () => {
       await migrate(client);
       const second = await migrate(client);
       expect(second.applied).toEqual([]);
-      expect(second.present).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+      expect(second.present).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
     } finally {
       await client.close();
     }

@@ -16,6 +16,7 @@ import type {
   WorkspaceSnapshot,
 } from "../domain/workspace/types";
 import { err, ok, type Result } from "../shared/result/result";
+import { parseResourceMetadata } from "../domain/workspace/resource-metadata";
 
 /** The shape a {@link WorkspaceSnapshot} takes once serialized to JSON. */
 interface SerializedWorkspace {
@@ -75,6 +76,9 @@ function validateDiagram(value: unknown): string | null {
   if (typeof diagram.projectId !== "string") {
     return `diagram "${String(diagram.id)}" is missing a string projectId`;
   }
+  if (diagram.metadata !== undefined && parseResourceMetadata(diagram.metadata) === undefined) {
+    return `diagram "${String(diagram.id)}" has invalid metadata`;
+  }
   return null;
 }
 
@@ -90,6 +94,9 @@ function validateNote(value: unknown): string | null {
     return `note "${String(note.id)}" is missing a string markdown body`;
   if (typeof note.projectId !== "string") {
     return `note "${String(note.id)}" is missing a string projectId`;
+  }
+  if (note.metadata !== undefined && parseResourceMetadata(note.metadata) === undefined) {
+    return `note "${String(note.id)}" has invalid metadata`;
   }
   return null;
 }
@@ -153,7 +160,17 @@ export function importWorkspaceFromJSON(
       datasetIds: [...(project.datasetIds ?? [])],
       noteIds: [...(project.noteIds ?? [])],
     })),
-    diagrams: (diagrams as DiagramFile[]).map((diagram) => ({ ...diagram })),
-    notes: (notes as NoteFile[]).map((note) => ({ ...note })),
+    diagrams: (diagrams as DiagramFile[]).map((diagram) => ({
+      ...diagram,
+      ...(parseResourceMetadata(diagram.metadata) === undefined
+        ? {}
+        : { metadata: parseResourceMetadata(diagram.metadata) }),
+    })),
+    notes: (notes as NoteFile[]).map((note) => ({
+      ...note,
+      ...(parseResourceMetadata(note.metadata) === undefined
+        ? {}
+        : { metadata: parseResourceMetadata(note.metadata) }),
+    })),
   });
 }

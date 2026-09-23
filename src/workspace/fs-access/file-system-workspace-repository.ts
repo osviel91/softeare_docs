@@ -32,6 +32,7 @@ import type {
 import {
   PROJECT_METADATA_FILE_NAME,
   parseProjectMetadata,
+  reconcileMetadata,
   serializeProjectMetadata,
   type ProjectMetadata,
 } from "../../domain/workspace/metadata";
@@ -428,6 +429,61 @@ export function createFileSystemWorkspaceRepository(
     }
   }
 
+  /** Update one resource's metadata without touching its content file. */
+  async function saveResourceMetadata(
+    projectId: string,
+    path: string,
+    type: "sequence-diagram" | "event-flow" | "markdown-document",
+    metadata: DiagramFile["metadata"],
+  ): Promise<Result<void, Error>> {
+    const current = await readProjectMetadata(projectId);
+    if (!current.ok) return current;
+    let projectMetadata = current.value;
+    if (projectMetadata === null) {
+      const dir = await resolveDir(normalize(projectId));
+      const files: Array<{ path: string; type: typeof type }> = [];
+      for (const [name, entry] of await dir.entries()) {
+        if (entry.kind !== "file" || isReservedProjectFile(name)) continue;
+        files.push({
+          path: name,
+          type: isMarkdownName(name)
+            ? "markdown-document"
+            : /\.eventseq$/i.test(name)
+              ? "event-flow"
+              : "sequence-diagram",
+        });
+      }
+      projectMetadata = reconcileMetadata(null, files).metadata;
+    }
+    const resources = projectMetadata.resources.map((resource) =>
+      resource.path === path
+        ? {
+            ...resource,
+            type,
+            ...(metadata === undefined ? {} : { metadata }),
+          }
+        : resource,
+    );
+    if (!resources.some((resource) => resource.path === path)) {
+      resources.push({ id: path, path, type, ...(metadata ? { metadata } : {}) });
+    }
+    return writeProjectMetadata(projectId, {
+      ...projectMetadata,
+      resources,
+    });
+  }
+
+  /** Read one resource's metadata from the existing project sidecar. */
+  async function resourceMetadata(
+    projectId: string,
+    path: string,
+  ): Promise<DiagramFile["metadata"]> {
+    const metadata = await readProjectMetadata(projectId);
+    if (!metadata.ok || metadata.value === null) return undefined;
+    return metadata.value.resources.find((resource) => resource.path === path)
+      ?.metadata;
+  }
+
   /** Enumerate the diagram files of a project directory (non-markdown files). */
   async function listDiagramFiles(
     projectId: string,
@@ -447,11 +503,13 @@ export function createFileSystemWorkspaceRepository(
         if (entry.kind !== "file") continue;
         // Markdown files are notes, not diagrams; reserved sidecars are neither.
         if (isMarkdownName(name) || isReservedProjectFile(name)) continue;
+        const metadata = await resourceMetadata(normalized, name);
         files.push({
           id: joinRel(normalized, name),
           name,
           source: await entry.getFile(),
           projectId: normalized,
+          ...(metadata === undefined ? {} : { metadata }),
         });
       }
       return ok(files);
@@ -478,11 +536,13 @@ export function createFileSystemWorkspaceRepository(
       } catch {
         return ok(null);
       }
+      const metadata = await resourceMetadata(dirPath, file.name);
       return ok({
         id: relPath,
         name: file.name,
         source: await file.getFile(),
         projectId: dirPath,
+        ...(metadata === undefined ? {} : { metadata }),
       });
     } catch (error) {
       return err(toRepoError(error));
@@ -510,11 +570,23 @@ export function createFileSystemWorkspaceRepository(
       } finally {
         await writable.close();
       }
+      const storedMetadata = await resourceMetadata(dirPath, diagram.name);
+      const metadata = diagram.metadata ?? storedMetadata;
+      if (metadata !== undefined) {
+        const saved = await saveResourceMetadata(
+          dirPath,
+          diagram.name,
+          /\.eventseq$/i.test(diagram.name) ? "event-flow" : "sequence-diagram",
+          metadata,
+        );
+        if (!saved.ok) return err(saved.error);
+      }
       return ok({
         id: relPath,
         name: diagram.name,
         source: diagram.source,
         projectId: dirPath,
+        ...(metadata === undefined ? {} : { metadata }),
       });
     } catch (error) {
       return err(toRepoError(error));
@@ -644,11 +716,13 @@ export function createFileSystemWorkspaceRepository(
       for (const [name, entry] of await dir.entries()) {
         if (entry.kind !== "file" || !isMarkdownName(name)) continue;
         if (isReservedProjectFile(name)) continue;
+        const metadata = await resourceMetadata(normalized, name);
         files.push({
           id: joinRel(normalized, name),
           name,
           markdown: await entry.getFile(),
           projectId: normalized,
+          ...(metadata === undefined ? {} : { metadata }),
         });
       }
       return ok(files);
@@ -674,11 +748,13 @@ export function createFileSystemWorkspaceRepository(
       } catch {
         return ok(null);
       }
+      const metadata = await resourceMetadata(dirPath, file.name);
       return ok({
         id: relPath,
         name: file.name,
         markdown: await file.getFile(),
         projectId: dirPath,
+        ...(metadata === undefined ? {} : { metadata }),
       });
     } catch (error) {
       return err(toRepoError(error));
@@ -705,11 +781,23 @@ export function createFileSystemWorkspaceRepository(
       } finally {
         await writable.close();
       }
+      const storedMetadata = await resourceMetadata(dirPath, name);
+      const metadata = note.metadata ?? storedMetadata;
+      if (metadata !== undefined) {
+        const saved = await saveResourceMetadata(
+          dirPath,
+          name,
+          "markdown-document",
+          metadata,
+        );
+        if (!saved.ok) return err(saved.error);
+      }
       return ok({
         id: relPath,
         name,
         markdown: note.markdown,
         projectId: dirPath,
+        ...(metadata === undefined ? {} : { metadata }),
       });
     } catch (error) {
       return err(toRepoError(error));

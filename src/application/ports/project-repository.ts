@@ -23,6 +23,7 @@ import type {
 } from "../../domain/project/server-project";
 import type { ProjectRole } from "../../domain/access/permissions";
 import type { ResourceType } from "../../domain/workspace/resource-id";
+import type { ResourceMetadata } from "../../domain/workspace/resource-metadata";
 import type { Result } from "../../shared/result/result";
 
 /** A resource row: the server's record of one stored document. */
@@ -32,6 +33,7 @@ export interface ResourceRecord {
   /** A validated, project-relative, `/`-separated path. */
   path: string;
   type: ResourceType;
+  metadata?: ResourceMetadata;
   /** The optimistic-concurrency token. Starts at 1. */
   revision: number;
   createdAt: Date;
@@ -42,6 +44,7 @@ export interface ResourceRecord {
 export interface NewResource {
   path: string;
   type: ResourceType;
+  metadata?: ResourceMetadata;
   /** The id to use; omitted means "mint one". */
   id?: string;
 }

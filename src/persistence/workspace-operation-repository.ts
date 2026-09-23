@@ -269,13 +269,16 @@ export function createWorkspaceOperationRepository(
           case "create": {
             try {
               await tx.query(
-                `INSERT INTO resources (id, project_id, path, type)
-                 VALUES ($1, $2, $3, $4)`,
+                `INSERT INTO resources (id, project_id, path, type, metadata)
+                 VALUES ($1, $2, $3, $4, COALESCE($5::jsonb, '{}'::jsonb))`,
                 [
                   intent.resourceId,
                   intent.projectId,
                   intent.targetPath,
                   intent.resourceType as ResourceType,
+                  intent.metadata === undefined
+                    ? null
+                    : JSON.stringify(intent.metadata),
                 ],
               );
             } catch (error) {
@@ -301,9 +304,17 @@ export function createWorkspaceOperationRepository(
             resultingRevision = Number(row.revision) + 1;
             await tx.query(
               `UPDATE resources
-                  SET revision = revision + 1, updated_at = now()
+                  SET revision = revision + 1,
+                      metadata = COALESCE($3::jsonb, metadata),
+                      updated_at = now()
                 WHERE project_id = $1 AND id = $2`,
-              [intent.projectId, intent.resourceId],
+              [
+                intent.projectId,
+                intent.resourceId,
+                intent.metadata === undefined
+                  ? null
+                  : JSON.stringify(intent.metadata),
+              ],
             );
             break;
           }

@@ -30,7 +30,8 @@ architecture.
 - Missing legacy `notes` and `noteIds` are read as empty collections. Invalid
   top-level shapes and resource records are rejected.
 - Diagram and note records retain their existing `id`, name, content, and
-  `projectId` fields. Event flows are diagram records identified by the
+  `projectId` fields; optional resource metadata is normalized when loaded and
+  omitted for legacy records. Event flows are diagram records identified by the
   `.eventseq` name suffix; they are not a separate persisted collection.
 
 ### Identity, names, and scope
@@ -49,6 +50,9 @@ architecture.
 - Project resources are exposed at `/api/projects/:projectId/resources`.
 - Resource representations contain `id`, `projectId`, `path`, `type`, and
   `revision`; reads additionally return content.
+- Resource metadata is persisted by local repositories and server storage, but
+  remains an internal workspace concern and is not added to HTTP or MCP resource
+  representations.
 - The supported resource types are `sequence-diagram`, `event-flow`, and
   `markdown-document`. Create, update, move, and delete preserve project
   scoping, path validation, authorization, and expected-revision behavior.

@@ -36,6 +36,10 @@ import type {
   ResourceRecord,
   RevisionMismatch,
 } from "../application/ports/project-repository";
+import {
+  normalizeResourceMetadata,
+  parseResourceMetadata,
+} from "../domain/workspace/resource-metadata";
 
 export type {
   NewResource,
@@ -50,11 +54,13 @@ export interface ProjectRepositoryOptions {
 
 /** Map a `resources` row onto the domain record. */
 function toResourceRecord(row: Record<string, unknown>): ResourceRecord {
+  const metadata = parseResourceMetadata(row.metadata);
   return {
     id: text(row, "id"),
     projectId: text(row, "project_id"),
     path: text(row, "path"),
     type: toResourceType(row.type),
+    ...(metadata === undefined ? {} : { metadata }),
     revision: integer(row, "revision"),
     createdAt:
       row.created_at instanceof Date
@@ -291,11 +297,20 @@ export function createProjectRepository(
 
     async createResource(projectId, resource) {
       const path = normalizeResourcePath(resource.path);
+      const metadata = resource.metadata
+        ? normalizeResourceMetadata(resource.metadata)
+        : undefined;
       const result = await client.query(
-        `INSERT INTO resources (id, project_id, path, type)
-         VALUES ($1, $2, $3, $4)
+        `INSERT INTO resources (id, project_id, path, type, metadata)
+         VALUES ($1, $2, $3, $4, COALESCE($5::jsonb, '{}'::jsonb))
          RETURNING *`,
-        [resource.id ?? newId(), projectId, path, resource.type],
+        [
+          resource.id ?? newId(),
+          projectId,
+          path,
+          resource.type,
+          metadata === undefined ? null : JSON.stringify(metadata),
+        ],
       );
       return toResourceRecord(result.rows[0]);
     },

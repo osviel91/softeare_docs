@@ -193,6 +193,37 @@ async function aDiagram(
 }
 
 describe("the lost-update window is closed", () => {
+  it("persists metadata in the same revisioned mutation as content", async () => {
+    const { projectId, context } = await aProject();
+    const created = await mutations.createResource(context, projectId, {
+      path: "checkout.seq",
+      type: "sequence-diagram",
+      content: "title Checkout\n",
+      metadata: { description: "  Payments  ", tags: ["Core", "core"] },
+    });
+
+    expect(created.revision).toBe(1);
+    expect((await projects.findResource(projectId, created.id))?.metadata).toEqual({
+      description: "Payments",
+      tags: ["Core"],
+    });
+
+    const updated = await mutations.updateResource(context, projectId, created.id, {
+      content: "title Checkout Updated\n",
+      expectedRevision: created.revision,
+      metadata: { description: "Updated", tags: ["Done"] },
+    });
+
+    expect(updated.revision).toBe(2);
+    expect((await projects.findResource(projectId, created.id))?.metadata).toEqual({
+      description: "Updated",
+      tags: ["Done"],
+    });
+    expect(await contentAt(projectId, "checkout.seq")).toBe(
+      "title Checkout Updated\n",
+    );
+  });
+
   it("refuses a stale write without touching the file", async () => {
     const { projectId, context } = await aProject();
     const id = await aDiagram(projectId, context);

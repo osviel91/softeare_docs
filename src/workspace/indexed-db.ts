@@ -15,6 +15,7 @@
  * interface, which is what makes the whole layer testable in jsdom.
  */
 import type { ProjectMetadata } from "../domain/workspace/metadata";
+import { normalizeResourceMetadata } from "../domain/workspace/resource-metadata";
 import type {
   DiagramFile,
   NoteFile,
@@ -415,7 +416,13 @@ export function createIndexedDbRepository(
       diagram,
     ): Promise<Result<DiagramFile, Error>> {
       try {
-        const stored: DiagramFile = { ...diagram, projectId };
+        const stored: DiagramFile = {
+          ...diagram,
+          projectId,
+          ...(diagram.metadata === undefined
+            ? {}
+            : { metadata: normalizeResourceMetadata(diagram.metadata) }),
+        };
         await withTx<void>(
           [STORE_PROJECTS, STORE_DIAGRAMS],
           "readwrite",
@@ -635,7 +642,13 @@ export function createIndexedDbRepository(
 
     async saveNoteFile(projectId, note): Promise<Result<NoteFile, Error>> {
       try {
-        const stored: NoteFile = { ...note, projectId };
+        const stored: NoteFile = {
+          ...note,
+          projectId,
+          ...(note.metadata === undefined
+            ? {}
+            : { metadata: normalizeResourceMetadata(note.metadata) }),
+        };
         await withTx<void>(
           [STORE_PROJECTS, STORE_NOTES],
           "readwrite",

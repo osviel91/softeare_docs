@@ -352,6 +352,26 @@ describe("resource records and optimistic concurrency", () => {
     ).rejects.toThrow(/Invalid resource path/);
   });
 
+  it("round-trips resource metadata without changing identity or revision", async () => {
+    const owner = await aUser();
+    const project = await projects.create({
+      ownerId: owner.id,
+      name: "Resource Metadata",
+    });
+    const resource = await projects.createResource(project.id, {
+      path: "checkout.seq",
+      type: "sequence-diagram",
+      metadata: { description: "  Checkout  ", tags: ["Payments", "payments"] },
+    });
+
+    expect(resource).toMatchObject({
+      path: "checkout.seq",
+      revision: 1,
+      metadata: { description: "Checkout", tags: ["Payments"] },
+    });
+    expect(await projects.findResource(project.id, resource.id)).toEqual(resource);
+  });
+
   it("finds a resource by id and by path, scoped to the project", async () => {
     const owner = await aUser();
     const project = await projects.create({

@@ -29,6 +29,7 @@ import type {
   NoteFile,
   Project,
 } from "../../domain/workspace/types";
+import { parseResourceMetadata, type ResourceMetadata } from "../../domain/workspace/resource-metadata";
 import { err, ok, type Result } from "../../shared/result/result";
 import { createZip, readZip, type ZipEntry } from "./zip";
 
@@ -57,6 +58,8 @@ export interface ArchiveResource {
    * project directory is renamed or moved.
    */
   path: string;
+  /** Optional semantic metadata, absent in legacy archives. */
+  metadata?: ResourceMetadata;
 }
 
 /** The manifest written to `project.json`. */
@@ -76,8 +79,8 @@ export interface ProjectArchiveManifest {
 export interface ImportedProject {
   /** The project's display name. */
   name: string;
-  diagrams: Array<{ name: string; source: string }>;
-  notes: Array<{ name: string; markdown: string }>;
+  diagrams: Array<{ name: string; source: string; metadata?: ResourceMetadata }>;
+  notes: Array<{ name: string; markdown: string; metadata?: ResourceMetadata }>;
 }
 
 /** Turn a project name into a filesystem-safe directory name. */
@@ -155,6 +158,7 @@ export function buildProjectArchive(
       id: diagram.id,
       name: diagram.name,
       path,
+      ...(diagram.metadata === undefined ? {} : { metadata: diagram.metadata }),
     });
     entries.push({ path: `${slug}/${path}`, data: encode(diagram.source) });
   }
@@ -169,6 +173,7 @@ export function buildProjectArchive(
       id: note.id,
       name: note.name,
       path,
+      ...(note.metadata === undefined ? {} : { metadata: note.metadata }),
     });
     entries.push({ path: `${slug}/${path}`, data: encode(note.markdown) });
   }
@@ -230,7 +235,10 @@ function validateManifest(value: unknown): string | null {
       return `resources[${index}] has unknown kind ${JSON.stringify(entry.kind)}`;
     }
     if (typeof entry.name !== "string" || typeof entry.path !== "string") {
-      return `resources[${index}] needs a string name and path`;
+      return "resources[" + index + "] needs a string name and path";
+    }
+    if (entry.metadata !== undefined && parseResourceMetadata(entry.metadata) === undefined) {
+      return "resources[" + index + "] has invalid metadata";
     }
   }
   return null;
@@ -307,9 +315,21 @@ export function parseProjectArchive(
     }
     const text = decoder.decode(entry.data);
     if (resource.kind === "diagram") {
-      imported.diagrams.push({ name: resource.name, source: text });
+      imported.diagrams.push({
+        name: resource.name,
+        source: text,
+        ...(parseResourceMetadata(resource.metadata) === undefined
+          ? {}
+          : { metadata: parseResourceMetadata(resource.metadata) }),
+      });
     } else {
-      imported.notes.push({ name: resource.name, markdown: text });
+      imported.notes.push({
+        name: resource.name,
+        markdown: text,
+        ...(parseResourceMetadata(resource.metadata) === undefined
+          ? {}
+          : { metadata: parseResourceMetadata(resource.metadata) }),
+      });
     }
   }
 

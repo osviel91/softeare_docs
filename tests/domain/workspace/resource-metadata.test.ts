@@ -1,11 +1,19 @@
 import { describe, expect, it } from "vitest";
 import {
   normalizeResourceMetadata,
+  parseResourceMetadata,
   type ResourceMetadata,
 } from "../../../src/domain/workspace/resource-metadata";
 import { deriveResourcePresentation } from "../../../src/domain/workspace/resource-presentation";
 
 describe("normalizeResourceMetadata", () => {
+  it("treats missing and malformed persisted metadata as absent", () => {
+    expect(parseResourceMetadata(undefined)).toBeUndefined();
+    expect(parseResourceMetadata({ description: 42 })).toBeUndefined();
+    expect(
+      parseResourceMetadata({ description: "  hello ", tags: [" A ", "a"] }),
+    ).toEqual({ description: "hello", tags: ["A"] });
+  });
   it("normalizes empty metadata to an empty object", () => {
     expect(normalizeResourceMetadata()).toEqual({});
     expect(normalizeResourceMetadata({})).toEqual({});

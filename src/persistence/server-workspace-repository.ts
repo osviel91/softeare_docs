@@ -215,6 +215,7 @@ export class ServerWorkspaceRepository implements RevisionedWorkspaceRepository 
         path: entry.path,
         type,
         content: "",
+        ...(entry.metadata === undefined ? {} : { metadata: entry.metadata }),
       });
     }
   }
@@ -234,7 +235,7 @@ export class ServerWorkspaceRepository implements RevisionedWorkspaceRepository 
       const read = await this.storage.read(record.path);
       if (!isOk(read)) return read;
       if (read.value === null) continue;
-      diagrams.push(this.toDiagram(read.value));
+       diagrams.push(this.toDiagram(read.value, record.metadata));
     }
     return ok(diagrams);
   }
@@ -250,15 +251,23 @@ export class ServerWorkspaceRepository implements RevisionedWorkspaceRepository 
     if (!isOk(read)) return read;
     if (read.value === null) return ok(null);
     if (read.value.type === "markdown-document") return ok(null);
-    return ok(this.toDiagram(read.value));
+    const record = await this.resources.findResourceByPath(
+      this.projectId,
+      nameOfResourceId(diagramId),
+    );
+    return ok(this.toDiagram(read.value, record?.metadata));
   }
 
   async saveDiagramFile(
     projectId: ProjectId,
     diagram: DiagramFile,
   ): Promise<Result<DiagramFile, Error>> {
-    return this.save(projectId, diagram.name, diagram.source, (stored) =>
-      this.toDiagram(stored),
+    return this.save(
+      projectId,
+      diagram.name,
+      diagram.source,
+      (stored, metadata) => this.toDiagram(stored, metadata),
+      diagram.metadata,
     );
   }
 
@@ -335,7 +344,7 @@ export class ServerWorkspaceRepository implements RevisionedWorkspaceRepository 
       const read = await this.storage.read(record.path);
       if (!isOk(read)) return read;
       if (read.value === null) continue;
-      notes.push(this.toNote(read.value));
+       notes.push(this.toNote(read.value, record.metadata));
     }
     return ok(notes);
   }
@@ -351,15 +360,23 @@ export class ServerWorkspaceRepository implements RevisionedWorkspaceRepository 
     if (!isOk(read)) return read;
     if (read.value === null) return ok(null);
     if (read.value.type !== "markdown-document") return ok(null);
-    return ok(this.toNote(read.value));
+    const record = await this.resources.findResourceByPath(
+      this.projectId,
+      nameOfResourceId(noteId),
+    );
+    return ok(this.toNote(read.value, record?.metadata));
   }
 
   async saveNoteFile(
     projectId: ProjectId,
     note: NoteFile,
   ): Promise<Result<NoteFile, Error>> {
-    return this.save(projectId, note.name, note.markdown, (stored) =>
-      this.toNote(stored),
+    return this.save(
+      projectId,
+      note.name,
+      note.markdown,
+      (stored, metadata) => this.toNote(stored, metadata),
+      note.metadata,
     );
   }
 
@@ -486,22 +503,30 @@ export class ServerWorkspaceRepository implements RevisionedWorkspaceRepository 
   }
 
   /** Read a stored resource's name into the shared shape. */
-  private toDiagram(stored: StoredResource): DiagramFile {
+  private toDiagram(
+    stored: StoredResource,
+    metadata?: DiagramFile["metadata"],
+  ): DiagramFile {
     return {
       id: this.resourceId(stored.path),
       name: stored.path,
       source: stored.content,
       projectId: this.projectId,
+      ...(metadata === undefined ? {} : { metadata }),
     };
   }
 
   /** Read a stored note into the shared shape. */
-  private toNote(stored: StoredResource): NoteFile {
+  private toNote(
+    stored: StoredResource,
+    metadata?: NoteFile["metadata"],
+  ): NoteFile {
     return {
       id: this.resourceId(stored.path),
       name: stored.path,
       markdown: stored.content,
       projectId: this.projectId,
+      ...(metadata === undefined ? {} : { metadata }),
     };
   }
 
@@ -532,7 +557,8 @@ export class ServerWorkspaceRepository implements RevisionedWorkspaceRepository 
     projectId: ProjectId,
     path: string,
     content: string,
-    toDomain: (stored: StoredResource) => T,
+    toDomain: (stored: StoredResource, metadata?: T["metadata"]) => T,
+    metadata?: T["metadata"],
   ): Promise<Result<T, Error>> {
     if (projectId !== this.projectId) {
       return missing(`No project with id ${projectId} in this repository.`);
@@ -544,19 +570,27 @@ export class ServerWorkspaceRepository implements RevisionedWorkspaceRepository 
         this.projectId,
         storagePath,
       );
+      const effectiveMetadata = metadata === undefined ? existing?.metadata : metadata;
       const view = existing
         ? await this.mutations.updateResource(
             this.context,
             this.projectId,
             existing.id,
-            { content, expectedRevision: existing.revision },
+            {
+              content,
+              expectedRevision: existing.revision,
+              ...(metadata === undefined ? {} : { metadata }),
+            },
           )
         : await this.mutations.createResource(this.context, this.projectId, {
             path: storagePath,
             type: resourceTypeOfName(path),
             content,
+            ...(metadata === undefined ? {} : { metadata }),
           });
-      return ok(toDomain({ path: view.path, type: view.type, content }));
+      return ok(
+        toDomain({ path: view.path, type: view.type, content }, effectiveMetadata),
+      );
     } catch (error) {
       return err(asError(error));
     }
@@ -567,7 +601,7 @@ export class ServerWorkspaceRepository implements RevisionedWorkspaceRepository 
     projectId: ProjectId,
     wanted: string,
     type: ResourceType,
-    toDomain: (stored: StoredResource) => T,
+    toDomain: (stored: StoredResource, metadata?: T["metadata"]) => T,
     content = "",
     exactName?: string,
   ): Promise<Result<T, Error>> {
@@ -646,7 +680,7 @@ export class ServerWorkspaceRepository implements RevisionedWorkspaceRepository 
     projectId: ProjectId,
     from: string,
     to: string,
-    toDomain: (stored: StoredResource) => T,
+    toDomain: (stored: StoredResource, metadata?: T["metadata"]) => T,
   ): Promise<Result<T, Error>> {
     if (projectId !== this.projectId) {
       return missing(`No project with id ${projectId} in this repository.`);
@@ -677,7 +711,7 @@ export class ServerWorkspaceRepository implements RevisionedWorkspaceRepository 
           `The resource moved but its file is missing at ${view.path}.`,
         );
       }
-      return ok(toDomain(read.value));
+      return ok(toDomain(read.value, record.metadata));
     } catch (error) {
       return err(asError(error));
     }

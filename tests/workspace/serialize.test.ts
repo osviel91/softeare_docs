@@ -61,6 +61,29 @@ describe("serialize", () => {
     expect(parsed.value).toEqual(snapshot);
   });
 
+  it("normalizes optional resource metadata while preserving legacy records", () => {
+    const parsed = importWorkspaceFromJSON(
+      JSON.stringify({
+        projects: [{ id: "p", name: "Old", datasetIds: ["d"] }],
+        diagrams: [
+          {
+            id: "d",
+            name: "old.seq",
+            source: "title Old",
+            projectId: "p",
+            metadata: { description: "  docs ", tags: ["A", " a "] },
+          },
+        ],
+      }),
+    );
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.value.diagrams[0].metadata).toEqual({
+      description: "docs",
+      tags: ["A"],
+    });
+  });
+
   it("accepts a document written before notes existed", () => {
     // No `notes` key and no `noteIds`: it still imports, with empty lists.
     const legacy = JSON.stringify({

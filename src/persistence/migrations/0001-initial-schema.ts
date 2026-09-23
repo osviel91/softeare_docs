@@ -55,6 +55,7 @@ CREATE TABLE resources (
   project_id uuid        NOT NULL REFERENCES projects (id) ON DELETE CASCADE,
   path       text        NOT NULL,
   type       text        NOT NULL,
+  metadata   jsonb       NOT NULL DEFAULT '{}'::jsonb,
   revision   integer     NOT NULL DEFAULT 1,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),

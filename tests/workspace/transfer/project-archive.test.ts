@@ -145,6 +145,23 @@ describe("buildProjectArchive", () => {
 });
 
 describe("parseProjectArchive", () => {
+  it("round-trips optional resource metadata", () => {
+    const parsed = parseProjectArchive(
+      buildProjectArchive(
+        project,
+        [{ ...diagrams[0], metadata: { description: "Checkout", tags: ["flow"] } }],
+        [{ ...notes[0], metadata: { tags: ["docs"] } }],
+      ),
+    );
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.value.diagrams[0].metadata).toEqual({
+      description: "Checkout",
+      tags: ["flow"],
+    });
+    expect(parsed.value.notes[0].metadata).toEqual({ tags: ["docs"] });
+  });
+
   it("round-trips a project exactly", () => {
     const entries = buildProjectArchive(project, diagrams, notes);
     const parsed = parseProjectArchive(entries);

@@ -13,6 +13,7 @@
  */
 
 import type { ProjectId } from "./workspace-ids";
+import type { ResourceMetadata } from "./resource-metadata";
 
 /** A single diagram backed by its DSL source. */
 export interface DiagramFile {
@@ -24,6 +25,8 @@ export interface DiagramFile {
   source: string;
   /** The id of the project this diagram belongs to. Exactly one. */
   projectId: ProjectId;
+  /** Optional semantic metadata; absent in legacy records. */
+  metadata?: ResourceMetadata;
 }
 
 /**
@@ -40,6 +43,8 @@ export interface NoteFile {
   markdown: string;
   /** The id of the project this note belongs to. Exactly one. */
   projectId: ProjectId;
+  /** Optional semantic metadata; absent in legacy records. */
+  metadata?: ResourceMetadata;
 }
 
 /** An ordered collection of diagram and note files. */

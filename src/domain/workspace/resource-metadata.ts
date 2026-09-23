@@ -1,7 +1,7 @@
 /** Stored semantic metadata for a project resource.
  *
  * This is intentionally separate from resource identity, content, and derived
- * presentation information. It is not attached to a persisted resource yet.
+ * presentation information.
  */
 export interface ResourceMetadata {
   description?: string;
@@ -35,4 +35,27 @@ export function normalizeResourceMetadata(
     ...(description ? { description } : {}),
     ...(tags.length > 0 ? { tags } : {}),
   };
+}
+
+/** Parse the optional JSON representation, treating invalid legacy values as absent. */
+export function parseResourceMetadata(value: unknown): ResourceMetadata | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return undefined;
+  }
+  const input = value as Record<string, unknown>;
+  if (
+    (input.description !== undefined && typeof input.description !== "string") ||
+    (input.tags !== undefined &&
+      (!Array.isArray(input.tags) ||
+        !input.tags.every((tag) => typeof tag === "string")))
+  ) {
+    return undefined;
+  }
+  const normalized = normalizeResourceMetadata({
+    ...(typeof input.description === "string"
+      ? { description: input.description }
+      : {}),
+    ...(Array.isArray(input.tags) ? { tags: input.tags as string[] } : {}),
+  });
+  return Object.keys(normalized).length === 0 ? undefined : normalized;
 }

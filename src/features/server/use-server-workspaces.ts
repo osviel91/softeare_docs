@@ -117,7 +117,10 @@ export function useServerWorkspaces(
   }, [authenticated]);
 
   useEffect(() => {
-    if (active?.project.workspaceId !== selectedWorkspaceId) {
+    if (
+      active !== null &&
+      active.project.workspaceId !== selectedWorkspaceId
+    ) {
       openTicket.current += 1;
       setActive(null);
       setOpenError(null);

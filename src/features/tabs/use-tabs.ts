@@ -171,7 +171,7 @@ export function useTabs(
   // existed there.
   const repoRef = useRef<WorkspaceRepository>(repo);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (repoRef.current === repo) return;
     repoRef.current = repo;
     inFlightRef.current.clear();

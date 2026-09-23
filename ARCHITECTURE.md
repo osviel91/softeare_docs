@@ -57,6 +57,12 @@ A _resource_ is a sequence diagram, event flow, or Markdown document. Locally,
 event flows use the `.eventseq` extension and share the persisted diagram
 collection with sequence diagrams. `src/domain/workspace/resource.ts` is a thin
 view over the concrete stores rather than a second persistence model (ADR-015).
+The domain keeps four concerns distinct: resource identity, content, stored
+semantic metadata, and derived presentation information. `ResourceMetadata`
+currently contains only an optional description and tags; effective titles remain
+derived from existing content titles with the current resource-name fallback.
+Visualization is not metadata, and this model is intentionally not propagated to
+persistence, APIs, MCP, search, or the UI yet.
 The searchable document set and the archive are both **derived on demand** —
 there is no separate index to keep in sync (ADR-017, ADR-018) — which keeps the
 workspace local-first and Git-friendly.

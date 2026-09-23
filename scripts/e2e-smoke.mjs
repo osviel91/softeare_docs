@@ -849,6 +849,29 @@ async function runChecks(page, idp) {
     `${gutter.badgeLefts.length} badges, spread ${badgeSpread.toFixed(2)}px`,
   );
 
+  const editorBounds = await page.evaluate(() => {
+    const editor = document.querySelector('[aria-label="DSL editor"]');
+    const statusbar = document.querySelector(".app__statusbar");
+    const code = document.querySelector(".editor__code");
+    const textarea = document.querySelector(".editor__textarea");
+    return {
+      editorBottom: editor?.getBoundingClientRect().bottom ?? 0,
+      statusbarTop: statusbar?.getBoundingClientRect().top ?? 0,
+      codeBottom: code?.getBoundingClientRect().bottom ?? 0,
+      textareaBottom: textarea?.getBoundingClientRect().bottom ?? 0,
+    };
+  });
+  check(
+    "DSL editor stays above the status bar",
+    editorBounds.editorBottom <= editorBounds.statusbarTop + 0.5,
+    `${editorBounds.editorBottom.toFixed(2)} vs ${editorBounds.statusbarTop.toFixed(2)}`,
+  );
+  check(
+    "DSL textarea stays inside the code area",
+    editorBounds.textareaBottom <= editorBounds.codeBottom + 0.5,
+    `${editorBounds.textareaBottom.toFixed(2)} vs ${editorBounds.codeBottom.toFixed(2)}`,
+  );
+
   // The suggestion popup must never swallow Enter or the arrow keys. It opens
   // at a statement start (a wall of keywords), and if it captured Enter the
   // editor could never add a blank line; if it captured the arrows the caret
@@ -1855,6 +1878,72 @@ async function runChecks(page, idp) {
         .textContent()) ?? ""
     ).includes("1 event"),
   );
+
+  // A normal laptop viewport must keep the DSL editor inside the workspace;
+  // this is the regression for the diagram editor overlapping the status bar.
+  await page.setViewportSize({ width: 1440, height: 720 });
+  await page
+    .locator('[data-testid="dsl-textarea"]')
+    .fill(
+      Array.from({ length: 80 }, (_, index) => `event Event${index}`).join(
+        "\n",
+      ),
+    );
+  const scrollBounds = await page.evaluate(() => {
+    const textarea = document.querySelector('[data-testid="dsl-textarea"]');
+    const code = document.querySelector(".editor__code");
+    if (!(textarea instanceof HTMLTextAreaElement) || !code) return null;
+    textarea.scrollTop = textarea.scrollHeight;
+    const textareaBounds = textarea.getBoundingClientRect();
+    return {
+      canScroll: textarea.scrollHeight > textarea.clientHeight,
+      didScroll: textarea.scrollTop > 0,
+      textareaBottom: textareaBounds.bottom,
+      codeBottom: code.getBoundingClientRect().bottom,
+    };
+  });
+  check(
+    "event-flow editor scrolls long source",
+    scrollBounds?.canScroll === true && scrollBounds.didScroll,
+    scrollBounds
+      ? `${scrollBounds.canScroll}/${scrollBounds.didScroll}`
+      : "missing editor",
+  );
+  check(
+    "event-flow textarea stays inside the code area",
+    (scrollBounds?.textareaBottom ?? 0) <=
+      (scrollBounds?.codeBottom ?? 0) + 0.5,
+    scrollBounds
+      ? `${scrollBounds.textareaBottom.toFixed(2)} vs ${scrollBounds.codeBottom.toFixed(2)}`
+      : "missing editor",
+  );
+  const flowEditorBounds = await page.evaluate(() => ({
+    editorBottom:
+      document
+        .querySelector('[aria-label="Event flow editor"]')
+        ?.getBoundingClientRect().bottom ?? 0,
+    statusbarTop:
+      document.querySelector(".app__statusbar")?.getBoundingClientRect().top ??
+      0,
+  }));
+  check(
+    "event-flow editor stays above the status bar at laptop height",
+    flowEditorBounds.editorBottom <= flowEditorBounds.statusbarTop + 0.5,
+    `${flowEditorBounds.editorBottom.toFixed(2)} vs ${flowEditorBounds.statusbarTop.toFixed(2)}`,
+  );
+  await page
+    .locator('[data-testid="dsl-textarea"]')
+    .fill(
+      [
+        "title Order Processing",
+        "event OrderCreated",
+        "topic orders",
+        "producer OrderService",
+        "consumer BillingService",
+        "OrderService publishes OrderCreated to orders",
+        "BillingService consumes OrderCreated from orders",
+      ].join("\n"),
+    );
 
   console.log("\nEvent-flow highlighting:");
   const flowEditor = page.locator('[data-testid="dsl-textarea"]');

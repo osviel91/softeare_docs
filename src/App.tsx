@@ -20,7 +20,15 @@
  * shell to rename, retitle, or delete a file; deletion always goes through a
  * confirmation dialog.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import Editor from "./features/editor/Editor";
 import {
   EVENT_FLOW_SNIPPETS,
@@ -169,7 +177,7 @@ import LoginScreen from "./features/server/LoginScreen";
 import { RevisionConflictError } from "./workspace/server/api-errors";
 import { supportsForcedWrite } from "./workspace/server/server-workspace-repository";
 
-const PRODUCT_NAME = "SequenceDiagrams Manager";
+const PRODUCT_NAME = "Software Docs Manager";
 
 /** Which panel the editor pane shows. */
 type EditorView = "code" | "outline" | "problems" | "overview" | "history";
@@ -338,6 +346,12 @@ export default function App() {
   const [page, setPage] = useState<AppPage>("workspace");
   const [view, setView] = useState<EditorView>("code");
   const [autoUpdate, setAutoUpdate] = useState(true);
+  const workspaceRef = useRef<HTMLElement | null>(null);
+  const [explorerWidth, setExplorerWidth] = useState(252);
+  const [editorWidth, setEditorWidth] = useState<number | null>(null);
+  const [explorerCollapsed, setExplorerCollapsed] = useState(false);
+  const [previewMaximized, setPreviewMaximized] = useState(false);
+  const [resizing, setResizing] = useState<"explorer" | "editor" | null>(null);
   // The source the preview is actually showing. While auto-update is on this
   // tracks the editor; while it is off it only moves when the user renders.
   const [renderedSource, setRenderedSource] = useState("");
@@ -384,6 +398,92 @@ export default function App() {
     diagramId: string;
     source: string;
   } | null>(null);
+
+  const resizePane = useCallback(
+    (pane: "explorer" | "editor", clientX: number): void => {
+      const workspace = workspaceRef.current;
+      if (!workspace) return;
+      const bounds = workspace.getBoundingClientRect();
+      const splitterWidth = 8;
+      const previewMinimum = 280;
+      if (pane === "explorer") {
+        const maximum = Math.max(
+          180,
+          bounds.width - 280 - previewMinimum - 2 * splitterWidth,
+        );
+        setExplorerWidth(
+          Math.min(maximum, Math.max(180, clientX - bounds.left)),
+        );
+        return;
+      }
+      const explorerSpace = explorerCollapsed
+        ? 30
+        : explorerWidth + splitterWidth;
+      const maximum = Math.max(
+        280,
+        bounds.width - explorerSpace - previewMinimum - splitterWidth,
+      );
+      setEditorWidth(
+        Math.min(maximum, Math.max(280, clientX - bounds.left - explorerSpace)),
+      );
+    },
+    [explorerCollapsed, explorerWidth],
+  );
+
+  const startResize = useCallback(
+    (pane: "explorer" | "editor", event: ReactPointerEvent<HTMLDivElement>) => {
+      event.currentTarget.setPointerCapture(event.pointerId);
+      setResizing(pane);
+      resizePane(pane, event.clientX);
+    },
+    [resizePane],
+  );
+
+  const moveResize = useCallback(
+    (pane: "explorer" | "editor", event: ReactPointerEvent<HTMLDivElement>) => {
+      if (resizing === pane) resizePane(pane, event.clientX);
+    },
+    [resizePane, resizing],
+  );
+
+  const endResize = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    setResizing(null);
+  }, []);
+
+  const resizeWithKeyboard = useCallback(
+    (
+      pane: "explorer" | "editor",
+      event: ReactKeyboardEvent<HTMLDivElement>,
+    ) => {
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+      const workspace = workspaceRef.current;
+      if (!workspace) return;
+      event.preventDefault();
+      const bounds = workspace.getBoundingClientRect();
+      const delta = event.key === "ArrowLeft" ? -16 : 16;
+      if (pane === "explorer") {
+        resizePane(pane, bounds.left + explorerWidth + delta);
+        return;
+      }
+      const explorerSpace = explorerCollapsed ? 30 : explorerWidth + 8;
+      const currentWidth =
+        editorWidth ?? Math.max(280, (bounds.width - explorerSpace - 8) * 0.42);
+      resizePane(pane, bounds.left + explorerSpace + currentWidth + delta);
+    },
+    [editorWidth, explorerCollapsed, explorerWidth, resizePane],
+  );
+
+  useEffect(() => {
+    if (!previewMaximized) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setPreviewMaximized(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [previewMaximized]);
 
   /**
    * Open a local folder (replacing the active repository) or, when a folder is
@@ -2222,6 +2322,18 @@ export default function App() {
               {bindingLabel(COMMAND_PALETTE_BINDING)}
             </kbd>
           </button>
+          {page === "workspace" ? (
+            <button
+              type="button"
+              className="icon-button app__settings-button"
+              data-testid="workspace-settings"
+              aria-label="Open workspace settings"
+              title="Workspace settings"
+              onClick={openSettings}
+            >
+              ⚙
+            </button>
+          ) : null}
         </div>
       </header>
 
@@ -2246,77 +2358,116 @@ export default function App() {
         />
       ) : (
         <>
-          <main className="app__workspace">
-            <section
-              className="app__pane app__pane--explorer"
-              aria-label="Project explorer"
-            >
-              <Explorer
-                projects={projects}
-                diagrams={diagrams}
-                notes={notes}
-                allDiagrams={allDiagrams}
-                allNotes={allNotes}
-                selectedProjectId={selectedProjectId}
-                selectedDiagramId={selectedDiagramId}
-                selectedNoteId={selectedNoteId}
-                isLoading={isLoading}
-                onCreateProject={createProjectHere}
-                switcher={
-                  <WorkspaceSwitcher
-                    mode={workspaceMode}
-                    folderName={openedFolder?.folderName ?? null}
-                    folderSupported={supportsFileSystemAccess()}
-                    serverProjects={server.projects}
-                    serverProjectsLoading={server.projectsLoading}
-                    serverProjectsError={server.projectsError}
-                    activeServerProjectId={server.active?.project.id ?? null}
-                    serverOpenError={server.openError}
-                    onOpenLocal={openLocalWorkspace}
-                    onOpenFolder={openFolder}
-                    onOpenServerProject={(project) => {
-                      void server.openProject(project);
-                    }}
-                    onCreateServerProject={(name) => {
-                      void server.createProject(name);
-                    }}
-                    onReloadServerProjects={() => {
-                      void server.refresh();
-                    }}
-                    onDownloadLocalCopy={exportProjectCommand}
-                    onOpenSettings={openSettings}
-                  />
-                }
-                onAddMenu={(project, position) =>
-                  setMenu({ kind: "project-add", project, ...position })
-                }
-                onLoadDiagram={loadDiagram}
-                onLoadNote={loadNote}
-                onDiagramMenu={(diagram, position) =>
-                  setMenu({ kind: "diagram", diagram, ...position })
-                }
-                onNoteMenu={(note, position) =>
-                  setMenu({ kind: "note", note, ...position })
-                }
-                onProjectMenu={(project, position) =>
-                  setMenu({ kind: "project", project, ...position })
-                }
-                collapsedProjectIds={[...collapsedProjects]}
-                onToggleProjectCollapse={toggleProjectCollapse}
-                hiddenCount={hiddenPaths.size}
-                onUnhideAll={unhideAll}
-                onOpenFolder={openFolder}
-                folderName={openedFolder?.folderName ?? null}
-                workspaceLabel={
-                  server.active
-                    ? `Server project: ${server.active.project.name}`
-                    : openedFolder
-                      ? `Local folder: ${openedFolder.folderName}`
-                      : "Browser local"
-                }
-                folderSupported={supportsFileSystemAccess()}
+          <main
+            ref={workspaceRef}
+            className={`app__workspace${previewMaximized ? " app__workspace--preview-maximized" : ""}`}
+          >
+            {explorerCollapsed ? (
+              <button
+                type="button"
+                className="app__explorer-restore"
+                aria-label="Expand project explorer"
+                title="Expand project explorer"
+                onClick={() => setExplorerCollapsed(false)}
+              >
+                ›
+              </button>
+            ) : (
+              <section
+                className="app__pane app__pane--explorer"
+                aria-label="Project explorer"
+                style={{ flexBasis: explorerWidth }}
+              >
+                <Explorer
+                  projects={projects}
+                  diagrams={diagrams}
+                  notes={notes}
+                  allDiagrams={allDiagrams}
+                  allNotes={allNotes}
+                  selectedProjectId={selectedProjectId}
+                  selectedDiagramId={selectedDiagramId}
+                  selectedNoteId={selectedNoteId}
+                  isLoading={isLoading}
+                  onCreateProject={createProjectHere}
+                  switcher={
+                    <WorkspaceSwitcher
+                      mode={workspaceMode}
+                      folderName={openedFolder?.folderName ?? null}
+                      folderSupported={supportsFileSystemAccess()}
+                      serverProjects={server.projects}
+                      serverProjectsLoading={server.projectsLoading}
+                      serverProjectsError={server.projectsError}
+                      activeServerProjectId={server.active?.project.id ?? null}
+                      serverOpenError={server.openError}
+                      onOpenLocal={openLocalWorkspace}
+                      onOpenFolder={openFolder}
+                      onOpenServerProject={(project) => {
+                        void server.openProject(project);
+                      }}
+                      onCreateServerProject={(name) => {
+                        void server.createProject(name);
+                      }}
+                      onReloadServerProjects={() => {
+                        void server.refresh();
+                      }}
+                      onDownloadLocalCopy={exportProjectCommand}
+                    />
+                  }
+                  onAddMenu={(project, position) =>
+                    setMenu({ kind: "project-add", project, ...position })
+                  }
+                  onLoadDiagram={loadDiagram}
+                  onLoadNote={loadNote}
+                  onDiagramMenu={(diagram, position) =>
+                    setMenu({ kind: "diagram", diagram, ...position })
+                  }
+                  onNoteMenu={(note, position) =>
+                    setMenu({ kind: "note", note, ...position })
+                  }
+                  onProjectMenu={(project, position) =>
+                    setMenu({ kind: "project", project, ...position })
+                  }
+                  collapsedProjectIds={[...collapsedProjects]}
+                  onToggleProjectCollapse={toggleProjectCollapse}
+                  hiddenCount={hiddenPaths.size}
+                  onUnhideAll={unhideAll}
+                  onOpenFolder={openFolder}
+                  folderName={openedFolder?.folderName ?? null}
+                  workspaceLabel={
+                    server.active
+                      ? `Server project: ${server.active.project.name}`
+                      : openedFolder
+                        ? `Local folder: ${openedFolder.folderName}`
+                        : "Browser local"
+                  }
+                  folderSupported={supportsFileSystemAccess()}
+                />
+                <button
+                  type="button"
+                  className="app__explorer-collapse"
+                  aria-label="Collapse project explorer"
+                  title="Collapse project explorer"
+                  onClick={() => setExplorerCollapsed(true)}
+                >
+                  ‹
+                </button>
+              </section>
+            )}
+
+            {!explorerCollapsed ? (
+              <div
+                className="app__splitter"
+                role="separator"
+                tabIndex={0}
+                aria-label="Resize project explorer"
+                aria-orientation="vertical"
+                onPointerDown={(event) => startResize("explorer", event)}
+                onPointerMove={(event) => moveResize("explorer", event)}
+                onPointerUp={endResize}
+                onPointerCancel={endResize}
+                onKeyDown={(event) => resizeWithKeyboard("explorer", event)}
               />
-            </section>
+            ) : null}
 
             <section
               className="app__pane app__pane--editor"
@@ -2326,6 +2477,9 @@ export default function App() {
                   : isEventFlow
                     ? "Event flow editor"
                     : "DSL editor"
+              }
+              style={
+                editorWidth === null ? undefined : { flexBasis: editorWidth }
               }
             >
               {view === "outline" ? (
@@ -2446,6 +2600,19 @@ export default function App() {
               )}
             </section>
 
+            <div
+              className="app__splitter"
+              role="separator"
+              tabIndex={0}
+              aria-label="Resize editor"
+              aria-orientation="vertical"
+              onPointerDown={(event) => startResize("editor", event)}
+              onPointerMove={(event) => moveResize("editor", event)}
+              onPointerUp={endResize}
+              onPointerCancel={endResize}
+              onKeyDown={(event) => resizeWithKeyboard("editor", event)}
+            />
+
             <section
               className="app__pane app__pane--preview"
               aria-label={
@@ -2470,6 +2637,10 @@ export default function App() {
                   source={source}
                   onNodeSelect={onNodeSelect}
                   activeNodeId={activeNodeId}
+                  maximized={previewMaximized}
+                  onToggleMaximize={() =>
+                    setPreviewMaximized((value) => !value)
+                  }
                 />
               ) : (
                 <Preview
@@ -2479,6 +2650,10 @@ export default function App() {
                   onRender={() => setRenderedSource(source)}
                   onNodeSelect={onNodeSelect}
                   activeNodeId={activeNodeId}
+                  maximized={previewMaximized}
+                  onToggleMaximize={() =>
+                    setPreviewMaximized((value) => !value)
+                  }
                 />
               )}
             </section>

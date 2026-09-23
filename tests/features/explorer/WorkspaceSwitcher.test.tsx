@@ -33,13 +33,7 @@ function renderSwitcher(
     onOpenServerProject: vi.fn(),
     onCreateServerProject: vi.fn(),
   };
-  render(
-      <WorkspaceSwitcher
-        mode="local"
-        {...handlers}
-      {...overrides}
-    />,
-  );
+  render(<WorkspaceSwitcher mode="local" {...handlers} {...overrides} />);
   return handlers;
 }
 
@@ -127,17 +121,4 @@ describe("WorkspaceSwitcher", () => {
     fireEvent.click(screen.getByTestId("workspace-download-local-copy"));
     expect(onDownloadLocalCopy).toHaveBeenCalledTimes(1);
   });
-
-  it("opens server settings without expanding the sidebar", () => {
-    const onOpenSettings = vi.fn();
-    renderSwitcher({
-      onOpenSettings,
-    });
-
-    fireEvent.click(screen.getByTestId("workspace-settings"));
-
-    expect(onOpenSettings).toHaveBeenCalledTimes(1);
-    expect(screen.queryByTestId("workspace-admin-users")).toBeNull();
-  });
-
 });

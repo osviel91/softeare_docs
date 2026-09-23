@@ -115,6 +115,22 @@ describe("DiagramViewport", () => {
     expect(screen.getByLabelText("Zoom out")).toBeInTheDocument();
     expect(screen.getByLabelText("Fit diagram to view")).toBeInTheDocument();
     expect(screen.getByLabelText("Reset zoom to 100%")).toBeInTheDocument();
+    expect(screen.getByLabelText("Present fullscreen")).toBeInTheDocument();
+  });
+
+  it("toggles the preview-only layout when the caller provides it", () => {
+    const onToggleMaximize = vi.fn();
+    render(
+      <DiagramViewport
+        svg={SVG}
+        size={SIZE}
+        onToggleMaximize={onToggleMaximize}
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText("Maximize diagram preview"));
+
+    expect(onToggleMaximize).toHaveBeenCalledTimes(1);
   });
 
   describe("note bullets", () => {

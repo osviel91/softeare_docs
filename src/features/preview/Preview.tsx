@@ -36,6 +36,10 @@ export interface PreviewProps {
   onNodeSelect?: (nodeId: string) => void;
   /** The node to highlight, following the editor's caret. */
   activeNodeId?: string | null;
+  /** Whether the preview is the only visible app pane. */
+  maximized?: boolean;
+  /** Toggles the preview-only app layout. */
+  onToggleMaximize?: () => void;
 }
 
 export default function Preview({
@@ -45,6 +49,8 @@ export default function Preview({
   isStale = false,
   onNodeSelect,
   activeNodeId = null,
+  maximized = false,
+  onToggleMaximize,
 }: PreviewProps) {
   const { ast, diagnostics } = useDiagram(source);
   // Which note bullets are expanded. The set resets whenever the source changes
@@ -119,6 +125,8 @@ export default function Preview({
             onNoteToggle={toggleNote}
             onNodeSelect={onNodeSelect}
             activeNodeId={activeNodeId}
+            maximized={maximized}
+            onToggleMaximize={onToggleMaximize}
           />
           {!autoUpdate && (
             <div className="preview__pause" data-testid="preview-paused">

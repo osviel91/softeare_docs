@@ -19,7 +19,6 @@ export interface WorkspaceSwitcherProps {
   onCreateServerProject: (name: string) => void;
   onReloadServerProjects?: () => void;
   onDownloadLocalCopy?: () => void;
-  onOpenSettings?: () => void;
 }
 
 export default function WorkspaceSwitcher({
@@ -37,7 +36,6 @@ export default function WorkspaceSwitcher({
   onCreateServerProject,
   onReloadServerProjects,
   onDownloadLocalCopy,
-  onOpenSettings,
 }: WorkspaceSwitcherProps) {
   const [pendingName, setPendingName] = useState("");
   const [localExpanded, setLocalExpanded] = useState(mode !== "server");
@@ -123,138 +121,124 @@ export default function WorkspaceSwitcher({
               aria-expanded={serverExpanded}
               onClick={() => setServerExpanded((expanded) => !expanded)}
             >
-              Server <span aria-hidden="true">{serverExpanded ? "▾" : "▸"}</span>
+              Server{" "}
+              <span aria-hidden="true">{serverExpanded ? "▾" : "▸"}</span>
             </button>
-            {onOpenSettings && (
-              <button
-                type="button"
-                className="workspaces__settings"
-                data-testid="workspace-settings"
-                aria-label="Open workspace settings"
-                title="Workspace settings"
-                onClick={onOpenSettings}
-              >
-                ⚙
-              </button>
-            )}
           </span>
         </h3>
 
         {serverExpanded && (
           <>
-              <form
-                className="workspaces__create"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  create();
-                }}
+            <form
+              className="workspaces__create"
+              onSubmit={(event) => {
+                event.preventDefault();
+                create();
+              }}
+            >
+              <label className="visually-hidden" htmlFor="server-project-name">
+                New server project name
+              </label>
+              <input
+                id="server-project-name"
+                className="explorer__input"
+                data-testid="workspace-new-server-project-input"
+                value={pendingName}
+                onChange={(event) => setPendingName(event.target.value)}
+                placeholder="New server project"
+              />
+              <button
+                type="submit"
+                className="workspaces__create-button"
+                data-testid="workspace-new-server-project-button"
+                disabled={name === ""}
               >
-                <label
-                  className="visually-hidden"
-                  htmlFor="server-project-name"
-                >
-                  New server project name
-                </label>
-                <input
-                  id="server-project-name"
-                  className="explorer__input"
-                  data-testid="workspace-new-server-project-input"
-                  value={pendingName}
-                  onChange={(event) => setPendingName(event.target.value)}
-                  placeholder="New server project"
-                />
-                <button
-                  type="submit"
-                  className="workspaces__create-button"
-                  data-testid="workspace-new-server-project-button"
-                  disabled={name === ""}
-                >
-                  Create
-                </button>
-              </form>
+                Create
+              </button>
+            </form>
 
-              {serverProjectsLoading && (
+            {serverProjectsLoading && (
+              <p
+                className="workspaces__note"
+                data-testid="workspace-server-projects-loading"
+              >
+                Loading projects…
+              </p>
+            )}
+            {serverProjectsError !== null && (
+              <p
+                className="workspaces__error"
+                data-testid="workspace-server-projects-error"
+              >
+                {serverProjectsError}
+                {onReloadServerProjects && (
+                  <button
+                    type="button"
+                    className="workspaces__retry"
+                    data-testid="workspace-server-projects-retry"
+                    onClick={onReloadServerProjects}
+                  >
+                    Retry
+                  </button>
+                )}
+              </p>
+            )}
+            {!serverProjectsLoading &&
+              serverProjectsError === null &&
+              serverProjects.length === 0 && (
                 <p
                   className="workspaces__note"
-                  data-testid="workspace-server-projects-loading"
+                  data-testid="workspace-server-projects-empty"
                 >
-                  Loading projects…
+                  No server projects yet.
                 </p>
               )}
-              {serverProjectsError !== null && (
-                <p
-                  className="workspaces__error"
-                  data-testid="workspace-server-projects-error"
-                >
-                  {serverProjectsError}
-                  {onReloadServerProjects && (
+            {serverProjects.length > 0 && (
+              <ul className="workspaces__list">
+                {serverProjects.map((project) => (
+                  <li key={project.id}>
                     <button
                       type="button"
-                      className="workspaces__retry"
-                      data-testid="workspace-server-projects-retry"
-                      onClick={onReloadServerProjects}
+                      className={`workspaces__item${project.id === activeServerProjectId ? " workspaces__item--active" : ""}`}
+                      data-testid="workspace-server-project"
+                      aria-current={
+                        project.id === activeServerProjectId
+                          ? "true"
+                          : undefined
+                      }
+                      onClick={() => onOpenServerProject(project)}
                     >
-                      Retry
-                    </button>
-                  )}
-                </p>
-              )}
-              {!serverProjectsLoading &&
-                serverProjectsError === null &&
-                serverProjects.length === 0 && (
-                  <p
-                    className="workspaces__note"
-                    data-testid="workspace-server-projects-empty"
-                  >
-                    No server projects yet.
-                  </p>
-                )}
-              {serverProjects.length > 0 && (
-                <ul className="workspaces__list">
-                  {serverProjects.map((project) => (
-                    <li key={project.id}>
-                      <button
-                        type="button"
-                        className={`workspaces__item${project.id === activeServerProjectId ? " workspaces__item--active" : ""}`}
-                        data-testid="workspace-server-project"
-                        aria-current={
-                          project.id === activeServerProjectId
-                            ? "true"
-                            : undefined
-                        }
-                        onClick={() => onOpenServerProject(project)}
+                      <span
+                        className="workspaces__item-icon"
+                        aria-hidden="true"
                       >
-                        <span
-                          className="workspaces__item-icon"
-                          aria-hidden="true"
-                        >
-                          ☁
-                        </span>
-                        {project.name}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              {serverOpenError !== null && (
-                <p
-                  className="workspaces__error"
-                  data-testid="workspace-server-error"
-                >
-                  {serverOpenError}
-                </p>
-              )}
-              {onDownloadLocalCopy && (
-                <button
-                  type="button"
-                  className="workspaces__download"
-                  data-testid="workspace-download-local-copy"
-                  onClick={onDownloadLocalCopy}
-                >
-                  Download local copy (.zip)
-                </button>
-              )}
-            </>
+                        ☁
+                      </span>
+                      {project.name}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {serverOpenError !== null && (
+              <p
+                className="workspaces__error"
+                data-testid="workspace-server-error"
+              >
+                {serverOpenError}
+              </p>
+            )}
+            {onDownloadLocalCopy && (
+              <button
+                type="button"
+                className="workspaces__download"
+                data-testid="workspace-download-local-copy"
+                onClick={onDownloadLocalCopy}
+              >
+                Download local copy (.zip)
+              </button>
+            )}
+          </>
         )}
       </section>
     </nav>

@@ -20,12 +20,18 @@ export interface EventFlowPreviewProps {
   onNodeSelect?: (nodeId: string) => void;
   /** The node to highlight, following the editor's caret. */
   activeNodeId?: string | null;
+  /** Whether the preview is the only visible app pane. */
+  maximized?: boolean;
+  /** Toggles the preview-only app layout. */
+  onToggleMaximize?: () => void;
 }
 
 export default function EventFlowPreview({
   source,
   onNodeSelect,
   activeNodeId = null,
+  maximized = false,
+  onToggleMaximize,
 }: EventFlowPreviewProps) {
   const document = useMemo(() => {
     // Parsing here rather than taking an AST keeps this component's contract the
@@ -53,6 +59,8 @@ export default function EventFlowPreview({
         resetKey={source}
         onNodeSelect={onNodeSelect}
         activeNodeId={activeNodeId}
+        maximized={maximized}
+        onToggleMaximize={onToggleMaximize}
       />
     </div>
   );

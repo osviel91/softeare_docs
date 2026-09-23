@@ -64,6 +64,10 @@ export interface DiagramViewportProps {
    * disturbs the diagram or the pan/zoom transform.
    */
   activeNodeId?: string | null;
+  /** Whether the shell has expanded this preview to its full workspace. */
+  maximized?: boolean;
+  /** Toggles the preview-only app layout. */
+  onToggleMaximize?: () => void;
 }
 
 /** Pixels to pan per arrow key press. */
@@ -111,8 +115,11 @@ export default function DiagramViewport({
   onNoteToggle,
   onNodeSelect,
   activeNodeId = null,
+  maximized = false,
+  onToggleMaximize,
 }: DiagramViewportProps) {
   const paneRef = useRef<HTMLDivElement | null>(null);
+  const viewportRef = useRef<HTMLDivElement | null>(null);
   // The element holding the injected SVG, so the active-node highlight can be a
   // class toggle rather than a re-render.
   const contentRef = useRef<HTMLDivElement | null>(null);
@@ -236,6 +243,23 @@ export default function DiagramViewport({
   const zoomOut = () =>
     setTransform((current) => zoomAtCenter(current, 1 / ZOOM_STEP, paneSize));
 
+  const [fullscreen, setFullscreen] = useState(false);
+  useEffect(() => {
+    const onFullscreenChange = () =>
+      setFullscreen(document.fullscreenElement === viewportRef.current);
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    return () =>
+      document.removeEventListener("fullscreenchange", onFullscreenChange);
+  }, []);
+
+  const toggleFullscreen = () => {
+    if (document.fullscreenElement === viewportRef.current) {
+      void document.exitFullscreen().catch(() => {});
+    } else {
+      void viewportRef.current?.requestFullscreen?.().catch(() => {});
+    }
+  };
+
   // Note bullets are part of the injected SVG, so activation is delegated: find
   // the nearest element carrying `data-note-index` and report it. This keeps the
   // viewport agnostic about what a note is.
@@ -333,7 +357,7 @@ export default function DiagramViewport({
   };
 
   return (
-    <div className="viewport" data-testid="diagram-viewport">
+    <div ref={viewportRef} className="viewport" data-testid="diagram-viewport">
       <div
         ref={paneRef}
         className={`viewport__pane${isPanning ? " viewport__pane--panning" : ""}`}
@@ -412,6 +436,40 @@ export default function DiagramViewport({
           onClick={resetTo100}
         >
           1:1
+        </button>
+        {onToggleMaximize ? (
+          <button
+            type="button"
+            className="icon-button"
+            data-testid="preview-maximize"
+            aria-label={
+              maximized
+                ? "Restore workspace panels"
+                : "Maximize diagram preview"
+            }
+            title={
+              maximized
+                ? "Restore workspace panels"
+                : "Maximize diagram preview"
+            }
+            onClick={onToggleMaximize}
+          >
+            {maximized ? "⊡" : "⤢"}
+          </button>
+        ) : null}
+        <button
+          type="button"
+          className="icon-button"
+          data-testid="preview-fullscreen"
+          aria-label={
+            fullscreen ? "Exit presentation fullscreen" : "Present fullscreen"
+          }
+          title={
+            fullscreen ? "Exit presentation fullscreen" : "Present fullscreen"
+          }
+          onClick={toggleFullscreen}
+        >
+          {fullscreen ? "⊡" : "⛶"}
         </button>
       </div>
 

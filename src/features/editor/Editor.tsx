@@ -395,6 +395,7 @@ export default function Editor({
             data-testid="dsl-textarea"
             aria-label="Sequence DSL"
             spellCheck={false}
+            wrap="off"
             value={value}
             onChange={(event) => {
               const next = event.target.value;

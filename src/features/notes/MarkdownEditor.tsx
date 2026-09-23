@@ -57,6 +57,7 @@ export default function MarkdownEditor({
           data-testid="markdown-textarea"
           aria-label={ariaLabel}
           spellCheck={false}
+          wrap="off"
           value={value}
           onChange={(event) => onChange(event.target.value)}
           onScroll={(event) => {

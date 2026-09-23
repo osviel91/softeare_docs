@@ -914,7 +914,7 @@ async function runChecks(page, idp) {
       sameFont: a.fontFamily === b.fontFamily && a.fontSize === b.fontSize,
       sameLineHeight: a.lineHeight === b.lineHeight,
       samePadding: a.padding === b.padding,
-      sameWrap: a.whiteSpace === b.whiteSpace,
+      noSoftWrap: textarea.wrap === "off" && a.whiteSpace === "pre",
       sameBox:
         Math.abs(ra.left - rb.left) < 0.5 &&
         Math.abs(ra.top - rb.top) < 0.5 &&
@@ -927,10 +927,7 @@ async function runChecks(page, idp) {
     "highlight layer shares the textarea's line height",
     layerMetrics.sameLineHeight,
   );
-  check(
-    "highlight layer shares the textarea's wrapping",
-    layerMetrics.sameWrap,
-  );
+  check("editor source lines do not soft-wrap", layerMetrics.noSoftWrap);
   check("highlight layer covers the textarea exactly", layerMetrics.sameBox);
 
   // Retyping a declaration's name carries its usages with it, so the diagram

@@ -646,8 +646,7 @@ body {
   font-family: var(--font-mono);
   font-size: var(--editor-font-size);
   line-height: var(--editor-line-height);
-  white-space: pre-wrap;
-  overflow-wrap: break-word;
+  white-space: pre;
   scrollbar-gutter: stable;
   tab-size: 2;
 }

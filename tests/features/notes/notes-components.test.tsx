@@ -20,6 +20,19 @@ describe("MarkdownEditor", () => {
     );
   });
 
+  it("keeps one visual row per source line", () => {
+    render(
+      <MarkdownEditor
+        value="a very long markdown source line"
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId("markdown-textarea")).toHaveAttribute(
+      "wrap",
+      "off",
+    );
+  });
+
   it("advertises the diagram link syntax", () => {
     render(<MarkdownEditor value="" onChange={vi.fn()} />);
     expect(screen.getByTestId("markdown-hint")).toHaveTextContent("[[Name]]");

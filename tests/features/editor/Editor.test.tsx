@@ -64,6 +64,11 @@ describe("Editor", () => {
 });
 
 describe("Editor — line numbers", () => {
+  it("keeps one visual row per source line", () => {
+    render(<Editor value="a very long source line" onChange={vi.fn()} />);
+    expect(screen.getByTestId("dsl-textarea")).toHaveAttribute("wrap", "off");
+  });
+
   it("shows one line number per source line", () => {
     render(
       <Editor

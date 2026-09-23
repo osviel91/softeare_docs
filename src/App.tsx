@@ -108,7 +108,9 @@ import type { EditorReveal } from "./features/editor/reveal";
 import type { SearchMatch } from "./domain/search/project-search";
 import type { Command, CommandRegistry } from "./features/commands/command";
 import OutlinePanel from "./features/outline/OutlinePanel";
-import EventFlowPreview from "./features/preview/EventFlowPreview";
+import EventFlowPreview, {
+  type EventFlowView,
+} from "./features/preview/EventFlowPreview";
 import { renderEventFlowDocument } from "./renderer/pipeline/eventflow-to-svg";
 import { analyzeEventFlow } from "./language/eventflow/parser";
 import {
@@ -384,9 +386,7 @@ export default function App() {
   const [editorWidth, setEditorWidth] = useState<number | null>(null);
   const [explorerCollapsed, setExplorerCollapsed] = useState(false);
   const [previewMaximized, setPreviewMaximized] = useState(false);
-  const [eventFlowView, setEventFlowView] = useState<"flow" | "catalog">(
-    "flow",
-  );
+  const [eventFlowView, setEventFlowView] = useState<EventFlowView>("flow");
   const [resizing, setResizing] = useState<"explorer" | "editor" | null>(null);
   // The source the preview is actually showing. While auto-update is on this
   // tracks the editor; while it is off it only moves when the user renders.

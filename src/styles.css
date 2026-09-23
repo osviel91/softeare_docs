@@ -1339,6 +1339,70 @@ body {
   color: var(--text);
 }
 
+.event-topology {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg-inset);
+}
+
+.event-topology .viewport {
+  height: 100%;
+}
+
+.event-topology__details {
+  position: absolute;
+  top: 64px;
+  right: 16px;
+  z-index: 1;
+  width: min(250px, calc(100% - 32px));
+  max-height: calc(100% - 80px);
+  overflow: auto;
+  padding: 12px;
+  background: color-mix(in srgb, var(--bg-elevated) 94%, transparent);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-pop);
+}
+
+.event-topology__connection + .event-topology__connection {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.event-topology__connection h2 {
+  margin: 0;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.event-topology__connection p,
+.event-topology__connection li {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.event-topology__connection p {
+  margin: 4px 0;
+}
+
+.event-topology__connection ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+
+.event-topology__connection button {
+  padding: 0;
+  color: var(--accent);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+}
+
 .preview__pause {
   position: absolute;
   bottom: 14px;

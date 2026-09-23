@@ -11,11 +11,13 @@
 import { useMemo } from "react";
 import { analyzeEventFlow } from "../../language/eventflow/parser";
 import { renderEventFlowDocument } from "../../renderer/pipeline/eventflow-to-svg";
+import { renderEventFlowTopologyDocument } from "../../renderer/pipeline/eventflow-to-topology-svg";
 import { projectEventFlowToCatalog } from "../../domain/eventflow/catalog-projection";
+import { projectEventFlowToTopology } from "../../domain/eventflow/topology-projection";
 import type { EventFlow } from "../../domain/eventflow/ast";
 import DiagramViewport from "./DiagramViewport";
 
-type EventFlowView = "flow" | "catalog";
+export type EventFlowView = "flow" | "catalog" | "topology";
 
 export interface EventFlowPreviewProps {
   /** The event-flow DSL source. */
@@ -51,6 +53,11 @@ export default function EventFlowPreview({
   }, [source]);
   const flow = providedFlow ?? analyzeEventFlow(source).flow;
   const catalog = useMemo(() => projectEventFlowToCatalog(flow), [flow]);
+  const topology = useMemo(() => projectEventFlowToTopology(flow), [flow]);
+  const topologyDocument = useMemo(
+    () => renderEventFlowTopologyDocument(flow),
+    [flow],
+  );
 
   const selector = (
     <div
@@ -73,6 +80,14 @@ export default function EventFlowPreview({
         onClick={() => onViewChange?.("catalog")}
       >
         Catalog
+      </button>
+      <button
+        type="button"
+        className={view === "topology" ? "is-active" : ""}
+        aria-pressed={view === "topology"}
+        onClick={() => onViewChange?.("topology")}
+      >
+        Topology
       </button>
     </div>
   );
@@ -172,6 +187,82 @@ export default function EventFlowPreview({
                 </article>
               ))}
             </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (view === "topology") {
+    return (
+      <div className="preview" data-testid="event-flow-preview">
+        {selector}
+        <div className="event-topology" data-testid="event-topology">
+          {topology.services.length === 0 ? (
+            <p className="preview__empty" data-testid="event-topology-empty">
+              Nothing to map yet — declare a service or relationship.
+            </p>
+          ) : (
+            <>
+              <DiagramViewport
+                svg={topologyDocument.svg}
+                size={{
+                  width: topologyDocument.width,
+                  height: topologyDocument.height,
+                }}
+                svgTestId="topology-svg"
+                resetKey={source}
+                onNodeSelect={onNodeSelect}
+                activeNodeId={activeNodeId}
+                maximized={maximized}
+                onToggleMaximize={onToggleMaximize}
+              />
+              <div
+                className="event-topology__details"
+                aria-label="Topology relationships"
+              >
+                {topology.connections.map((connection) => (
+                  <article
+                    key={connection.id}
+                    className="event-topology__connection"
+                  >
+                    <h2>
+                      {connection.producer} to {connection.consumer}
+                    </h2>
+                    <p>
+                      {connection.events.length} event
+                      {connection.events.length === 1 ? "" : "s"}
+                    </p>
+                    <ul>
+                      {connection.events.map((event) => (
+                        <li key={event.name}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const id =
+                                event.publicationNodeIds[0] ??
+                                event.subscriptionNodeIds[0];
+                              if (id) onNodeSelect?.(id);
+                            }}
+                          >
+                            {event.name}
+                          </button>
+                          {event.channels.length > 0 && (
+                            <span>
+                              {" "}
+                              via{" "}
+                              {event.channels
+                                .map((channel) => channel.name)
+                                .join(", ")}
+                            </span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </article>
+                ))}
+              </div>
+            </>
           )}
         </div>
       </div>

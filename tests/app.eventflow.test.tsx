@@ -203,6 +203,34 @@ describe("App — event flows", () => {
     expect(screen.getByTestId("preview-svg")).toBeInTheDocument();
   });
 
+  it("switches between Flow, Catalog, and Topology without changing source", async () => {
+    render(<App />);
+    await createProject();
+    await newEventFlow();
+    fireEvent.change(screen.getByTestId("dsl-textarea"), {
+      target: { value: FLOW },
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("preview-svg")).toBeInTheDocument(),
+    );
+    const editor = screen.getByTestId("dsl-textarea") as HTMLTextAreaElement;
+    const source = editor.value;
+
+    fireEvent.click(screen.getByRole("button", { name: "Catalog" }));
+    expect(screen.getByTestId("event-catalog")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Topology" }));
+    expect(screen.getByTestId("topology-svg")).toBeInTheDocument();
+    expect(screen.getByTestId("event-topology")).toHaveTextContent(
+      "OrderService",
+    );
+    expect(screen.getByTestId("event-topology")).toHaveTextContent(
+      "PaymentRequested",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Flow" }));
+    expect(screen.getByTestId("preview-svg")).toBeInTheDocument();
+    expect(editor).toHaveValue(source);
+  });
+
   it("outlines what the flow declares and what happens", async () => {
     render(<App />);
     await createProject();

@@ -65,6 +65,7 @@ import {
 } from "../../../src/domain/search/project-search";
 import type { ToolAnnotations } from "../../../src/shared/mcp/protocol";
 import type { McpConfig } from "../config";
+import { normalizeResourceMetadata } from "../../../src/domain/workspace/resource-metadata";
 
 /** A tool's result before the dispatcher wraps it in an MCP result. */
 export interface ToolOutcome {
@@ -149,6 +150,18 @@ const idempotencyKey = () =>
     .describe(
       "An optional retry key. Repeating a call with the same key performs the mutation once.",
     );
+
+const resourceMetadata = () =>
+  z
+    .object({
+      description: z
+        .string()
+        .optional()
+        .describe("A short human-readable purpose."),
+      tags: z.array(z.string()).optional().describe("Classification labels."),
+    })
+    .strict()
+    .describe("Semantic metadata; send an empty object to clear it.");
 
 /** The read-only annotation set. */
 const READ_ONLY: ToolAnnotations = {
@@ -288,6 +301,7 @@ async function resolveResource(
     toolContext.context,
     projectIdValue,
   );
+
   const match =
     resources.find((resource) => resource.id === reference) ??
     resources.find((resource) => resource.path === reference);
@@ -504,6 +518,9 @@ export function createMcpTools(): McpTool[] {
               path: resource.path,
               type: resource.type,
               revision: resource.revision,
+              ...(resource.metadata === undefined
+                ? {}
+                : { metadata: resource.metadata }),
             })),
             nextCursor,
           },
@@ -515,7 +532,7 @@ export function createMcpTools(): McpTool[] {
       name: "list_resources",
       title: "List resources",
       description:
-        "List a project's resources with their stable id, path and current revision. The revision is what a write must present as `expectedRevision`, so read it here or from read_resource before updating. Paginated.",
+        "List a project's resources with stable identity, semantic metadata and current revision. The revision is what a write must present as `expectedRevision`. Paginated.",
       inputSchema: {
         projectId: projectId(),
         limit: limit(100, 500),
@@ -564,7 +581,7 @@ export function createMcpTools(): McpTool[] {
       name: "get_resource_metadata",
       title: "Get resource metadata",
       description:
-        "Read one resource's identity, path, type and current revision without its contents. Cheap, and the right call before an update when you already have the text.",
+        "Read one resource's identity, path, type, semantic metadata and current revision without its contents.",
       inputSchema: { projectId: projectId(), resource: resourceReference() },
       annotations: { ...READ_ONLY, title: "Get resource metadata" },
       requiredPermissions: ["resource:read"],
@@ -582,6 +599,58 @@ export function createMcpTools(): McpTool[] {
         );
         return {
           text: describeResource(resource),
+          structured: { resource },
+        };
+      },
+    },
+
+    {
+      name: "update_resource_metadata",
+      title: "Update resource metadata",
+      description:
+        "Replace a resource's semantic description and tags without changing its text. Send the revision you read; an empty metadata object clears both fields. Retries can use an idempotency key.",
+      inputSchema: {
+        projectId: projectId(),
+        resource: resourceReference(),
+        metadata: resourceMetadata(),
+        expectedRevision: z
+          .number()
+          .int()
+          .min(1)
+          .describe("The revision you last read."),
+        idempotencyKey: idempotencyKey(),
+      },
+      annotations: { ...UPSERT, title: "Update resource metadata" },
+      requiredPermissions: ["resource:update"],
+      async run(args, toolContext) {
+        const id = stringArg(args, "projectId");
+        const resolved = await resolveResource(
+          toolContext,
+          id,
+          stringArg(args, "resource"),
+        );
+        const current = await toolContext.catalog.readResource(
+          toolContext.context,
+          id,
+          resolved.id,
+        );
+        const resource = await toolContext.catalog.updateResource(
+          toolContext.context,
+          id,
+          resolved.id,
+          {
+            content: current.content,
+            metadata: normalizeResourceMetadata(
+              args.metadata as { description?: string; tags?: string[] },
+            ),
+            expectedRevision: numberArg(args, "expectedRevision") ?? 0,
+            ...(typeof args.idempotencyKey === "string"
+              ? { idempotencyKey: args.idempotencyKey }
+              : {}),
+          },
+        );
+        return {
+          text: `Updated metadata for ${resource.path}; it is now at revision ${resource.revision}.`,
           structured: { resource },
         };
       },

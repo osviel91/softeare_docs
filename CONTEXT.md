@@ -27,9 +27,9 @@ The domain distinguishes a resource's identity and content from stored semantic
 metadata (`description` and `tags`) and from derived presentation information
 such as its effective title. Visualization is not resource metadata.
 
-Stored semantic metadata is currently a domain model only. Existing titles remain
-content- or name-derived, with no second independently editable title source.
-Persistence propagation is intentionally deferred.
+Stored semantic metadata is persisted and exposed by the server resource API and
+remote MCP discovery/read/update surfaces. Existing titles remain content- or
+name-derived, with no second independently editable title source.
 
 **Diagram**: A visual document rendered from one of the project's diagram DSLs.
 

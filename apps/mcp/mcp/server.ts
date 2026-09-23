@@ -63,10 +63,11 @@ A project contains sequence diagrams (\`.seq\`), event flows (\`.eventseq\`) and
 Work in this order:
 1. list_projects — the project ids every other tool addresses. If it is empty and the credential has project:create, call create_project.
 2. get_project_index or list_resources — see what exists and what your token may do.
-3. read_diagram, read_documentation or read_resource — get the text *and its current revision*.
+3. read_diagram, read_documentation or read_resource — get the text, semantic metadata and current revision.
 4. Prefer the semantic tools for writing: upsert_sequence_diagram, upsert_event_flow and upsert_documentation parse and validate before they persist, and apply the revision for you. Use create_resource/update_resource only when you need raw control.
 5. Every write names the revision it read as \`expectedRevision\`. A stale value is refused with a conflict: re-read, then retry at the new revision. Never invent a revision.
-6. After changing a diagram, call validate_project to see problems.
+6. Resource descriptions and tags are documentary metadata. Use get_resource_metadata to inspect them or update_resource_metadata to replace them without changing text; an empty metadata object clears them.
+7. After changing a diagram, call validate_project to see problems.
 
 A token carries scopes. A read-only token cannot write; project membership always applies, so a token can never act outside the projects its owner belongs to. Mutating tools accept an \`idempotencyKey\`; a retry with the same key performs the mutation once.`;
 
@@ -387,7 +388,7 @@ function registerResources(
                 uri: `seqdocs://projects/${entry.project.id}/resources/${resource.id}`,
                 name: resource.path,
                 title: resource.path,
-                description: `${resource.path} (revision ${resource.revision}).`,
+                description: `${resource.path} (revision ${resource.revision})${resource.metadata?.description === undefined ? "" : `: ${resource.metadata.description}`}.`,
                 mimeType: mimeTypeOf(resource.path),
                 _meta: cacheMeta,
               });

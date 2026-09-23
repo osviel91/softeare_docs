@@ -32,6 +32,7 @@ import type { WorkspaceRole } from "../../src/domain/workspace/server-workspace"
 import { isWorkspaceRole } from "../../src/domain/workspace/server-workspace";
 import { invalid } from "../../src/application/errors";
 import type { AppDependencies } from "./app";
+import { normalizeResourceMetadata } from "../../src/domain/workspace/resource-metadata";
 
 /** The routes this API exposes. */
 export function createRouter(dependencies: AppDependencies): Router {
@@ -423,6 +424,9 @@ export function createRouter(dependencies: AppDependencies): Router {
         path: requireBodyString(body, "path"),
         type,
         content: typeof body.content === "string" ? body.content : "",
+        ...(body.metadata === undefined
+          ? {}
+          : { metadata: resourceMetadata(body.metadata) }),
       });
       return json(201, { resource: resourceView(resource) });
     }),
@@ -462,6 +466,9 @@ export function createRouter(dependencies: AppDependencies): Router {
           {
             content: typeof body.content === "string" ? body.content : "",
             expectedRevision: requireExpectedRevision(body),
+            ...(body.metadata === undefined
+              ? {}
+              : { metadata: resourceMetadata(body.metadata) }),
           },
         );
         return json(200, { resource: resourceView(resource) });
@@ -637,6 +644,7 @@ function resourceView(resource: {
   path: string;
   type: string;
   revision: number;
+  metadata?: { description?: string; tags?: string[] };
 }): Record<string, unknown> {
   return {
     id: resource.id,
@@ -644,6 +652,7 @@ function resourceView(resource: {
     path: resource.path,
     type: resource.type,
     revision: resource.revision,
+    ...(resource.metadata === undefined ? {} : { metadata: resource.metadata }),
   };
 }
 
@@ -686,4 +695,32 @@ function requireExpectedRevision(body: Record<string, unknown>): number {
     );
   }
   return value;
+}
+
+/** Validate and normalize the optional semantic metadata object. */
+function resourceMetadata(value: unknown): {
+  description?: string;
+  tags?: string[];
+} {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw invalid("metadata must be an object.");
+  }
+  const input = value as Record<string, unknown>;
+  if (
+    (input.description !== undefined &&
+      typeof input.description !== "string") ||
+    (input.tags !== undefined &&
+      (!Array.isArray(input.tags) ||
+        !input.tags.every((tag) => typeof tag === "string")))
+  ) {
+    throw invalid(
+      "metadata.description must be a string and metadata.tags must be an array of strings.",
+    );
+  }
+  return normalizeResourceMetadata({
+    ...(typeof input.description === "string"
+      ? { description: input.description }
+      : {}),
+    ...(Array.isArray(input.tags) ? { tags: input.tags as string[] } : {}),
+  });
 }

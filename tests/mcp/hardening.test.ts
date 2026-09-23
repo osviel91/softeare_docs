@@ -500,6 +500,49 @@ describe("statelessness across instances", () => {
     );
     expect(response.headers.get("mcp-session-id")).toBeNull();
   });
+
+  it("reads and updates resource metadata without replacing content", async () => {
+    const ownerId = await harness.aUser();
+    const projectId = await harness.aProject(ownerId);
+    const { token } = await harness.aToken(ownerId);
+    const created = await post(
+      harness.origin,
+      call("create_resource", {
+        projectId,
+        path: "metadata.seq",
+        type: "sequence-diagram",
+        content: "title Metadata\n",
+      }),
+      { token },
+    );
+    const resourceId = ((await created.json()) as any).result.structuredContent
+      .resource.id;
+    const updated = await post(
+      harness.origin,
+      call("update_resource_metadata", {
+        projectId,
+        resource: resourceId,
+        metadata: { description: "  A flow ", tags: ["Core", " core "] },
+        expectedRevision: 1,
+      }),
+      { token },
+    );
+    const updatedBody = (await updated.json()) as any;
+    expect(updatedBody.result.structuredContent.resource.metadata).toEqual({
+      description: "A flow",
+      tags: ["Core"],
+    });
+    expect(updatedBody.result.structuredContent.resource.revision).toBe(2);
+
+    const read = await post(
+      harness.origin,
+      call("read_resource", { projectId, resource: resourceId }),
+      { token },
+    );
+    expect((await read.json()).result.structuredContent.content).toBe(
+      "title Metadata\n",
+    );
+  });
 });
 
 describe("concurrency and retries over the wire", () => {

@@ -464,6 +464,43 @@ describe("resource routes", () => {
       revision: 1,
     });
   });
+
+  it("exposes normalized metadata and preserves it when omitted", async () => {
+    const { cookie, projectId } = await aProject("Metadata API");
+    const created = await call("POST", `/api/projects/${projectId}/resources`, {
+      cookie,
+      body: {
+        path: "a.seq",
+        type: "sequence-diagram",
+        content: "title A\n",
+        metadata: { description: "  Checkout flow ", tags: ["Core", " core "] },
+      },
+    });
+    expect(created.body.resource.metadata).toEqual({
+      description: "Checkout flow",
+      tags: ["Core"],
+    });
+
+    const contentOnly = await call(
+      "PUT",
+      `/api/projects/${projectId}/resources/${created.body.resource.id}`,
+      { cookie, body: { content: "title B\n", expectedRevision: 1 } },
+    );
+    expect(contentOnly.body.resource.metadata).toEqual({
+      description: "Checkout flow",
+      tags: ["Core"],
+    });
+
+    const cleared = await call(
+      "PUT",
+      `/api/projects/${projectId}/resources/${created.body.resource.id}`,
+      {
+        cookie,
+        body: { content: "title B\n", expectedRevision: 2, metadata: {} },
+      },
+    );
+    expect(cleared.body.resource).not.toHaveProperty("metadata");
+  });
 });
 
 describe("the access endpoint", () => {

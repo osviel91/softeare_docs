@@ -47,6 +47,7 @@ import {
   type WorkspaceMutationService,
 } from "./workspace-mutations";
 import type { JsonObject } from "../shared/json/json-value";
+import type { ResourceMetadata } from "../domain/workspace/resource-metadata";
 
 /**
  * A resource as the API and MCP surface it: identity, path, type, revision.
@@ -234,6 +235,7 @@ export interface ProjectCatalog {
       path: string;
       type: ResourceRecord["type"];
       content: string;
+      metadata?: ResourceMetadata;
       idempotencyKey?: string;
     },
   ): Promise<CatalogResource>;
@@ -251,6 +253,7 @@ export interface ProjectCatalog {
     input: {
       content: string;
       expectedRevision: number;
+      metadata?: ResourceMetadata;
       idempotencyKey?: string;
     },
   ): Promise<CatalogResource>;
@@ -310,6 +313,7 @@ function toCatalogResource(record: ResourceRecord): CatalogResource {
     path: record.path,
     type: record.type,
     revision: record.revision,
+    ...(record.metadata === undefined ? {} : { metadata: record.metadata }),
   };
 }
 

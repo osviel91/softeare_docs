@@ -71,6 +71,7 @@ export interface ResourceView {
   path: string;
   type: ResourceType;
   revision: number;
+  metadata?: ResourceMetadata;
 }
 
 /** The hidden directory staged bytes live in, relative to a project's root. */
@@ -191,6 +192,7 @@ function toView(record: ResourceRecord): ResourceView {
     path: record.path,
     type: record.type,
     revision: record.revision,
+    ...(record.metadata === undefined ? {} : { metadata: record.metadata }),
   };
 }
 
@@ -220,6 +222,12 @@ function viewFromResult(
       ? value.type
       : "sequence-diagram") as ResourceType,
     revision: typeof value.revision === "number" ? value.revision : 0,
+    ...(value.metadata !== undefined &&
+    typeof value.metadata === "object" &&
+    value.metadata !== null &&
+    !Array.isArray(value.metadata)
+      ? { metadata: value.metadata as ResourceMetadata }
+      : {}),
   };
 }
 
@@ -491,15 +499,23 @@ export function createWorkspaceMutationService(
       );
     }
 
-    const view: ResourceView = {
-      id: params.resourceId,
-      projectId: params.projectId,
-      path: params.targetPath,
-      type:
-        params.resourceType ??
-        (await typeOf(params.projectId, params.resourceId)),
-      revision: operation.resultingRevision ?? params.expectedRevision ?? 1,
-    };
+    const record = await projects.findResource(
+      params.projectId,
+      params.resourceId,
+    );
+    const view: ResourceView =
+      record === null
+        ? {
+            id: params.resourceId,
+            projectId: params.projectId,
+            path: params.targetPath,
+            type:
+              params.resourceType ??
+              (await typeOf(params.projectId, params.resourceId)),
+            revision:
+              operation.resultingRevision ?? params.expectedRevision ?? 1,
+          }
+        : toView(record);
     await finalize(operation, params.resultFor(view));
     return params.viewFor(view, operation);
   };

@@ -49,10 +49,11 @@ architecture.
 
 - Project resources are exposed at `/api/projects/:projectId/resources`.
 - Resource representations contain `id`, `projectId`, `path`, `type`, and
-  `revision`; reads additionally return content.
-- Resource metadata is persisted by local repositories and server storage, but
-  remains an internal workspace concern and is not added to HTTP or MCP resource
-  representations.
+  `revision`, plus optional normalized `metadata` containing `description` and
+  `tags`; reads additionally return content.
+- Resource create and update accept metadata. Omitting it preserves existing
+  metadata; sending an empty object clears it. Updates still require the expected
+  revision and use the shared journaled mutation path.
 - The supported resource types are `sequence-diagram`, `event-flow`, and
   `markdown-document`. Create, update, move, and delete preserve project
   scoping, path validation, authorization, and expected-revision behavior.
@@ -62,6 +63,8 @@ architecture.
 - Remote MCP exposes project/resource discovery and read/write operations plus
   semantic diagram, event-flow, and documentation tools. Its resource reads and
   writes use the same project authorization and revision rules as the API.
+  `get_resource_metadata` reads the semantic fields and
+  `update_resource_metadata` changes them without replacing content.
 - Stdio MCP exposes the local workspace operations, static reference resources,
   validation, search, and SVG rendering. Existing tool names and reference URIs
   are compatibility surface.

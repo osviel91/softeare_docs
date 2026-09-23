@@ -24,6 +24,7 @@ import type {
 import type { ProjectRole } from "../../domain/access/permissions";
 import type { ResourceType } from "../../domain/workspace/resource-id";
 import type { ResourceMetadata } from "../../domain/workspace/resource-metadata";
+import type { ResourceRevision } from "../../domain/workspace/resource-revision";
 import type { Result } from "../../shared/result/result";
 
 /** A resource row: the server's record of one stored document. */
@@ -144,4 +145,11 @@ export interface ProjectRepository {
 
   /** Forget a resource. Its file is removed by the caller. */
   deleteResource(projectId: string, resourceId: string): Promise<void>;
+
+  listRevisions(resourceId: string): Promise<ResourceRevision[]>;
+
+  getRevision(
+    resourceId: string,
+    revision: number,
+  ): Promise<ResourceRevision | null>;
 }

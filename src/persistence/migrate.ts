@@ -21,6 +21,7 @@ import { up as localCredentials } from "./migrations/0006-local-credentials";
 import { up as userIdentities } from "./migrations/0007-user-identities";
 import { up as workspaceLifecycle } from "./migrations/0008-workspace-lifecycle";
 import { up as resourceMetadata } from "./migrations/0009-resource-metadata";
+import { up as resourceRevisions } from "./migrations/0010-resource-revisions";
 
 /** One migration: a stable name and the SQL that applies it. */
 export interface Migration {
@@ -43,6 +44,7 @@ export const MIGRATIONS: readonly Migration[] = [
   { version: 7, name: "user-identities", sql: userIdentities },
   { version: 8, name: "workspace-lifecycle", sql: workspaceLifecycle },
   { version: 9, name: "resource-metadata", sql: resourceMetadata },
+  { version: 10, name: "resource-revisions", sql: resourceRevisions },
 ];
 
 /**

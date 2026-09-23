@@ -40,6 +40,10 @@ import {
   normalizeResourceMetadata,
   parseResourceMetadata,
 } from "../domain/workspace/resource-metadata";
+import type {
+  ResourceAuthorship,
+  ResourceRevision,
+} from "../domain/workspace/resource-revision";
 
 export type {
   NewResource,
@@ -70,6 +74,24 @@ function toResourceRecord(row: Record<string, unknown>): ResourceRecord {
       row.updated_at instanceof Date
         ? row.updated_at
         : new Date(String(row.updated_at)),
+  };
+}
+
+function toResourceRevision(row: Record<string, unknown>): ResourceRevision {
+  const metadata = parseResourceMetadata(row.metadata);
+  return {
+    resourceId: text(row, "resource_id"),
+    revision: integer(row, "revision"),
+    content: text(row, "content"),
+    type: toResourceType(row.type),
+    ...(metadata === undefined ? {} : { metadata }),
+    authoredBy: (typeof row.authorship === "string"
+      ? JSON.parse(row.authorship)
+      : row.authorship) as ResourceAuthorship,
+    createdAt:
+      row.created_at instanceof Date
+        ? row.created_at
+        : new Date(String(row.created_at)),
   };
 }
 
@@ -351,6 +373,25 @@ export function createProjectRepository(
         "DELETE FROM resources WHERE project_id = $1 AND id = $2",
         [projectId, resourceId],
       );
+    },
+
+    async listRevisions(resourceId) {
+      const result = await client.query(
+        `SELECT * FROM resource_revisions
+          WHERE resource_id = $1 ORDER BY revision ASC`,
+        [resourceId],
+      );
+      return result.rows.map(toResourceRevision);
+    },
+
+    async getRevision(resourceId, revision) {
+      const result = await client.query(
+        `SELECT * FROM resource_revisions
+          WHERE resource_id = $1 AND revision = $2`,
+        [resourceId, revision],
+      );
+      const row = result.rows[0];
+      return row ? toResourceRevision(row) : null;
     },
   };
 }

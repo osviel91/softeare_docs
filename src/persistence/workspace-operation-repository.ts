@@ -40,6 +40,10 @@ import type {
 } from "../application/ports/workspace-operation-repository";
 import type { JsonValue } from "../shared/json/json-value";
 import type { ResourceType } from "../domain/workspace/resource-id";
+import {
+  normalizeResourceMetadata,
+  parseResourceMetadata,
+} from "../domain/workspace/resource-metadata";
 
 /** PostgreSQL's unique-violation SQLSTATE. */
 const UNIQUE_VIOLATION = "23505";
@@ -370,6 +374,44 @@ export function createWorkspaceOperationRepository(
             );
             break;
           }
+        }
+
+        if (intent.operation !== "delete") {
+          let content = intent.content;
+          if (content === undefined) {
+            const previous = await tx.query(
+              `SELECT content FROM resource_revisions
+                WHERE resource_id = $1 AND revision = $2`,
+              [intent.resourceId, resultingRevision! - 1],
+            );
+            content = previous.rows[0]?.content as string | undefined;
+          }
+          if (content === undefined) {
+            throw invalid(
+              `Resource ${intent.resourceId} has no snapshot for revision ${resultingRevision! - 1}.`,
+            );
+          }
+          const resource = await tx.query(
+            "SELECT type, metadata FROM resources WHERE id = $1",
+            [intent.resourceId],
+          );
+          const resourceRow = resource.rows[0];
+          const metadata = normalizeResourceMetadata(
+            intent.metadata ?? parseResourceMetadata(resourceRow?.metadata),
+          );
+          await tx.query(
+            `INSERT INTO resource_revisions
+              (resource_id, revision, content, type, metadata, authorship)
+             VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb)`,
+            [
+              intent.resourceId,
+              resultingRevision,
+              content,
+              String(intent.resourceType ?? resourceRow?.type),
+              JSON.stringify(metadata),
+              JSON.stringify(intent.authorship ?? { kind: "system" }),
+            ],
+          );
         }
 
         const operation = await insertOperation(tx, intent, resultingRevision);

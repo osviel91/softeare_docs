@@ -61,8 +61,35 @@ The domain keeps four concerns distinct: resource identity, content, stored
 semantic metadata, and derived presentation information. `ResourceMetadata`
 currently contains only an optional description and tags; effective titles remain
 derived from existing content titles with the current resource-name fallback.
-Visualization is not metadata, and this model is intentionally not propagated to
-persistence, APIs, MCP, search, or the UI yet.
+Visualization is not metadata; stored metadata is propagated through server
+persistence and the existing resource read/write surfaces.
+
+### Server resource history
+
+The server's `resources.revision` remains the current optimistic-concurrency
+token. H13 uses that existing number as the historical sequence, without giving
+it semantic-version meaning. `ResourceRevision` is a domain value containing the
+complete logical document state: content, resource type, normalized
+`ResourceMetadata`, authorship provenance, and `createdAt`. Representation stays
+derived from content and type rather than being persisted.
+
+The workspace operation journal inserts the canonical row, revision snapshot,
+operation record, and audit row in one PostgreSQL transaction. Content is supplied
+to that transaction from the already-staged mutation, so a successful mutation
+cannot lack its snapshot. Human, agent, and system/legacy provenance are kept as
+distinct JSON shapes; missing legacy actor information is recorded as `system`
+rather than guessed.
+
+Migration 0010 adds `resource_revisions` with a `(resource_id, revision)` primary
+key and cascading resource foreign key. On server startup, pre-H13 resources are
+backfilled from their canonical volume file at their existing revision number.
+Thus a resource at revision 37 gets truthful baseline revision 37, while revisions
+1 through 36 remain unavailable. A missing canonical file stops backfill instead
+of creating a fabricated snapshot. Full snapshots are intentionally used first;
+there is no delta compression or event sourcing. Moves create a revision for
+compatibility, but path is resource identity/location rather than revisioned
+document state. Deletes cascade history; restoration and archival are out of scope.
+Local and filesystem-only repositories do not gain fake history.
 The searchable document set and the archive are both **derived on demand** —
 there is no separate index to keep in sync (ADR-017, ADR-018) — which keeps the
 workspace local-first and Git-friendly.

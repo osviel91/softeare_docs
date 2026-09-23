@@ -50,7 +50,7 @@ describe("migrate", () => {
     const client = await createPgliteClient();
     try {
       const report = await migrate(client);
-      expect(report.applied).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+      expect(report.applied).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
       expect(report.present).toEqual([]);
       const tables = await client.query(
         `SELECT table_name FROM information_schema.tables
@@ -175,7 +175,7 @@ describe("migrate", () => {
       await migrate(client);
       const second = await migrate(client);
       expect(second.applied).toEqual([]);
-      expect(second.present).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+      expect(second.present).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
     } finally {
       await client.close();
     }

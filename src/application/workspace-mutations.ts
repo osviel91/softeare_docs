@@ -60,6 +60,7 @@ import {
 import type { AuditAction } from "./ports/audit-repository";
 import type { ResourceType } from "../domain/workspace/resource-id";
 import type { ResourceMetadata } from "../domain/workspace/resource-metadata";
+import type { ResourceAuthorship } from "../domain/workspace/resource-revision";
 import { createIdGenerator, type IdGenerator } from "../shared/ids/uuid";
 import { isOk } from "../shared/result/result";
 import type { JsonValue } from "../shared/json/json-value";
@@ -280,6 +281,20 @@ export function createWorkspaceMutationService(
     detail: {},
   });
 
+  const authorshipFor = (context: ApplicationContext): ResourceAuthorship =>
+    context.principal.actor.kind === "agent"
+      ? {
+          kind: "agent",
+          agentId: context.principal.actor.agentId,
+          credentialId: context.principal.actor.credentialId,
+          subjectUserId: context.principal.subjectUserId,
+        }
+      : {
+          kind: "user",
+          userId: context.principal.actor.userId,
+          subjectUserId: context.principal.subjectUserId,
+        };
+
   /** The hidden path an operation's new bytes are staged at. */
   const stagedPathFor = (operationId: string): string =>
     `${STAGING_DIRECTORY}/${operationId}`;
@@ -452,6 +467,8 @@ export function createWorkspaceMutationService(
           ? {}
           : { resourceType: params.resourceType }),
         ...(params.metadata === undefined ? {} : { metadata: params.metadata }),
+        ...(params.content === undefined ? {} : { content: params.content }),
+        authorship: authorshipFor(params.context),
         audit: auditFor(
           params.context,
           params.auditAction,
@@ -666,6 +683,7 @@ export function createWorkspaceMutationService(
         targetPath: record.path,
         stagedPath: null,
         contentHash: null,
+        authorship: authorshipFor(context),
         expectedRevision: input.expectedRevision ?? null,
         audit: auditFor(context, "resource.deleted", projectId, resourceId),
         idempotencyKey: input.idempotencyKey ?? null,

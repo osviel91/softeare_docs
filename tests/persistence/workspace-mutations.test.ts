@@ -203,19 +203,28 @@ describe("the lost-update window is closed", () => {
     });
 
     expect(created.revision).toBe(1);
-    expect((await projects.findResource(projectId, created.id))?.metadata).toEqual({
+    expect(
+      (await projects.findResource(projectId, created.id))?.metadata,
+    ).toEqual({
       description: "Payments",
       tags: ["Core"],
     });
 
-    const updated = await mutations.updateResource(context, projectId, created.id, {
-      content: "title Checkout Updated\n",
-      expectedRevision: created.revision,
-      metadata: { description: "Updated", tags: ["Done"] },
-    });
+    const updated = await mutations.updateResource(
+      context,
+      projectId,
+      created.id,
+      {
+        content: "title Checkout Updated\n",
+        expectedRevision: created.revision,
+        metadata: { description: "Updated", tags: ["Done"] },
+      },
+    );
 
     expect(updated.revision).toBe(2);
-    expect((await projects.findResource(projectId, created.id))?.metadata).toEqual({
+    expect(
+      (await projects.findResource(projectId, created.id))?.metadata,
+    ).toEqual({
       description: "Updated",
       tags: ["Done"],
     });
@@ -421,6 +430,7 @@ describe("recovery finishes an interrupted operation", () => {
       resourceType: "sequence-diagram",
       stagedPath: `${STAGING_DIRECTORY}/00000000-0000-7000-8000-0000000000ab`,
       contentHash: hashWorkspaceContent("title Recovered\n"),
+      content: "title Recovered\n",
       expectedRevision: null,
       audit: {
         action: "resource.created",
@@ -473,6 +483,62 @@ describe("recovery finishes an interrupted operation", () => {
     expect((await projects.findResource(projectId, id))?.path).toBe(
       "later.seq",
     );
+  });
+});
+
+describe("resource revision history", () => {
+  it("keeps content and metadata for each accepted state", async () => {
+    const { projectId, context } = await aProject();
+    const created = await mutations.createResource(context, projectId, {
+      path: "history.seq",
+      type: "sequence-diagram",
+      content: "title One\n",
+      metadata: { description: "old", tags: ["payments"] },
+    });
+    const updated = await mutations.updateResource(
+      context,
+      projectId,
+      created.id,
+      {
+        content: "title Two\n",
+        metadata: { description: "new", tags: ["architecture"] },
+        expectedRevision: created.revision,
+      },
+    );
+
+    const history = await projects.listRevisions(created.id);
+    expect(history.map((entry) => entry.revision)).toEqual([1, 2]);
+    expect(history[0]).toMatchObject({
+      content: "title One\n",
+      metadata: { description: "old", tags: ["payments"] },
+    });
+    expect(history[1]).toMatchObject({
+      content: "title Two\n",
+      metadata: { description: "new", tags: ["architecture"] },
+    });
+    expect(updated.revision).toBe(2);
+  });
+
+  it("does not create a phantom snapshot for a stale writer", async () => {
+    const { projectId, context } = await aProject();
+    const created = await mutations.createResource(context, projectId, {
+      path: "conflict.seq",
+      type: "sequence-diagram",
+      content: "title One\n",
+    });
+    await mutations.updateResource(context, projectId, created.id, {
+      content: "title Two\n",
+      expectedRevision: 1,
+    });
+    await expect(
+      mutations.updateResource(context, projectId, created.id, {
+        content: "title Lost\n",
+        expectedRevision: 1,
+      }),
+    ).rejects.toMatchObject({ code: "conflict" });
+    expect(
+      (await projects.listRevisions(created.id)).map((r) => r.revision),
+    ).toEqual([1, 2]);
   });
 });
 

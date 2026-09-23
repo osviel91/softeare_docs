@@ -21,6 +21,7 @@ import type { JsonValue } from "../../shared/json/json-value";
 import type { AuditEvent } from "./audit-repository";
 import type { ResourceType } from "../../domain/workspace/resource-id";
 import type { ResourceMetadata } from "../../domain/workspace/resource-metadata";
+import type { ResourceAuthorship } from "../../domain/workspace/resource-revision";
 
 /** The mutations the journal records. */
 export type WorkspaceOperationKind = "create" | "update" | "move" | "delete";
@@ -88,6 +89,9 @@ export interface WorkspaceMutationIntent {
   /** The resource type, required by a create. */
   resourceType?: ResourceType;
   metadata?: ResourceMetadata;
+  /** Exact content of the logical state being committed. */
+  content?: string;
+  authorship?: ResourceAuthorship;
   /** The audit entry to commit in the same transaction as the row change. */
   audit: AuditEvent;
   /**

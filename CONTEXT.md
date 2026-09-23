@@ -31,6 +31,17 @@ Stored semantic metadata is persisted and exposed by the server resource API and
 remote MCP discovery/read/update surfaces. Existing titles remain content- or
 name-derived, with no second independently editable title source.
 
+**Current revision**: The optimistic-concurrency number on the canonical server
+resource. It is a historical sequence, not a semantic/product version.
+
+**Resource revision**: An immutable server-side snapshot of a resource's content,
+type, metadata, authorship, and creation time. Revisions are ordered by number.
+The initial H13 snapshot preserves an existing resource's current number; unknown
+earlier states are not invented.
+
+**Representation**: Derived output resolved from revision content and type. It is
+not stored in revision snapshots.
+
 **Diagram**: A visual document rendered from one of the project's diagram DSLs.
 
 **Sequence diagram**: A diagram describing participants and ordered interactions
@@ -56,3 +67,8 @@ with authenticated server projects.
 - Invitations are not delivered yet.
 - Human users and agent identities are distinct actors, even when they access
   the same project.
+- Server resource creation, content updates, metadata updates, and moves atomically
+  write the canonical row and its matching revision snapshot. Delete cascades
+  history with the current resource; local resources remain non-revisioned.
+- Revisions are groundwork for future proposals, review, and merge. Those features
+  are not implemented here.

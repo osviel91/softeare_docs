@@ -44,6 +44,7 @@ import {
   createFsProjectStorage,
 } from "./fs-project-storage";
 import type { SqlClient } from "./sql-client";
+import { backfillResourceRevisionBaselines } from "./resource-revisions";
 
 /** The configuration the shared runtime needs. */
 export interface ServerRuntimeConfig {
@@ -136,6 +137,7 @@ export async function createServerRuntime(
     createFsProjectStorage({
       root: path.join(config.projectVolume, projectId),
     });
+  await backfillResourceRevisionBaselines(sql, storageFor);
   const operations = createWorkspaceOperationRepository(sql);
   const mutations = createWorkspaceMutationService({
     projects,

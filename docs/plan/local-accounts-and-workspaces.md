@@ -125,7 +125,8 @@ The phase checkpoint also runs `npm test`, `npm run typecheck`, `npm run lint`,
 
 ## Current checkpoint
 
-`bf0411b` is the deployed workspace-foundation checkpoint. The current working tree
-also completes the workspace lifecycle and selection foundation. Project authorization
-still uses project membership; invitations and workspace-aware project listing remain
-intentionally undelivered.
+`a24fc7d` is the current workspace-aware project checkpoint. Phases 1–4 are
+delivered: users can manage workspaces, select one in the browser, create and list
+projects within accessible workspaces, and pass workspace membership checks before
+project-role authorization. Invitations and the remaining workspace-administration
+items are intentionally undelivered.

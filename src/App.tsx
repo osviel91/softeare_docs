@@ -384,6 +384,9 @@ export default function App() {
   const [editorWidth, setEditorWidth] = useState<number | null>(null);
   const [explorerCollapsed, setExplorerCollapsed] = useState(false);
   const [previewMaximized, setPreviewMaximized] = useState(false);
+  const [eventFlowView, setEventFlowView] = useState<"flow" | "catalog">(
+    "flow",
+  );
   const [resizing, setResizing] = useState<"explorer" | "editor" | null>(null);
   // The source the preview is actually showing. While auto-update is on this
   // tracks the editor; while it is off it only moves when the user renders.
@@ -639,7 +642,8 @@ export default function App() {
     updateActiveSource,
   } = tabsHook;
 
-  const metadataWritable = workspaceMode !== "server" || server.active?.writable === true;
+  const metadataWritable =
+    workspaceMode !== "server" || server.active?.writable === true;
   const saveResourceMetadata = useCallback(
     async (next: ResourceMetadata): Promise<ResourceMetadata | Error> => {
       if (!selectedProjectId || (!selectedNote && !selectedDiagram)) {
@@ -647,20 +651,20 @@ export default function App() {
       }
       if (selectedNote) {
         const current = await activeRepo.saveNoteFile(selectedProjectId, {
-            ...selectedNote,
-            markdown: source,
-            metadata: next,
-          });
+          ...selectedNote,
+          markdown: source,
+          metadata: next,
+        });
         if (!isOk(current)) return current.error;
         applyNoteEdit(current.value);
         tabsHook.applyExternalNote(current.value);
         return current.value.metadata ?? {};
       }
       const current = await activeRepo.saveDiagramFile(selectedProjectId, {
-            ...selectedDiagram!,
-            source,
-            metadata: next,
-          });
+        ...selectedDiagram!,
+        source,
+        metadata: next,
+      });
       if (!isOk(current)) return current.error;
       applyDiagramEdit(current.value);
       tabsHook.applyExternalDiagram(current.value);
@@ -949,23 +953,30 @@ export default function App() {
    * Write one project to a portable ZIP: a manifest plus one
    * human-readable file per diagram and markdown document.
    */
-  const exportProject = useCallback(async (project: Project): Promise<void> => {
-    const [diagramsResult, notesResult] = await Promise.all([
-      activeRepo.listDiagramFiles(project.id),
-      activeRepo.listNoteFiles(project.id),
-    ]);
-    if (!isOk(diagramsResult) || !isOk(notesResult)) {
-      setTransferError("Could not read the project's files.");
-      return;
-    }
-    const bytes = exportProjectToZip(
-      project,
-      diagramsResult.value,
-      notesResult.value,
-    );
-    downloadBytes(bytes, `${archiveSlug(project.name)}.zip`, "application/zip");
-    setTransferError(null);
-  }, [activeRepo]);
+  const exportProject = useCallback(
+    async (project: Project): Promise<void> => {
+      const [diagramsResult, notesResult] = await Promise.all([
+        activeRepo.listDiagramFiles(project.id),
+        activeRepo.listNoteFiles(project.id),
+      ]);
+      if (!isOk(diagramsResult) || !isOk(notesResult)) {
+        setTransferError("Could not read the project's files.");
+        return;
+      }
+      const bytes = exportProjectToZip(
+        project,
+        diagramsResult.value,
+        notesResult.value,
+      );
+      downloadBytes(
+        bytes,
+        `${archiveSlug(project.name)}.zip`,
+        "application/zip",
+      );
+      setTransferError(null);
+    },
+    [activeRepo],
+  );
 
   const exportActiveProject = useCallback((): Promise<void> => {
     const project = projects.find((entry) => entry.id === selectedProjectId);
@@ -2533,13 +2544,13 @@ export default function App() {
                   onUnhideAll={unhideAll}
                   onOpenFolder={openFolder}
                   folderName={openedFolder?.folderName ?? null}
-                    workspaceLabel={
-                      server.active
-                        ? `Server project: ${server.active.project.name}`
-                        : openedFolder
-                          ? `Local folder: ${openedFolder.folderName}`
-                          : undefined
-                    }
+                  workspaceLabel={
+                    server.active
+                      ? `Server project: ${server.active.project.name}`
+                      : openedFolder
+                        ? `Local folder: ${openedFolder.folderName}`
+                        : undefined
+                  }
                   folderSupported={supportsFileSystemAccess()}
                 />
                 <button
@@ -2651,25 +2662,31 @@ export default function App() {
                     onActivateTab={activateTabAndDocument}
                     onCloseTab={closeTabAndFollow}
                   />
-                   <div className="resource-header" data-testid="resource-header">
-                     <span className="note-header__icon" aria-hidden="true">
-                       ¶
-                     </span>
-                     <span className="note-header__title" data-testid="note-title">
-                       {noteDisplayName(selectedNote.name, source)}
-                     </span>
+                  <div
+                    className="resource-header"
+                    data-testid="resource-header"
+                  >
+                    <span className="note-header__icon" aria-hidden="true">
+                      ¶
+                    </span>
+                    <span
+                      className="note-header__title"
+                      data-testid="note-title"
+                    >
+                      {noteDisplayName(selectedNote.name, source)}
+                    </span>
                     <span
                       className="note-header__name"
                       data-testid="note-filename"
                     >
-                       {selectedNote.name}
-                     </span>
-                     <ResourceMetadataEditor
-                       metadata={selectedNote.metadata}
-                       writable={metadataWritable}
-                       onSave={saveResourceMetadata}
-                     />
-                   </div>
+                      {selectedNote.name}
+                    </span>
+                    <ResourceMetadataEditor
+                      metadata={selectedNote.metadata}
+                      writable={metadataWritable}
+                      onSave={saveResourceMetadata}
+                    />
+                  </div>
                   <MarkdownEditor
                     value={source}
                     onChange={updateActiveSource}
@@ -2682,25 +2699,31 @@ export default function App() {
                     tabs={tabs}
                     activeTabId={activeTabId}
                     onActivateTab={activateTabAndDocument}
-                   onCloseTab={closeTabAndFollow}
-                   />
-                   <div className="resource-header" data-testid="resource-header">
-                     <span className="resource-header__icon" aria-hidden="true">
-                       {isEventFlow ? "↝" : "◌"}
-                     </span>
-                     <span className="resource-header__title">
-                       {diagramDisplayName(selectedDiagram?.name ?? "Untitled", source)}
-                     </span>
-                     <span className="resource-header__name">
-                       {selectedDiagram?.name}
-                     </span>
-                     <ResourceMetadataEditor
-                       metadata={selectedDiagram?.metadata}
-                       writable={metadataWritable}
-                       onSave={saveResourceMetadata}
-                     />
-                   </div>
-                   <Editor
+                    onCloseTab={closeTabAndFollow}
+                  />
+                  <div
+                    className="resource-header"
+                    data-testid="resource-header"
+                  >
+                    <span className="resource-header__icon" aria-hidden="true">
+                      {isEventFlow ? "↝" : "◌"}
+                    </span>
+                    <span className="resource-header__title">
+                      {diagramDisplayName(
+                        selectedDiagram?.name ?? "Untitled",
+                        source,
+                      )}
+                    </span>
+                    <span className="resource-header__name">
+                      {selectedDiagram?.name}
+                    </span>
+                    <ResourceMetadataEditor
+                      metadata={selectedDiagram?.metadata}
+                      writable={metadataWritable}
+                      onSave={saveResourceMetadata}
+                    />
+                  </div>
+                  <Editor
                     value={source}
                     onChange={updateActiveSource}
                     diagnostics={editorDiagnostics}
@@ -2753,6 +2776,9 @@ export default function App() {
               ) : isEventFlow ? (
                 <EventFlowPreview
                   source={source}
+                  flow={eventFlow}
+                  view={eventFlowView}
+                  onViewChange={setEventFlowView}
                   onNodeSelect={onNodeSelect}
                   activeNodeId={activeNodeId}
                   maximized={previewMaximized}

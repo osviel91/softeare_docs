@@ -171,6 +171,38 @@ describe("App — event flows", () => {
     );
   });
 
+  it("switches to a source-linked catalog without changing the source", async () => {
+    render(<App />);
+    await createProject();
+    await newEventFlow();
+    const catalogFlow = FLOW.replace(
+      "event OrderCreated",
+      "event OrderCreated {\n  schema: orders.v1\n  custom: retained\n}",
+    );
+    fireEvent.change(screen.getByTestId("dsl-textarea"), {
+      target: { value: catalogFlow },
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("preview-svg")).toBeInTheDocument(),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Catalog" }));
+    expect(screen.getByTestId("event-catalog")).toHaveTextContent(
+      "OrderCreated",
+    );
+    expect(screen.getByTestId("event-catalog")).toHaveTextContent("orders.v1");
+    expect(screen.getByTestId("event-catalog")).toHaveTextContent(
+      "OrderService",
+    );
+    expect(screen.getByTestId("event-catalog")).toHaveTextContent(
+      "BillingService",
+    );
+    expect(screen.getByTestId("dsl-textarea")).toHaveValue(catalogFlow);
+
+    fireEvent.click(screen.getByRole("button", { name: "Flow" }));
+    expect(screen.getByTestId("preview-svg")).toBeInTheDocument();
+  });
+
   it("outlines what the flow declares and what happens", async () => {
     render(<App />);
     await createProject();

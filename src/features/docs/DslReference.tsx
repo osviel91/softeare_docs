@@ -63,7 +63,9 @@ export default function DslReference() {
         The editor owns two small documentation languages, both parsed,
         validated and drawn by this project rather than delegated to a library.
         A sequence diagram shows the order of interactions; an event flow shows
-        which services produce and consume which events.
+        which services produce and consume which events. Event Flow's Flow view
+        emphasizes causal ordering; its Catalog view lists the same facts in
+        source order with metadata and source-linked relationships.
       </p>
       <ConstructSection
         title="Sequence diagrams"

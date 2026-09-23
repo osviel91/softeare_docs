@@ -81,15 +81,17 @@ architecture.
 ### Event Flow Views
 
 - The Event Flow pipeline is `source → parser/analyzer → EventFlow semantic
-model → Flow projection → FlowViewModel → Flow layout → Flow renderer → SVG`.
+model`, followed by independent Flow or Catalog projections. Flow continues
+  through `FlowViewModel → Flow layout → Flow renderer → SVG`; Catalog is a
+  source-ordered document projection rendered by the browser UI.
 - The semantic model contains documented-system facts such as events, services,
   channels, brokers, publications, subscriptions, and event metadata. The
   `FlowViewModel` contains the row view's presentation decisions, but no pixel
-  coordinates; layout owns geometry and the renderer owns SVG.
+  coordinates; layout owns geometry and the renderer owns SVG. The Catalog view
+  consumes the same model without persisted view state or a second resource.
 - One Event Flow resource stores one semantic model/source. Views are pure
-  projections and are not separately persisted resources. Future Catalog and
-  Topology views will consume the same semantic model; they are not implemented
-  by this boundary.
+  projections and are not separately persisted resources. Topology is not part
+  of this boundary.
 
 ### Resource Dimensions
 

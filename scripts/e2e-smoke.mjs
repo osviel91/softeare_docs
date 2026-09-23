@@ -366,6 +366,7 @@ async function apiRequest(page, path, init = undefined) {
     async ({ path, init }) => {
       const response = await fetch(path, {
         credentials: "same-origin",
+        cache: "no-store",
         method: init?.method ?? "GET",
         ...(init?.body === undefined
           ? {}
@@ -389,11 +390,18 @@ async function apiRequest(page, path, init = undefined) {
 
 /** Find a server project by name, as the signed-in page sees it. */
 async function serverProjectByName(page, projectName) {
-  const projects = await apiRequest(page, "/api/projects");
-  const project = (projects.json?.projects ?? []).find(
-    (entry) => entry.name === projectName,
-  );
-  return project ?? null;
+  const workspaces = await apiRequest(page, "/api/workspaces");
+  for (const workspace of workspaces.json?.workspaces ?? []) {
+    const projects = await apiRequest(
+      page,
+      `/api/projects?workspaceId=${encodeURIComponent(workspace.id)}`,
+    );
+    const project = (projects.json?.projects ?? []).find(
+      (entry) => entry.name === projectName,
+    );
+    if (project) return project;
+  }
+  return null;
 }
 
 /**
@@ -2245,6 +2253,21 @@ async function runServerChecks(browser, idp, apiBase, mcpBase) {
         );
 
         const owned = await currentServerResource(ownerPage, "Viewer Server");
+        const projectDetails = await apiRequest(
+          ownerPage,
+          `/api/projects/${owned.projectId}`,
+        );
+        const workspaceId = projectDetails.json?.project?.workspaceId;
+        const workspaceMembership = await apiRequest(
+          ownerPage,
+          `/api/workspaces/${workspaceId}/members/${viewerId}`,
+          { method: "PUT", body: JSON.stringify({ role: "VIEWER" }) },
+        );
+        check(
+          "the owner can add the second user to the project workspace",
+          workspaceMembership.status === 200,
+          `status ${workspaceMembership.status}`,
+        );
         const membership = await apiRequest(
           ownerPage,
           `/api/projects/${owned.projectId}/members/${viewerId}`,

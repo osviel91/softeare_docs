@@ -571,6 +571,7 @@ export class ServerApiClient {
     try {
       response = await this.fetchImpl(`${this.baseUrl}${path}`, {
         method,
+        cache: "no-store",
         // The session is a cookie, and the cookie is HttpOnly: the browser
         // attaches it, JavaScript never sees it.
         credentials: "same-origin",

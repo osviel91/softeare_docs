@@ -162,6 +162,39 @@ describe("DocumentationWorkspace over the server", () => {
     expect(rendered.width).toBeGreaterThan(0);
   });
 
+  it("round-trips and renders an event flow through the server workspace", async () => {
+    const workspace = serviceOver(await aContext());
+    await workspace.createProject("Event Flows");
+    const project = await workspace.resolveProject("Event Flows");
+    await workspace.createResource(project, {
+      kind: "event-flow",
+      name: "orders",
+      content: [
+        "title Orders",
+        "event OrderCreated",
+        "producer OrderService",
+        "consumer OrderHandler",
+        "topic orders",
+        "OrderService publishes OrderCreated to orders",
+        "OrderHandler consumes OrderCreated from orders",
+      ].join("\n"),
+    });
+
+    const read = await workspace.readResource(project, "orders.eventseq");
+    expect(read.resource.type).toBe("event-flow");
+    expect(read.content).toContain("OrderCreated");
+
+    const validation = await workspace.validateProject(project);
+    expect(validation.summary.resources).toBe(1);
+    expect(validation.diagnostics).toEqual([]);
+
+    const rendered = await workspace.render(project, "orders.eventseq", {
+      theme: "light",
+    });
+    expect(rendered.svg).toContain("<svg");
+    expect(rendered.width).toBeGreaterThan(0);
+  });
+
   it("moves a resource and keeps it findable by its new path", async () => {
     const workspace = serviceOver(await aContext());
     await workspace.createProject("Moving");

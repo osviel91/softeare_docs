@@ -17,6 +17,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "verify": "npm run lint && npm run typecheck && npm test && npm run test:mcp",
     "test:e2e": "npm run build:web && npm run api:build && npm run mcp:service:build && node scripts/e2e-smoke.mjs",
     "test:mcp": "npm run mcp:build && node scripts/mcp-smoke.mjs && vitest run tests/mcp",
     "lint": "eslint .",

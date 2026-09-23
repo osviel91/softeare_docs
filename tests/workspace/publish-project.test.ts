@@ -7,6 +7,9 @@ describe("publishProject", () => {
   it("copies diagrams and notes into a newly created server project", async () => {
     const createResource = vi.fn(async () => ({}));
     const client = {
+      listWorkspaces: vi.fn(async () => [
+        { id: "workspace-1", isDefault: true },
+      ]),
       createProject: vi.fn(async () => ({
         id: "server-project",
         name: "Test",
@@ -45,7 +48,7 @@ describe("publishProject", () => {
       noteIds: ["note-1"],
     });
 
-    expect(client.createProject).toHaveBeenCalledWith("Test");
+    expect(client.createProject).toHaveBeenCalledWith("Test", "workspace-1");
     expect(createResource).toHaveBeenNthCalledWith(1, "server-project", {
       path: "order.eventseq",
       type: "event-flow",

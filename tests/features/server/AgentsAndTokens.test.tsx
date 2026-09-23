@@ -61,6 +61,7 @@ function fakeApi(
   projects = [
     {
       id: "p1",
+      workspaceId: "w1",
       name: "OSIRIS",
       slug: "osiris",
       ownerId: "u1",
@@ -151,6 +152,21 @@ function fakeApi(
     }
     if (url.pathname === "/api/projects") {
       return reply(200, { projects });
+    }
+    if (url.pathname === "/api/workspaces") {
+      return reply(200, {
+        workspaces: [
+          {
+            id: "w1",
+            ownerId: "u1",
+            name: "Personal",
+            isDefault: true,
+            role: "ADMIN",
+            createdAt: new Date(0).toISOString(),
+            updatedAt: new Date(0).toISOString(),
+          },
+        ],
+      });
     }
     return reply(404, { error: { code: "not_found" } });
   };

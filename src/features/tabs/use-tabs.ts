@@ -119,6 +119,7 @@ async function persistDocument(
       name: document.name,
       markdown: document.source,
       projectId: document.projectId,
+      metadata: document.metadata,
     });
     return result.ok ? ok(undefined) : result;
   }
@@ -127,6 +128,7 @@ async function persistDocument(
     name: document.name,
     source: document.source,
     projectId: document.projectId,
+    metadata: document.metadata,
   });
   return result.ok ? ok(undefined) : result;
 }
@@ -308,6 +310,7 @@ export function useTabs(
       projectId: tab.projectId,
       name: tab.name,
       source: tab.source,
+      metadata: tab.metadata,
     }),
     [],
   );

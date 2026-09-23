@@ -293,6 +293,7 @@ export class ServerWorkspaceRepository
       diagram.id,
       diagram.name,
       diagram.source,
+      diagram.metadata,
       resourceTypeOfName(diagram.name) === "event-flow"
         ? "event-flow"
         : "sequence-diagram",
@@ -309,6 +310,7 @@ export class ServerWorkspaceRepository
       note.id,
       ensureMarkdownExtension(note.name),
       note.markdown,
+      note.metadata,
       "markdown-document",
       (resource, content) => this.toNote(resource, content),
     );
@@ -341,6 +343,7 @@ export class ServerWorkspaceRepository
       diagram.id,
       diagram.source,
       expectedRevision,
+      diagram.metadata,
       (resource, content) => this.toDiagram(resource, content),
     );
   }
@@ -356,6 +359,7 @@ export class ServerWorkspaceRepository
       note.id,
       note.markdown,
       expectedRevision,
+      note.metadata,
       (resource, content) => this.toNote(resource, content),
     );
   }
@@ -517,6 +521,7 @@ export class ServerWorkspaceRepository
       name: resource.path,
       source: content,
       projectId: this.projectId,
+      metadata: resource.metadata,
     };
   }
 
@@ -526,6 +531,7 @@ export class ServerWorkspaceRepository
       name: resource.path,
       markdown: content,
       projectId: this.projectId,
+      metadata: resource.metadata,
     };
   }
 
@@ -606,6 +612,7 @@ export class ServerWorkspaceRepository
     id: string,
     path: string,
     content: string,
+    metadata: DiagramFile["metadata"],
     type: ServerResourceType,
     toDomain: (resource: ServerResource, content: string) => T,
   ): Promise<Result<T, Error>> {
@@ -617,6 +624,7 @@ export class ServerWorkspaceRepository
         const updated = await this.client.updateResource(this.projectId, id, {
           content,
           expectedRevision: known,
+          metadata,
         });
         this.remember(updated);
         return ok(toDomain(updated, content));
@@ -628,7 +636,7 @@ export class ServerWorkspaceRepository
         const updated = await this.client.updateResource(
           this.projectId,
           existing.value.id,
-          { content, expectedRevision: existing.value.revision },
+          { content, expectedRevision: existing.value.revision, metadata },
         );
         this.remember(updated);
         return ok(toDomain(updated, content));
@@ -638,6 +646,7 @@ export class ServerWorkspaceRepository
         path,
         type,
         content,
+        metadata,
       });
       this.remember(created);
       return ok(toDomain(created, content));
@@ -660,6 +669,7 @@ export class ServerWorkspaceRepository
     resourceId: string,
     content: string,
     expectedRevision: number,
+    metadata: DiagramFile["metadata"],
     toDomain: (resource: ServerResource, content: string) => T,
   ): Promise<Result<T, Error>> {
     if (projectId !== this.projectId) return this.wrongProject(projectId);
@@ -668,7 +678,7 @@ export class ServerWorkspaceRepository
       const updated = await this.client.updateResource(
         this.projectId,
         resourceId,
-        { content, expectedRevision },
+        { content, expectedRevision, metadata },
       );
       this.remember(updated);
       return ok(toDomain(updated, content));

@@ -22,6 +22,7 @@
  *   must keep the user's content and offer a retry.
  */
 import { apiErrorFromResponse, NetworkError } from "./api-errors";
+import type { ResourceMetadata } from "../../domain/workspace/resource-metadata";
 
 /** The signed-in person, as `GET /api/me` reports them. */
 export interface AuthenticatedUser {
@@ -88,6 +89,7 @@ export interface ServerResource {
   path: string;
   type: ServerResourceType;
   revision: number;
+  metadata?: ResourceMetadata;
 }
 
 /** What the caller may do in a project, for rendering affordances. */
@@ -390,7 +392,7 @@ export class ServerApiClient {
   /** Create a resource at a path, refusing one that is already taken. */
   async createResource(
     projectId: string,
-    input: { path: string; type: ServerResourceType; content: string },
+    input: { path: string; type: ServerResourceType; content: string; metadata?: ResourceMetadata },
   ): Promise<ServerResource> {
     const body = await this.request<{ resource: ServerResource }>(
       "POST",
@@ -409,7 +411,7 @@ export class ServerApiClient {
   async updateResource(
     projectId: string,
     resourceId: string,
-    input: { content: string; expectedRevision: number },
+    input: { content: string; expectedRevision: number; metadata?: ResourceMetadata },
   ): Promise<ServerResource> {
     const body = await this.request<{ resource: ServerResource }>(
       "PUT",

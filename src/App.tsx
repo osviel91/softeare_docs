@@ -176,6 +176,8 @@ import PlatformAdministration from "./features/server/PlatformAdministration";
 import LoginScreen from "./features/server/LoginScreen";
 import { RevisionConflictError } from "./workspace/server/api-errors";
 import { supportsForcedWrite } from "./workspace/server/server-workspace-repository";
+import ResourceMetadataEditor from "./features/resource/ResourceMetadataEditor";
+import type { ResourceMetadata } from "./domain/workspace/resource-metadata";
 
 const PRODUCT_NAME = "Software Docs Manager";
 
@@ -609,6 +611,7 @@ export default function App() {
           name: document.name,
           markdown: document.source,
           projectId: document.projectId,
+          metadata: document.metadata,
         });
       } else {
         applyDiagramEdit({
@@ -616,6 +619,7 @@ export default function App() {
           name: document.name,
           source: document.source,
           projectId: document.projectId,
+          metadata: document.metadata,
         });
       }
     },
@@ -634,6 +638,45 @@ export default function App() {
     closeTab,
     updateActiveSource,
   } = tabsHook;
+
+  const metadataWritable = workspaceMode !== "server" || server.active?.writable === true;
+  const saveResourceMetadata = useCallback(
+    async (next: ResourceMetadata): Promise<ResourceMetadata | Error> => {
+      if (!selectedProjectId || (!selectedNote && !selectedDiagram)) {
+        return new Error("No resource is selected.");
+      }
+      if (selectedNote) {
+        const current = await activeRepo.saveNoteFile(selectedProjectId, {
+            ...selectedNote,
+            markdown: source,
+            metadata: next,
+          });
+        if (!isOk(current)) return current.error;
+        applyNoteEdit(current.value);
+        tabsHook.applyExternalNote(current.value);
+        return current.value.metadata ?? {};
+      }
+      const current = await activeRepo.saveDiagramFile(selectedProjectId, {
+            ...selectedDiagram!,
+            source,
+            metadata: next,
+          });
+      if (!isOk(current)) return current.error;
+      applyDiagramEdit(current.value);
+      tabsHook.applyExternalDiagram(current.value);
+      return current.value.metadata ?? {};
+    },
+    [
+      activeRepo,
+      applyDiagramEdit,
+      applyNoteEdit,
+      selectedDiagram,
+      selectedNote,
+      selectedProjectId,
+      source,
+      tabsHook,
+    ],
+  );
 
   // A failed auto-save is surfaced rather than swallowed. A revision conflict is
   // the one failure that needs a decision from the user; everything else is
@@ -2607,23 +2650,25 @@ export default function App() {
                     onActivateTab={activateTabAndDocument}
                     onCloseTab={closeTabAndFollow}
                   />
-                  <div className="note-header" data-testid="note-header">
-                    <span className="note-header__icon" aria-hidden="true">
-                      ¶
-                    </span>
-                    <span
-                      className="note-header__title"
-                      data-testid="note-title"
-                    >
-                      {noteDisplayName(selectedNote.name, source)}
-                    </span>
+                   <div className="resource-header" data-testid="resource-header">
+                     <span className="note-header__icon" aria-hidden="true">
+                       ¶
+                     </span>
+                     <span className="note-header__title" data-testid="note-title">
+                       {noteDisplayName(selectedNote.name, source)}
+                     </span>
                     <span
                       className="note-header__name"
                       data-testid="note-filename"
                     >
-                      {selectedNote.name}
-                    </span>
-                  </div>
+                       {selectedNote.name}
+                     </span>
+                     <ResourceMetadataEditor
+                       metadata={selectedNote.metadata}
+                       writable={metadataWritable}
+                       onSave={saveResourceMetadata}
+                     />
+                   </div>
                   <MarkdownEditor
                     value={source}
                     onChange={updateActiveSource}
@@ -2636,9 +2681,25 @@ export default function App() {
                     tabs={tabs}
                     activeTabId={activeTabId}
                     onActivateTab={activateTabAndDocument}
-                    onCloseTab={closeTabAndFollow}
-                  />
-                  <Editor
+                   onCloseTab={closeTabAndFollow}
+                   />
+                   <div className="resource-header" data-testid="resource-header">
+                     <span className="resource-header__icon" aria-hidden="true">
+                       {isEventFlow ? "↝" : "◌"}
+                     </span>
+                     <span className="resource-header__title">
+                       {diagramDisplayName(selectedDiagram?.name ?? "Untitled", source)}
+                     </span>
+                     <span className="resource-header__name">
+                       {selectedDiagram?.name}
+                     </span>
+                     <ResourceMetadataEditor
+                       metadata={selectedDiagram?.metadata}
+                       writable={metadataWritable}
+                       onSave={saveResourceMetadata}
+                     />
+                   </div>
+                   <Editor
                     value={source}
                     onChange={updateActiveSource}
                     diagnostics={editorDiagnostics}

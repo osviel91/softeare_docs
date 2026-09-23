@@ -41,6 +41,8 @@ export interface TabDocument {
   name: string;
   /** DSL source for a diagram, markdown for a note. */
   source: string;
+  /** Optional semantic context stored beside the source. */
+  metadata?: DiagramFile["metadata"];
 }
 
 /** A single open document. */
@@ -68,6 +70,7 @@ export interface Tab {
   source: string;
   /** The buffer last persisted for this tab; differs from {@link source} when dirty. */
   savedSource: string;
+  metadata?: TabDocument["metadata"];
 }
 
 /** An ordered set of open tabs plus the active one. */
@@ -107,6 +110,7 @@ export function tabDocumentOfDiagram(diagram: DiagramFile): TabDocument {
     projectId: diagram.projectId,
     name: diagram.name,
     source: diagram.source,
+    metadata: diagram.metadata,
   };
 }
 
@@ -118,6 +122,7 @@ export function tabDocumentOfNote(note: NoteFile): TabDocument {
     projectId: note.projectId,
     name: note.name,
     source: note.markdown,
+    metadata: note.metadata,
   };
 }
 
@@ -153,6 +158,7 @@ export function openDocument(set: TabSet, document: TabDocument): TabSet {
     title: documentTitle(document.kind, document.name, document.source),
     source: document.source,
     savedSource: document.source,
+    metadata: document.metadata,
   };
   return { tabs: [...set.tabs, tab], activeTabId: tab.id };
 }

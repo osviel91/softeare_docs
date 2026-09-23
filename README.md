@@ -31,6 +31,14 @@ searched across a project, renamed without losing stable local identity, and
 exported as portable project archives. The project index supplies diagnostics,
 outlines, symbols, references, completion, and search facts.
 
+Each resource can also carry optional semantic context: a short multiline
+description and compact tags. The editor shows this context above the source for
+sequence diagrams, event flows, and Markdown, with an inline edit affordance;
+clearing both fields removes the block. Server projects save it with the same
+optimistic revision checks as source edits, while read-only projects only show
+the context. The API and remote MCP expose the same metadata to agents. It is
+context for people and agents, not a search taxonomy.
+
 The browser editor provides an explorer, source editor, outline and problems
 views, live or explicit rendering, pan/zoom navigation, version history, safe
 delete, Markdown preview, and project-wide search.

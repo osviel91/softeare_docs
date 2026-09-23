@@ -2327,6 +2327,35 @@ body {
   border-bottom: 1px solid var(--border);
 }
 
+.resource-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  flex: 0 0 auto;
+  padding: 9px 12px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.resource-header__icon { color: var(--accent); font-size: 13px; }
+.resource-header__title { font-size: 12.5px; font-weight: 600; color: var(--text); }
+.resource-header__name { margin-left: auto; font: 11px var(--font-mono); color: var(--text-faint); }
+.resource-header__metadata { flex-basis: 100%; min-width: 0; }
+.resource-header__description { margin: 2px 0 5px 21px; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-muted); font-size: 12px; }
+.resource-header__tags { display: flex; flex-wrap: wrap; gap: 4px; margin-left: 21px; }
+.resource-header__tag { padding: 2px 6px; border-radius: 99px; color: var(--text-muted); background: var(--bg-hover); font-size: 10px; }
+.resource-header__edit { margin: 5px 0 0 21px; padding: 0; border: 0; color: var(--text-faint); background: none; font: inherit; font-size: 11px; cursor: pointer; }
+.resource-header__edit:hover { color: var(--accent); }
+.resource-header__metadata--editing { display: grid; gap: 7px; margin-left: 21px; max-width: 560px; }
+.resource-header__metadata--editing label { display: grid; gap: 3px; color: var(--text-faint); font-size: 11px; }
+.resource-header__metadata--editing textarea,
+.resource-header__metadata--editing input { width: 100%; padding: 6px 8px; color: var(--text); background: var(--bg); border: 1px solid var(--border-strong); border-radius: var(--radius-sm); font: inherit; }
+.resource-header__hint { font-weight: normal; }
+.resource-header__actions { display: flex; gap: 6px; justify-content: flex-end; }
+.resource-header__actions button { padding: 5px 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text); background: var(--bg-hover); cursor: pointer; }
+.resource-header__error { margin: 0; color: var(--danger); font-size: 11px; }
+
 .note-header__icon {
   color: var(--warn);
   font-size: 12px;

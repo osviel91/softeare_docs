@@ -1,5 +1,5 @@
 /**
- * Command palette model (Phase 6).
+ * Command palette model.
  *
  * A {@link Command} is a single, self-contained action the user can invoke from
  * the command palette — for example "New diagram" or "Close tab". A

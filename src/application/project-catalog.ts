@@ -75,7 +75,7 @@ export interface ProjectCatalogOptions {
   /**
    * The durable operation journal every resource mutation commits through.
    *
-   * Supplying it is what turns a mutation into the Phase 6 sequence — claim the
+   * Supplying it is what turns a mutation into the durable sequence — claim the
    * revision, journal the intent, promote the staged bytes, settle — rather than
    * a check followed by a write. A test or a host that omits it gets a service
    * that refuses resource mutations rather than one that silently falls back to
@@ -322,7 +322,7 @@ export function createProjectCatalog(
     options.policy ?? createAuthorizationPolicy<ServerProject>(projects);
 
   /**
-   * The one authoritative resource-mutation path (Phase 6 §25–33).
+   * The one authoritative resource-mutation path.
    *
    * A host may inject a pre-built service so the catalog and the documentation
    * provider cannot end up with two; otherwise it is built here from the same

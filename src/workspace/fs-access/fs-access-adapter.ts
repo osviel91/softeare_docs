@@ -1,6 +1,6 @@
 /**
  * A minimal, framework-free view over the pieces of the File System Access API
- * that the workspace needs (Phase 5).
+ * that the workspace needs.
  *
  * The real File System Access API (`window.showDirectoryPicker`,
  * `FileSystemDirectoryHandle`, `FileSystemFileHandle`, …) is browser-only and

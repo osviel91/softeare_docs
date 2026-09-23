@@ -1,5 +1,5 @@
 /**
- * Shared diagram analysis hook (Phase 3).
+ * Shared diagram analysis hook.
  *
  * Memoizes {@link analyze} over the source so both the editor and the preview
  * derive from a single computation instead of re-parsing on every render.

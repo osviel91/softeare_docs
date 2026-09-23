@@ -23,7 +23,7 @@
  * *this* login, and that a subject is present. The installable discovery
  * document and the token/PKCE flows remain this module's own code. The previous
  * hand-rolled verifier this replaced is recorded in
- * `docs/plan/server-migration-0-3.md`.
+ * `docs/history/plans/server-migration-0-3.md`.
  */
 import { createHash, randomBytes } from "node:crypto";
 import {

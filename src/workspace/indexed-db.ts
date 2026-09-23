@@ -1,5 +1,5 @@
 /**
- * IndexedDB implementation of {@link WorkspaceRepository} (Phase 4).
+ * IndexedDB implementation of {@link WorkspaceRepository}.
  *
  * The database holds three object stores, all keyed by `id`:
  * - `projects` — every {@link Project}.

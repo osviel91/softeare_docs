@@ -14,7 +14,7 @@
  *
  * The durable fix for the first property is a transactional outbox, so the row
  * and the change commit together. That is Phase 6 work — see
- * `docs/plan/server-migration-4.md`.
+ * `docs/history/plans/server-migration-4.md`.
  */
 // @vitest-environment node
 import { mkdtemp, rm } from "node:fs/promises";

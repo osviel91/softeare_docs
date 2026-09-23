@@ -1,5 +1,5 @@
 /**
- * The PostgreSQL workspace operation journal (Phase 6, mission items 28–32).
+ * The PostgreSQL workspace operation journal.
  *
  * One transaction commits, together:
  *

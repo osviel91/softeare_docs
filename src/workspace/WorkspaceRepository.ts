@@ -1,5 +1,5 @@
 /**
- * The workspace persistence contract (Phase 4).
+ * The workspace persistence contract.
  *
  * `WorkspaceRepository` is the abstraction both implementations and the UI
  * depend on. It is deliberately framework-free: no React, no browser globals —

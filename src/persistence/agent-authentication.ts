@@ -1,19 +1,13 @@
 /**
- * Bearer authentication, independent of any transport (Phase 6 §10, §76).
+ * Bearer authentication, independent of any transport.
  *
- * Phase 5 put this logic in the API host (`apps/api/auth/agent-credential.ts`),
- * which meant a second host wanting the same check would have had to either
- * import the API (forbidden by ADR-039) or re-implement it. Phase 6 converges it
- * here, in the module both hosts already depend on, so the API and the MCP
- * service authenticate a personal access token with *one* implementation.
+ * Both the API and MCP service use this shared implementation to authenticate a
+ * personal access token without either host importing the other.
  *
  * ## The seam a second verifier slots into
  *
- * Authentication is a chain of {@link BearerVerifier}s. Today the only member is
- * the PAT verifier; Phase 7 adds an OAuth access-token verifier beside it without
- * changing {@link authenticateBearerToken}, the API edge, the MCP edge, or a
- * single tool. The application layer never learns which verifier answered — it
- * only ever sees a {@link Principal}, exactly as the mission requires.
+ * Authentication is a chain of {@link BearerVerifier}s. The application layer
+ * never learns which verifier answered; it only ever sees a {@link Principal}.
  *
  * ## What is deliberately not here
  *
@@ -218,8 +212,8 @@ export function createPatBearerVerifier(
  *
  * Returns `null` when no verifier claims the token. The chain is ordered, and
  * the first verifier that returns a principal wins; a verifier that does not
- * recognise the token must return `null` rather than a refusal, so Phase 7's
- * OAuth verifier can be appended without reordering the PAT verifier.
+ * recognise the token must return `null` rather than a refusal, so additional
+ * verifiers can be composed without changing the existing verifier's behavior.
  */
 export async function authenticateBearerToken(
   verifiers: readonly BearerVerifier[],

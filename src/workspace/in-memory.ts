@@ -1,5 +1,5 @@
 /**
- * In-memory {@link WorkspaceRepository} (Phase 4).
+ * In-memory {@link WorkspaceRepository}.
  *
  * Holds projects, diagrams, and notes in plain Maps with no persistence. It
  * serves two purposes: a fallback when IndexedDB is unavailable (so the app still

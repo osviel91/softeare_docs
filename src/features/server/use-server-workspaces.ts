@@ -1,5 +1,5 @@
 /**
- * The server side of the workspace switcher (Phase 4A).
+ * The server side of the workspace switcher.
  *
  * This hook owns what `useWorkspace` deliberately does not: the *list* of
  * authenticated server projects, creating one, and opening one. A
@@ -117,10 +117,7 @@ export function useServerWorkspaces(
   }, [authenticated]);
 
   useEffect(() => {
-    if (
-      active !== null &&
-      active.project.workspaceId !== selectedWorkspaceId
-    ) {
+    if (active !== null && active.project.workspaceId !== selectedWorkspaceId) {
       openTicket.current += 1;
       setActive(null);
       setOpenError(null);

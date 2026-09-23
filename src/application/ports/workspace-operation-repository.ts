@@ -1,5 +1,5 @@
 /**
- * The workspace operation journal port (Phase 6, mission items 28–32).
+ * The workspace operation journal port.
  *
  * A mutation of a server resource changes two stores that cannot share a
  * transaction: the `resources` row in PostgreSQL and the document's bytes on the

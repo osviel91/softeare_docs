@@ -1,5 +1,5 @@
 /**
- * JSON (de)serialization for a {@link WorkspaceSnapshot} (Phase 4).
+ * JSON (de)serialization for a {@link WorkspaceSnapshot}.
  *
  * Export writes the whole workspace — projects, diagrams, and markdown notes —
  * to a single JSON document so it can be downloaded and shared. Import validates

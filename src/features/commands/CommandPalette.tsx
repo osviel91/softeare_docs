@@ -1,5 +1,5 @@
 /**
- * Command palette (Phase 6).
+ * Command palette.
  *
  * A modal dialog over a {@link CommandRegistry}: an input filters the commands by
  * label and the user runs one with Enter, arrow keys, or a click. The palette is

@@ -7,9 +7,8 @@
  * first — and, for a hash or a signature, its own timing is not a leak: the
  * lengths are public.
  *
- * Phase 6 moved this from `apps/api/auth/secret-compare.ts` into the shared
- * persistence layer so the MCP host compares credential digests with the same
- * function the API does, rather than a copy that could drift.
+ * The shared persistence layer lets the API and MCP hosts compare credential
+ * digests with the same function rather than copies that could drift.
  */
 import { timingSafeEqual } from "node:crypto";
 

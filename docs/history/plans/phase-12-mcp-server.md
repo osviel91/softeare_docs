@@ -81,7 +81,7 @@ sees is the one the Problems panel shows.
 
 ### 12.6 — Documentation
 
-[README](../README.md#mcp-server-for-coding-agents) documents the build, the
+[README](../../../README.md) documents the build, the
 workspace model, OpenCode/Hermes/generic client configuration, the tool catalog,
 the resources and prompts, a worked session, and the safety boundary.
 

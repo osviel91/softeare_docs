@@ -1,6 +1,6 @@
 /**
  * The browser's API client: the one place that knows what the server's HTTP
- * surface looks like (Phase 4A).
+ * surface looks like.
  *
  * Nothing above this module — no React component, no workspace repository —
  * builds a URL, serializes a body or reads a status code. A caller asks for a

@@ -1,5 +1,5 @@
 /**
- * Default DSL source seeded into the editor (Phase 3).
+ * Default DSL source seeded into the editor.
  *
  * A small, valid diagram so the live preview is populated on first load. Kept in
  * its own module so both the app and tests can import a stable example.

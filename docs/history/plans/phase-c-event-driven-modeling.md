@@ -95,7 +95,7 @@ producer`, `Unknown service "Ghost"` and their siblings are clickable and
 - `README.md` and `ARCHITECTURE.md` updated, with ADR-027 (own language and AST),
   ADR-028 (extension decides the resource type) and ADR-029 (one row per event,
   stable topological order).
-- These plans recorded under `docs/plan/`.
+- These plans are recorded under `docs/history/plans/`.
 - Checkpoint commit `99362e6`; the symbol-kind follow-up is committed separately.
 
 ## Verification

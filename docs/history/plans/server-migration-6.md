@@ -52,8 +52,8 @@ apps/
   mcp/        (the remote MCP service)
 ```
 
-| Image                  | Contains                                      | Does not contain                   |
-| ---------------------- | --------------------------------------------- | ---------------------------------- |
+| Image               | Contains                                      | Does not contain                   |
+| ------------------- | --------------------------------------------- | ---------------------------------- |
 | `software-docs-web` | nginx + the static bundle                     | Node, MCP runtime, database driver |
 | `software-docs-api` | the API bundle + `pg`                         | frontend, MCP runtime              |
 | `software-docs-mcp` | the MCP bundle + `pg`, non-root, read-only FS | frontend, nginx, PGlite            |

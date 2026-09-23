@@ -175,7 +175,7 @@ npm run mcp         # build, then run it on the current directory`}</CodeBlock>
         </p>
       </Group>
 
-      <Group title="Remote service (Phase 6)" testId="mcp-remote">
+      <Group title="Remote service" testId="mcp-remote">
         <p className="ref__summary">
           The same engine is also served as an <em>independently deployable</em>{" "}
           HTTPS service for agents that cannot run a local process. It is a

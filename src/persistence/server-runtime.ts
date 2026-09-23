@@ -1,5 +1,5 @@
 /**
- * The shared server runtime (Phase 6 §2, §25–26).
+ * The shared server runtime for the API and remote MCP hosts.
  *
  * The HTTP API and the MCP service are separate *processes* with separate
  * images, separate configuration and separate failure domains — but they are not
@@ -53,8 +53,8 @@ export interface ServerRuntimeConfig {
   /**
    * The HMAC pepper credential digests are keyed with.
    *
-   * Phase 6 §73 removes the "defaults to the cookie secret" fallback in
-   * production: this is required, and each host's configuration loader is
+   * This is required separately from the cookie secret because the two
+   * credentials serve different purposes. Each host's configuration loader is
    * responsible for refusing to start without it.
    */
   tokenPepper: string;

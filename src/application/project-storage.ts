@@ -72,7 +72,7 @@ export interface ProjectStorage {
   /**
    * Atomically move `from` onto `to`, replacing whatever is at `to`.
    *
-   * This is the completion step of the workspace operation journal (Phase 6):
+   * This is the completion step of the workspace operation journal:
    * the new bytes are written to a hidden staging path first and committed to
    * the resource's real path only after the database has durably recorded the
    * intent. Unlike {@link move}, it is *meant* to overwrite — the target is the

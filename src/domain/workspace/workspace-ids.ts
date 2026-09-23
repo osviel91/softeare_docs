@@ -1,5 +1,5 @@
 /**
- * Identifier types and generators for workspace entities (Phase 4).
+ * Identifier types and generators for workspace entities.
  *
  * Ids must be stable and unique across a workspace's lifetime. As with the
  * diagram ids in `src/shared/ids`, we keep a single production generator and a

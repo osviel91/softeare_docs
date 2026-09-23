@@ -1,5 +1,5 @@
 /**
- * Agents and access tokens, the screen (ADR-043, Phase 5E).
+ * Agents and access tokens, the screen (ADR-043).
  *
  * A small settings surface, not a settings system: create an agent, give it a
  * credential with a scope and optional expiry and project restriction, copy the

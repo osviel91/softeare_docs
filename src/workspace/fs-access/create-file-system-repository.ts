@@ -1,6 +1,6 @@
 /**
  * Production bridge from the File System Access API to the workspace repository
- * (Phase 5).
+ *
  *
  * The browser API lives in `window` and is unavailable under Node/jsdom, so this
  * module owns the only place that touches the real handles. It adapts them to

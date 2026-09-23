@@ -55,8 +55,8 @@ export interface ServerWorkspaceRepositoryOptions {
   /**
    * The caller this repository acts as.
    *
-   * Phase 6 requires it: every write now goes through the shared mutation
-   * service, which authorizes as that principal and journals the operation. A
+   * Every write goes through the shared mutation service, which authorizes as
+   * that principal and journals the operation. A
    * repository with no context could not honestly claim "expected revision N".
    */
   context: ApplicationContext;
@@ -520,7 +520,7 @@ export class ServerWorkspaceRepository implements RevisionedWorkspaceRepository 
   /**
    * Write a resource's content, creating its row when it is new.
    *
-   * Phase 6 routes this through the shared mutation service rather than doing
+   * The shared mutation service routes this instead of doing
    * "read the revision, then write the file" here. That old sequence had a real
    * window: two writers could both claim a bump and then write their bytes in
    * the opposite order, leaving the database at the later revision and the file

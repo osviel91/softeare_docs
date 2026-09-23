@@ -9,7 +9,7 @@ project stays maintainable and evolvable by its owner.
 The diagram domain flows through explicit, testable layers:
 
 ```
-Sequence DSL
+Sequence DSL / Event-flow DSL
      │
      ▼
 Lexer / Parser          → produces tokens + a ParseResult<SequenceDiagram>
@@ -53,11 +53,17 @@ project resources ─► tab strip (one open-document set) ─► editor + previ
         └─► MCP tools/resources ─► stdio JSON-RPC ─────────► coding agents
 ```
 
-A _resource_ is a diagram or a markdown document; `src/domain/workspace/resource.ts`
-is a thin view over the two stores rather than a second model (ADR-015). The
-searchable document set and the archive are both **derived on demand** — there is
-no index to keep in sync (ADR-017, ADR-018) — which is what keeps the workspace
-local-first and Git-friendly.
+A _resource_ is a sequence diagram, event flow, or Markdown document. Locally,
+event flows use the `.eventseq` extension and share the persisted diagram
+collection with sequence diagrams. `src/domain/workspace/resource.ts` is a thin
+view over the concrete stores rather than a second persistence model (ADR-015).
+The searchable document set and the archive are both **derived on demand** —
+there is no separate index to keep in sync (ADR-017, ADR-018) — which keeps the
+workspace local-first and Git-friendly.
+
+Sequence and event-flow source each have their own parser, validator, layout,
+and SVG renderer, while the application selects the language from the resource
+type. Markdown follows its separate source-to-HTML path below.
 
 The MCP server (`mcp/`) is another consumer of exactly those layers, reached
 over stdio instead of React (ADR-037). It differs in only two ways: its
@@ -145,7 +151,7 @@ The domain never imports any of them. The third exists because the
 `FsDirectoryHandle` seam ADR-005 introduced turned out to be the right shape for
 a second host: the MCP server gets the same repository behaviour — stable ids,
 metadata reconciliation, extension-based kinds — from `node:fs`. A project
-import/export format (human-readable JSON, see Phase 4/5) provides fallback for
+import/export format (human-readable JSON) provides fallback for
 browsers without the File System Access API.
 
 Two smaller adapters sit beside the workspace repository because their lifetimes
@@ -267,13 +273,14 @@ Browser ──GET /auth/login──► 302 to the provider (+ signed login-state
   `sid_<uuid>.<32 random bytes>` and only its SHA-256 is stored, so a database
   read cannot be replayed as a login.
 
-## 6. Phases
+## 6. Current documentation and history
 
-See [README.md](./README.md#development-phases) for the milestone list. Each
-milestone's mission — goal, deliverables, boundaries, and verification — is
-recorded under [`docs/plan/`](./docs/plan/), and each milestone ends with a
-checkpoint commit after `npm test`, `npm run build`, and `npm run lint` are
-green.
+The current product guide is [README.md](./README.md). The vocabulary is in
+[CONTEXT.md](./CONTEXT.md), and the H01 behavior snapshot is
+[`docs/architecture-baseline.md`](./docs/architecture-baseline.md). Historical
+plans and deployment reports are indexed in
+[`docs/history/README.md`](./docs/history/README.md); they explain intent and
+tradeoffs but are not current status claims.
 
 ## 7. Architectural decision records (ADRs)
 

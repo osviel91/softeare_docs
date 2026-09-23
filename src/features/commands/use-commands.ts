@@ -1,5 +1,5 @@
 /**
- * App command registry (Phase 6).
+ * App command registry.
  *
  * The catalog of commands — their labels, descriptions, chords and categories —
  * lives in `command-catalog.ts`. This hook attaches the behaviour to each spec

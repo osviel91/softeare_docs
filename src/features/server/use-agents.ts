@@ -1,5 +1,5 @@
 /**
- * Agent and credential management state (ADR-043, Phase 5E).
+ * Agent and credential management state (ADR-043).
  *
  * The hook owns the *metadata* the settings screen renders and the mutations it
  * performs. It deliberately does not own the one-time plaintext: a created or

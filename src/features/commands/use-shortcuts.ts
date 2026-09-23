@@ -1,5 +1,5 @@
 /**
- * Global shortcut listener for the command registry (Phase 6).
+ * Global shortcut listener for the command registry.
  *
  * One listener on `document` turns key presses into commands: it walks the
  * registry, finds the first command whose {@link KeyBinding} matches, and runs

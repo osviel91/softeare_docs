@@ -1,5 +1,5 @@
 /**
- * The agent persistence ports (ADR-043, Phase 5).
+ * The agent persistence ports (ADR-043).
  *
  * Two ports, mirroring the two entities. An agent identity is the durable
  * automation principal; a credential is one revocable secret belonging to it.

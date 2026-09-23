@@ -1,5 +1,5 @@
 /**
- * Keyboard bindings for commands (Phase 6).
+ * Keyboard bindings for commands.
  *
  * A {@link KeyBinding} is a small, plain description of a chord — the key plus
  * the modifier keys it requires — rather than a closure over a `KeyboardEvent`.

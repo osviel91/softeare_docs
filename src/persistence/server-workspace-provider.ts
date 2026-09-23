@@ -44,9 +44,8 @@ export interface ServerWorkspaceProviderOptions {
   /**
    * The one authoritative mutation path, shared with the catalog and MCP.
    *
-   * Phase 6 removed this provider's private write path: it used to claim a
-   * revision and then write a file, which is the window the mission's item 27
-   * names. Every write now goes through the journal.
+   * Every write goes through the journal, which closes the claim-to-file-write
+   * window and keeps the catalog and repository on one mutation path.
    */
   mutations: WorkspaceMutationService;
   /**

@@ -1,5 +1,5 @@
 /**
- * Domain model for projects (Phase 4; notes added in the documentation phase).
+ * Domain model for projects, diagrams, event flows, and notes.
  *
  * These types are framework-free and persistence-agnostic: they describe what
  * is stored, not how. The workspace repository (see `src/workspace`) is the

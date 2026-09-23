@@ -1,5 +1,5 @@
 /**
- * The API's failure vocabulary, on the client side (Phase 4A).
+ * The API's failure vocabulary, on the client side.
  *
  * The server answers a failed request with `{ error: { code, message, details } }`
  * where `code` is a transport-neutral {@link ApplicationErrorCode}. React code

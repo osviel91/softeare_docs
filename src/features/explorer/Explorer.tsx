@@ -1,5 +1,5 @@
 /**
- * Project explorer (Phase 4; notes added with the documentation layer).
+ * Project explorer for diagrams, event flows, and notes.
  *
  * Renders the workspace tree: projects, each with its diagrams and markdown
  * notes. Creating, renaming, deleting, and selecting all flow through callbacks
@@ -99,7 +99,7 @@ export interface ExplorerProps {
   onUnhideAll?: () => void;
   /**
    * Called when the user clicks "Open folder…". Opens a local folder via the
-   * File System Access API (Phase 5). Absent when the feature is hidden.
+   * File System Access API. Absent when the feature is hidden.
    */
   onOpenFolder?: () => void;
   /** The opened folder's name, or `null` for in-browser projects. */

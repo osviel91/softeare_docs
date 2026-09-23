@@ -25,7 +25,7 @@ TypeScript modules, and neither owns a project operation the other lacks.
 
 ### Phase 0 — Architectural refactor
 
-- `docs/plan/server-migration-0-3.md` (this file) and **ADR-039**.
+- `docs/history/plans/server-migration-0-3.md` (this file) and **ADR-039**.
 - `src/application/` as the one layer every host calls:
   - `context.ts` — `Principal`, `ApplicationContext`, `localContext()`.
   - `errors.ts` — `ApplicationError` with transport-neutral codes.

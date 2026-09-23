@@ -1,5 +1,5 @@
 /**
- * The PostgreSQL audit repository (ADR-040 / mission Phase 10).
+ * The PostgreSQL audit repository (ADR-040).
  *
  * This is the *implementation* of a port defined in the application layer
  * (`src/application/ports/audit-repository.ts`); its types are re-exported here
@@ -31,11 +31,9 @@ const MAX_LIMIT = 500;
  * Build a writer that appends one audit entry **inside an existing client or
  * transaction**.
  *
- * Extracted in Phase 6 so the workspace operation journal can commit an audit
- * row in the same transaction as the resource mutation it describes, rather than
- * after it. That is the mission's "audit must not be lost after a success"
- * requirement, and sharing the writer is what keeps the durable path and the
- * ordinary path from drifting.
+ * The workspace operation journal commits an audit row in the same transaction
+ * as the resource mutation it describes. Sharing the writer keeps the durable
+ * path and the ordinary path from drifting.
  */
 export function createAuditEventWriter(
   newId: IdGenerator = createIdGenerator(),

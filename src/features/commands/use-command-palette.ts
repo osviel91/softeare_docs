@@ -1,5 +1,5 @@
 /**
- * Command palette controller (Phase 6).
+ * Command palette controller.
  *
  * Owns the transient open/closed state of the palette and wires the global
  * shortcut (Ctrl/Cmd+Shift+P toggles it, Esc dismisses it). The palette itself

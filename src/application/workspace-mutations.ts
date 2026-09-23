@@ -1,7 +1,7 @@
 /**
- * The single authoritative server mutation path (Phase 6, mission items 25–33).
+ * The single authoritative server mutation path.
  *
- * Phase 5 had two server-facing ways to change a resource: `ProjectCatalog`'s use
+ * The server used to have two ways to change a resource: `ProjectCatalog`'s use
  * cases (called by the HTTP API and the remote MCP tools) and the
  * `ServerWorkspaceRepository` used by the shared documentation service. Both
  * claimed a revision and then wrote a file, and the two sequences were *almost*

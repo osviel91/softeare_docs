@@ -1,5 +1,5 @@
 /**
- * Agent identities and credentials over PostgreSQL (ADR-043, Phase 5).
+ * Agent identities and credentials over PostgreSQL (ADR-043).
  *
  * The implementation of the two ports in
  * `src/application/ports/agent-repository.ts`. Two structural decisions live

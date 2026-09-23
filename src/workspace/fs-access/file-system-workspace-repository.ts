@@ -1,5 +1,5 @@
 /**
- * File System Access API implementation of {@link WorkspaceRepository} (Phase 5).
+ * File System Access API implementation of {@link WorkspaceRepository}.
  *
  * A folder the user opens on their machine *is* the workspace. The domain model
  * maps losslessly onto the folder:

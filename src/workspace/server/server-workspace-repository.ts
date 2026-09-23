@@ -1,5 +1,5 @@
 /**
- * A `WorkspaceRepository` over the server's HTTP API (Phase 4A).
+ * A `WorkspaceRepository` over the server's HTTP API.
  *
  * This is the browser half of the mission's central claim: the editor depends on
  * a storage interface, and the *same* editor runs against IndexedDB or against an

@@ -1,5 +1,5 @@
 /**
- * The audit port (Phase 4D).
+ * The audit port.
  *
  * When agents can mutate documentation, "who changed this, and how did they
  * authenticate?" has to be answerable after the fact. Every application use case
@@ -16,8 +16,8 @@
  * and timestamp itself, so a caller cannot backdate a row or choose its own
  * primary key.
  *
- * Moving the definition here (Phase 4D) is what lets `project-catalog` depend on
- * a port instead of on the PostgreSQL module that implements it.
+ * Keeping the definition here lets `project-catalog` depend on a port instead of
+ * on the PostgreSQL module that implements it.
  */
 import type { AuthType } from "../context";
 import type { JsonObject } from "../../shared/json/json-value";

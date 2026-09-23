@@ -1,64 +1,51 @@
-# Accounts And Workspaces
+# Product Vocabulary
 
-This context covers human authentication, administrator approval, workspace
-membership, invitations, and the projects contained by a workspace.
+This glossary names the concepts used by the product and its documentation. It
+describes the current model without prescribing implementation.
 
-## Language
+## Concepts
 
-**User**:
-A person with an account in the application. A user may authenticate locally or
-through Google.
-_Avoid_: Account, member (unless describing a workspace relationship)
+**User**: A person who can use the application through an authenticated account.
 
-**Account status**:
-The approval state of a user: `PENDING`, `ACTIVE`, or `SUSPENDED`.
-_Avoid_: Login status, session status
+**Agent identity**: A named non-human identity used by an automation or coding
+agent to access server capabilities.
 
-**Platform administrator**:
-A user allowed to approve, suspend, and reactivate users and administer every
-workspace.
-_Avoid_: Project owner, workspace admin
+**Agent credential**: A credential belonging to an agent identity. It lets an
+agent authenticate without a human browser session and can be revoked
+independently.
 
-**Workspace**:
-A user-owned container that groups projects and collaborators. A workspace name
-is a label and can be changed without changing its projects.
-_Avoid_: Server project, project
+**Workspace**: A collaboration boundary that groups projects and its members.
+Every user has a default workspace; additional workspaces can be created and
+managed by their owners.
 
-**Workspace member**:
-A user with access to a workspace through ownership, an accepted invitation, or
-an administrator assignment.
-_Avoid_: Project member
+**Project**: A named documentation set inside one workspace. A project groups
+resources and has its own project-level roles and permissions.
 
-**Workspace administrator**:
-A workspace member with the `ADMIN` role, allowed to manage that workspace's
-members. Invitation management will use the same authority when invitations
-are introduced.
-_Avoid_: Platform administrator, project owner
+**Resource**: A project document with a name, content, identity, and type. The
+current resource types are sequence diagram, event flow, and documentation.
 
-**Workspace role**:
-The role a user has inside one workspace: `ADMIN`, `EDITOR`, or `VIEWER`.
-Workspace roles are separate from project roles.
-_Avoid_: Project role
+**Diagram**: A visual document rendered from one of the project's diagram DSLs.
 
-**Invitation**:
-A single-use, expirable link bound to one email address and one workspace role.
-The authenticated account must use the bound email before the invitation can be
-accepted.
-_Avoid_: Invite code, access token
+**Sequence diagram**: A diagram describing participants and ordered interactions
+using `.seq` source.
 
-**Default workspace**:
-The one workspace automatically created for every user. It cannot be deleted,
-but it can be renamed.
-_Avoid_: Personal project, home project
+**Event flow**: A diagram describing events and their producers, consumers,
+brokers, channels, publications, and subscriptions using `.eventseq` source.
 
-## Current boundaries
+**Documentation / note**: A Markdown resource using `.md` source. It explains a
+system and can link to other project resources.
 
-- The default workspace and workspace membership model exist for existing and new
-  users.
-- Workspace administrators can list members, change roles, and remove members.
-- Projects have a workspace association, but project authorization still uses
-  project membership until the workspace-aware project phase is delivered.
-- Local password credentials use scrypt hashes and approval-controlled sessions.
-- Invitations are not yet part of the delivered model. Users can create, rename,
-  select, and delete their non-default workspaces; selection does not filter
-  projects until the workspace-aware project phase.
+**MCP**: Model Context Protocol. In this product it is the agent-facing surface
+for discovering, reading, writing, validating, rendering, and searching project
+documentation. The stdio service works on local files; the remote service works
+with authenticated server projects.
+
+## Current Boundaries
+
+- Workspace membership gates project visibility and access. Project roles still
+  determine what an authorized member can do inside that project.
+- Switching workspaces changes the projects available in the browser.
+- Workspace administrators can manage current workspace membership and roles.
+- Invitations are not delivered yet.
+- Human users and agent identities are distinct actors, even when they access
+  the same project.

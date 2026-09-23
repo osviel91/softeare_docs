@@ -1,5 +1,5 @@
 /**
- * The agent lifecycle: identities and their credentials (ADR-043, Phase 5).
+ * The agent lifecycle: identities and their credentials (ADR-043).
  *
  * This is the application service behind the settings screen and the API. It is
  * the one place an agent or credential is created, renamed, disabled, revoked

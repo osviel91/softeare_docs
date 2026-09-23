@@ -1,5 +1,5 @@
 /**
- * Repository construction for the Explorer feature (Phase 4).
+ * Repository construction for the Explorer feature.
  *
  * `useWorkspaceRepository` builds the production repository over IndexedDB, but
  * falls back to an in-memory repository when IndexedDB is unavailable (for example

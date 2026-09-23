@@ -1,5 +1,5 @@
 /**
- * The project persistence port (Phase 4D).
+ * The project persistence port.
  *
  * This interface used to live under `src/persistence`, which made the
  * application layer import *from* the layer that implements it — the arrow

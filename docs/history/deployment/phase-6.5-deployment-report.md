@@ -28,7 +28,7 @@ The 16 commits that carried Phase 6 to the remote were pushed from a clean tree.
 Remote tree at `origin/master` was confirmed to contain `apps/mcp/`,
 `Dockerfile.mcp`, `compose.production.yml`, `deploy/reverse-proxy/nginx.conf`,
 `src/persistence/migrations/0003-workspace-operations.ts`,
-`docs/plan/server-migration-6.md` and ADR-046/047/048.
+`docs/history/plans/server-migration-6.md` and ADR-046/047/048.
 
 ## Images
 

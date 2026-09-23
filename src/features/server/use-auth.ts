@@ -1,5 +1,5 @@
 /**
- * Browser authentication state (Phase 4A).
+ * Browser authentication state.
  *
  * The browser is told who it is by the server, and it never holds a credential
  * itself: `GET /api/me` answers with the signed-in user or `null`, and the

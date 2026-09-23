@@ -1,5 +1,5 @@
 /**
- * Workspace state hook (Phase 4; notes added with the documentation layer).
+ * Workspace state hook for local and server projects.
  *
  * `useWorkspace` owns everything the explorer and editor share: the projects, the
  * selected project's diagrams and notes, the currently loaded document (a diagram

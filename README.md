@@ -1,1089 +1,163 @@
 # Software Docs Manager
 
-A browser-based, **local-first** workspace for authoring, organizing,
-visualizing, and exporting software documentation, sequence diagrams, event
-flows, and Markdown. It ships its own small DSL with a dedicated lexer/parser,
-a layout engine, and an SVG renderer — the diagram domain is owned by this
-project, not delegated to an external library.
+Software Docs Manager is a local-first browser IDE for documenting software
+systems. It combines editable sequence diagrams, event flows, and Markdown in
+projects that can be rendered, searched, validated, exported, and shared with
+coding agents.
 
-The vision is a focused, IDE-like editing experience (project explorer + DSL
-editor + live preview) that works entirely offline in the browser.
+## The Product
 
-## Design principles
+Software documentation is often split between prose, diagramming tools, and
+files that drift apart. This project keeps those artifacts together while
+keeping the source readable outside the application.
 
-- **Owned domain logic.** The pipeline is `DSL → lexer/parser → AST →
-validation → layout → render model → SVG`. The UI consumes this engine; it
-  does not contain diagram semantics.
-- **Clean boundaries.** The renderer never parses text, the editor never
-  computes geometry, the parser does not know about React, and persistence never
-  depends on UI components. See [ARCHITECTURE.md](./ARCHITECTURE.md).
-- **Simple + correct + extensible** over clever + abstract + unfinished.
-- **Pure functions and strong typing** wherever practical. Minimal dependencies.
+The product owns the diagram languages and rendering pipeline. The editor,
+stdio MCP server, HTTP API, and remote MCP service use the same domain and
+application services rather than separate interpretations.
 
-## Tech stack
+## Capabilities
 
-- TypeScript, React 18, Vite
-- Vitest + Testing Library for tests
-- ESLint + Prettier
+Projects contain three resource types:
 
-## Getting started
+- **Sequence diagrams** use `.seq` source for participants, messages, notes,
+  activations, and control-flow fragments.
+- **Event flows** use `.eventseq` source for events, producers, consumers,
+  brokers, channels, publications, and subscriptions.
+- **Documentation** uses `.md` Markdown files with headings, links, wiki-links,
+  and diagram embeds.
 
-```bash
-npm install   # installs dependencies (uses a project-local cache)
-npm run dev   # start the Vite dev server at http://localhost:5173/
-npm test      # run the test suite once
-npm run build # type-check, build dist/, and bundle the MCP server
+Resources can be edited in mixed tabs, validated, rendered to deterministic SVG,
+searched across a project, renamed without losing stable local identity, and
+exported as portable project archives. The project index supplies diagnostics,
+outlines, symbols, references, completion, and search facts.
+
+The browser editor provides an explorer, source editor, outline and problems
+views, live or explicit rendering, pan/zoom navigation, version history, safe
+delete, Markdown preview, and project-wide search.
+
+## Local And Server Operation
+
+Local-first is the default. A browser can store projects in IndexedDB or open a
+folder through the File System Access API. A folder remains a readable project
+tree, and the stdio MCP server can work on the same kind of filesystem
+workspace.
+
+Server mode adds authenticated shared projects. The API stores project identity,
+memberships, resource metadata, revisions, sessions, and audit events in
+PostgreSQL; resource content remains in the project storage volume. Workspace
+membership scopes which projects are visible and accessible, and project roles
+control permissions within an accessible project. Server writes use optimistic
+revisions so stale edits are rejected instead of silently overwriting changes.
+
+The browser uses the same editor for local and server projects. The remote MCP
+service is a separately deployable, authenticated service over the shared
+application layer. It does not call the HTTP API over the network.
+
+## Human And Agent Workflows
+
+Humans can create a project, choose a resource type, edit its source, inspect
+diagnostics, and follow links between diagrams and Markdown:
+
+1. Create or open a local project, or sign in to a server workspace.
+2. Add sequence, event-flow, and Markdown resources.
+3. Use the outline, search, references, and problems views while editing.
+4. Render or export the result and keep the source in the project tree.
+
+Agents can use the local stdio MCP server for filesystem work or the authenticated
+remote MCP service for server projects. Both expose discovery, resource reads and
+writes, validation, rendering, search, and documentation workflows. Writes return
+diagnostics; destructive deletes require confirmation.
+
+## Architecture At A Glance
+
+Diagram source follows the shared pipeline:
+
+```text
+DSL -> lexer/parser -> AST -> validation -> layout -> render model -> SVG
 ```
 
-Other scripts: `npm run preview`, `npm run lint`, `npm run lint:fix`,
-`npm run format`, `npm run format:check`, `npm run typecheck`,
-`npm run test:e2e`, `npm run mcp`, `npm run test:mcp`.
+The Markdown renderer is a separate source-to-HTML path. The project index,
+search, archive, and MCP layers consume project resources beside the rendering
+pipeline. React is a host for the editor, not the owner of language semantics.
 
-## Testing in a real browser
+The main boundaries are:
 
-`npm test` runs the Vitest suite in jsdom, which never proves that the _built_
-bundle boots in a browser — bundling, the production React build, asset paths,
-and the live editor → preview wiring are all unverified there. `npm run test:e2e`
-closes that gap: it builds the production bundle, serves `dist/` with
-`vite preview`, and drives it with Chromium through the `playwright` library. It
-checks that the app shell mounts, the seeded sample renders to SVG, edits update
-the preview live, a note bullet expands its callout on click without resizing the
-canvas, a self-message paints a loop with an arrowhead, a markdown note renders and
-its `[[Diagram]]` link resolves through the context menu, and invalid DSL surfaces
-diagnostics instead of crashing.
+- `src/language` parses and validates source without React.
+- `src/domain` contains framework-free models, indexing, search, and policies.
+- `src/layout` computes geometry; `src/renderer` emits SVG without parsing.
+- `src/application` contains shared use cases and authorization.
+- `src/workspace` provides local repository adapters.
+- `src/persistence` provides server repositories and project storage.
+- `mcp/`, `apps/api/`, and `apps/mcp/` are stdio, HTTP, and remote-MCP hosts.
 
-Install the browser once, then run it:
+See [ARCHITECTURE.md](./ARCHITECTURE.md) for boundaries and decision records,
+and [CONTEXT.md](./CONTEXT.md) for the project vocabulary.
+
+## Development
+
+Requirements: Node.js and npm.
+
+```bash
+npm ci
+npm run dev
+```
+
+The development server runs at <http://localhost:5173/>. Useful checks:
+
+```bash
+npm run verify       # lint, typecheck, full tests, MCP build/smoke/tests
+npm run build        # production web, API, stdio MCP, and remote MCP bundles
+npm run format:check
+```
+
+For browser smoke tests, install Chromium once and run:
 
 ```bash
 npx playwright install chromium
 npm run test:e2e
 ```
 
-The script exits non-zero when any check fails, so it is CI-ready; set `E2E_PORT`
-to move it off the default port 4173.
+The broader container check is `npm run test:containers`.
 
-## The interface
-
-The app is a three-pane IDE: **explorer → editor → preview**, under a toolbar and
-over a status bar. Everything is themed from one set of CSS custom properties in
-`src/styles.css`, so the dark surface stack and the single accent are defined in
-one place rather than per component.
-
-- **Editor views.** A `Code` / `Outline` / `Problems` / `Overview` / `History`
-  segmented control switches the middle pane between the DSL source, the open
-  document's outline, the project's diagnostics, a dashboard over the project
-  index, and the open diagram's version timeline (`src/features/history`).
-- **The documentation page.** **Docs** in the toolbar — also `mod+alt+D`, or
-  **Documentation** in the palette — opens a page of its own rather than a panel
-  in that control, because the reference has outgrown a middle-pane tab. It
-  holds a section for each diagram language (rendered from
-  `src/language/dsl-reference.ts`, the same data the MCP server serves as a
-  resource), a reference for every command and the chord that runs it
-  (generated from `src/features/commands/command-catalog.ts`, so a command
-  cannot exist undocumented), and a guide to the MCP server. The page replaces
-  the workspace while it is open and any command or search result returns to it.
-  Tests assert each documented language keyword really lexes as a keyword — or,
-  for an event flow, is accepted by its parser — so the language reference
-  cannot drift behind the grammar, and that the command reference lists the
-  whole catalog.
-- **Editing.** The editor has a line-number gutter synced to the textarea's scroll
-  position, and a **Snippets** menu (`src/features/editor/snippets.ts`) that
-  inserts a construct at the caret, starting it on its own line unless it is
-  already at one. The menu follows the open document's language, so an event flow
-  offers `event`, `broker` and `publish … to …` rather than `participant` and
-  sequence arrows, which would be syntax errors there. The gutter also prints the
-  diagram's circled step number beside each message line, so a number on the
-  canvas — the one `note on 3` refers to — can be located in the source at a
-  glance (`src/domain/diagram/step-numbers.ts`).
-- **Name highlighting and live rename.** Every name is drawn bold and in the
-  accent colour wherever it is written — a participant or actor at its declaration
-  and at every message, activation, note and alias that names it, and an event,
-  broker, channel or service at its declaration and in every edge that carries it.
-  A `<textarea>` cannot style part of its own text, so a highlight layer sits
-  behind a transparent textarea and both share one box, font and line grid
-  (`src/features/editor/highlight.ts`). Because the editor knows each mention's
-  exact span, retyping a declaration's name rewrites its usages as you type
-  (`src/features/editor/live-rename.ts`) — a rename never collapses the diagram
-  into "unknown participant" or the flow into "unknown event", never touches prose
-  in a label or metadata value, and is refused when the new name is already
-  another declaration's. The spans come from `participant-mentions.ts`
-  (sequence) and `eventflow/mentions.ts`; the project index shares the former, so
-  find-references, semantic rename and the live rename cannot disagree.
-- **Auto-update.** With the switch on, the canvas re-renders as you type. Switched
-  off, the canvas keeps the last rendered diagram and a **Render** button appears,
-  so a large diagram does not re-lay out on every keystroke.
-- **Canvas navigation.** The preview is a pan/zoom viewport
-  (`src/features/preview/DiagramViewport.tsx`): drag to pan, scroll to zoom
-  (anchored on the cursor), arrow keys to pan, and a rail with zoom in/out, fit,
-  and reset-to-100%. A minimap in the corner shows the whole diagram with the
-  visible region outlined, and clicking or dragging it recenters the view.
-- **Diagram naming.** A diagram is named by the `title` line in its own source:
-  the explorer row and tab label show that title, falling back to the file name
-  when the source declares none. Renaming the title renames the diagram
-  everywhere as you type, so there is no separate rename step — and the file on
-  disk (and its id) is untouched, so a title is free to differ from the file name.
-  `title` may appear on any line; the first one wins and a duplicate is reported.
-- **Message arrows.** A message's visual semantics are explicit in the AST
-  (`lineStyle` × `arrowStyle`), not encoded in an arrow string: the parser maps
-  every spelling — `->`, `-->`, `->>`, `-->>`, `-x`, `--x`, `-)`, `--)`,
-  `<<->>`, `<<-->>` — onto a solid or dashed line with a filled arrowhead
-  (`->` and `-->`, and their double-chevron synonyms `->>` / `-->>`), an open
-  async chevron (`-)`, `--)`), a cross for a failed delivery (`-x`, `--x`), or
-  heads at both ends (`<<->>`, `<<-->>`). Every message line points somewhere,
-  so a call never reads as a bare rule (`src/domain/diagram/ast.ts`). The arrow
-  lookup table lives in one place in the parser, so the renderer never re-reads
-  source text.
-- **Actors and labelled lifelines.** `actor User` draws a human figure instead
-  of a name box; `participant auth as "Authentication Service"` gives a lifeline
-  a readable label while messages keep using the stable `auth` id. Declaration
-  order still controls left-to-right placement, and actor and participant glyphs
-  share one top band so the diagram stays aligned.
-- **Control-flow fragments.** `loop`, `alt`/`else`, `opt`, `par`/`and`,
-  `critical`/`option`, and `break` are first-class nested statements
-  (`src/domain/diagram/ast.ts`), not flattened into messages. The layout engine
-  frames the rows each one owns, sizes the frame to the participants it mentions,
-  insets nested frames, and draws a labelled divider per extra branch
-  (`src/layout/sequence-layout.ts`).
-- **Sequence numbers.** Every call and every response is numbered in source
-  order, drawn as a small circle on the arrow just inside its tail (on a
-  self-message, on the loop's top segment), so the order of the steps is legible
-  at a glance. Numbering is a render-time annotation over the ordered message
-  list (`src/renderer/svg/sequence-svg-renderer.ts`), so it never changes the
-  layout or the canvas size.
-- **Notes as bullets.** A `note` is attached to the element it annotates as a
-  small bullet (`src/features/preview`). Clicking the bullet (or pressing
-  Enter/Space on it) expands the folded callout box; clicking again collapses it.
-  A note may attach to a lifeline (`note right of API`), span several
-  (`note over API,DB : …`), target the whole diagram (`note over : …`), or attach
-  to a single **message by its step number** (`note on 3 : …` — the number the
-  diagram prints in its circle, counting calls and responses in source order). It
-  may also be multiline (a body running to `end note`), which grows the box one
-  line at a time. When several notes share an anchor their bullets stack, and a
-  `Notes (n)` control offers **Expand all** / **Collapse all**. Expansion is a
-  render-time option, so toggling a bullet never changes the canvas size and the
-  current pan/zoom is preserved.
-- **Safe delete.** Deleting a project or diagram always asks first
-  (`src/features/ui/ConfirmDialog.tsx`). When a local folder is open the dialog
-  offers both scopes: **Remove from app** hides the entry in the explorer but
-  leaves the file on disk, while **Delete from disk** removes it for good. Hidden
-  paths are remembered per folder and the explorer offers to restore them, so a
-  mistaken delete is recoverable; in-browser projects (which have no disk copy)
-  offer the single permanent delete.
-- **Project header actions.** Every project header carries a small `▾`/`▸`
-  collapse toggle — which folds the project's files away to a single row — and a
-  `⋯` menu with **Rename project…** and **Delete project**; right-clicking the
-  header opens that same menu. A file row likewise offers only its `⋯` menu, so
-  rename and delete are always one deliberate step away instead of a bare `✕`
-  beside the name. Project rename uses the same prompt dialog as a file rename,
-  and the same repository rule: an in-browser project keeps its generated id,
-  while a folder project's directory is moved so its path (and its files' ids)
-  change with it — the shell then follows the renamed project, closing the tabs
-  that pointed at the old paths and moving their version timelines.
-- **Trajectory history.** Every diagram keeps a timeline of the sources it has
-  been through (`src/domain/workspace/version.ts`,
-  `src/workspace/version-history.ts`). The first version is captured when a
-  diagram is opened, further versions are checkpointed automatically once edits
-  settle, and **Save version** captures one on demand. The panel draws the
-  **whole project as a tree**: one branch per diagram, each version hanging off
-  the document it belongs to, so the history answers "what changed across this
-  project?" without opening every file. Each entry shows when it was taken, why
-  (its label), and a one-line summary, and can be restored into the editor or
-  forgotten — restoring a version from another branch opens that diagram first,
-  so the buffer, the tab and the saved file agree. Restoring records the restored
-  content as a new checkpoint, so the timeline is append-only.
-- **Projects as documentation.** A project holds diagrams _and_ markdown
-  documents, so it can document a system rather than only draw it. A project's
-  `＋` button opens a menu to add a file — **New diagram**, **New note**, or
-  **New event flow** — so the choice is explicit. Both kinds open into **one tab strip** (see
-  _Documentation workspace_ below), and selecting a markdown document shows the
-  markdown editor (`src/features/notes`) beside its rendered output, with
-  headings, lists, tables, images, code, emphasis, and links. A document links to
-  a diagram with `[[Diagram Name]]` — or with an ordinary relative link such as
-  `[Payment flow](../diagrams/payment.seq)`, which resolves against the project's
-  file names. Either way a resolved link is clickable and opens that document's
-  tab, while an unresolved wiki-link is shown as broken. The markdown renderer
-  (`src/language/markdown/markdown.ts`) is owned by the project like the DSL is —
-  no Markdown dependency — and escapes every piece of user text before emitting
-  tags.
-- **Documentation workspace.** The app is a workspace, not only a diagram editor:
-  - **Mixed tabs.** A diagram and a markdown document stay open side by side in
-    one strip (`src/features/tabs`). A tab shows its document kind, its title, a
-    modified indicator while its buffer has unsaved changes, and a close button.
-    Activating a tab loads that document, and closing the active tab moves the
-    editor to whichever tab replaces it.
-  - **Project-wide search.** `Ctrl/Cmd+Shift+F` (or **Search Project…** in the
-    palette) scans every diagram's source and every document's markdown at once
-    (`src/domain/search/project-search.ts`) and shows each hit with its project,
-    file, line, and matching text. Opening a result loads that document and puts
-    the caret on the hit. The query understands scopes — `kind:diagram`,
-    `kind:note`, `project:name`, and `participant:Name` — so
-    `participant:PaymentService` lists the diagrams declaring that participant.
-  - **Portable project archives.** **Export Project** writes the selected project
-    to a `.zip` (`src/workspace/transfer/`) laid out as a readable documentation
-    tree — a `project.json` manifest plus `diagrams/` and `docs/` — and **Import
-    Project…** recreates a project from one. The archive is a plain ZIP of UTF-8
-    text files, so it is diffable, Git-friendly, and portable; the ZIP codec is
-    owned in-process (`src/workspace/transfer/zip.ts`) rather than pulled in as a
-    dependency, and `createZip` is deterministic.
-- **File actions.** Right-clicking a diagram or note row (or using its `⋯`
-  button) opens a context menu with **Rename…**, **Change title…**,
-  **Duplicate**, and **Delete**. Rename changes the backing file name
-  (`architecture.md`), while change title edits the document's own title — the
-  `title` line for a diagram, the first heading for a note. Duplicate copies the
-  document's content into a new file beside it, named `<name> copy` (then
-  `<name> copy 2`, …) so an existing file is never overwritten. Rename and title
-  both go through a small prompt dialog, and delete still goes through the
-  confirmation dialog above. With a local folder open, rename moves the file on
-  disk and the version timeline follows the file to its new id.
-- **Participant drag-and-drop.** Participant name boxes in the preview are
-  draggable: drop one into the DSL editor to insert that participant name at the
-  caret, instead of retyping it. The drop target highlights while a drag is over
-  it, and the **Title** snippet (`title My Diagram`) covers the other thing every
-  diagram needs up front.
-
-The interaction layer is deliberately thin: all of the geometry lives in
-`src/features/preview/viewport.ts`, a pure module (`zoomAtPoint`, `fitTransform`,
-`panBy`, …) that is unit tested on its own. The viewport itself knows nothing
-about diagram semantics — it receives finished SVG markup plus its pixel size, so
-panning and zooming never re-render the diagram or re-parse the DSL. The minimap
-embeds that SVG as an image rather than inline markup, so a diagram's labels are
-not duplicated in the document.
-
-## MCP server (for coding agents)
-
-The project ships a **Model Context Protocol** server, so a coding agent —
-OpenCode, Hermes, Claude, Cursor, or anything else that speaks MCP — can
-document an application with the same engine the editor uses. An agent can
-create and edit sequence diagrams, event flows and markdown documents, validate
-them, render them to SVG, search a project, and audit what is still missing.
-
-No diagram logic lives in the server. It links the _same_ modules the browser
-app links — the lexer/parser/validator, the layout and SVG renderer, the project
-indexer, the search scan, the outline builders — over a Node filesystem
-`WorkspaceRepository`, which is the interface the File System Access
-implementation already satisfies. A document an agent writes is therefore a
-document the editor opens unchanged, and a diagnostic the agent sees is the one
-the Problems panel shows (ADR-037). The same overview, with the client configs
-below, is available inside the app under **Docs → MCP server**.
-
-### Build and run
+To build and run the local stdio MCP server:
 
 ```bash
-npm run mcp:build   # bundle mcp/ into dist-mcp/server.mjs (esbuild)
+npm run mcp:build
 node dist-mcp/server.mjs --workspace ./docs
 ```
 
-`npm run mcp` builds and runs it in one step. The bundle is self-contained — it
-has no runtime dependencies — so a client only needs `node` on its `PATH`.
+## Deployment
 
-| Flag / argument            | Meaning                                                         |
-| -------------------------- | --------------------------------------------------------------- |
-| `--workspace <dir>` (`-w`) | The documentation workspace. Defaults to the current directory. |
-| `--project <name>` (`-p`)  | Default project for tool calls that omit one.                   |
-| `--help` (`-h`)            | Print the usage summary.                                        |
-| `--version` (`-V`)         | Print the server version.                                       |
-
-### The workspace it edits
-
-The server uses the same model as a folder opened in the app (ADR-005), so a
-documentation repository it writes is one the app can open:
-
-- a **subdirectory** of the workspace is a **project**;
-- inside it, `.md` is a markdown document, `.eventseq` an event flow, and
-  anything else a sequence diagram;
-- `project.json` records each file's stable id, so `resource://` links survive
-  renaming and moving.
-
-The tools take an optional `project`; when the workspace has exactly one
-project, or `--project` was given, it may be omitted.
-
-### Client configuration
-
-**OpenCode** — add to `opencode.json` (or `opencode.jsonc`):
-
-```json
-{
-  "$schema": "https://opencode.ai/config.json",
-  "mcp": {
-    "software-docs": {
-      "type": "local",
-      "command": [
-        "node",
-        "/absolute/path/to/SecuenceDiagrams/dist-mcp/server.mjs",
-        "--workspace",
-        "/absolute/path/to/docs"
-      ],
-      "enabled": true
-    }
-  }
-}
-```
-
-**Hermes** — add to the `mcp_servers` block of `~/.hermes/config.yaml`:
-
-```yaml
-mcp_servers:
-  software-docs:
-    command: "node"
-    args:
-      - "/absolute/path/to/SecuenceDiagrams/dist-mcp/server.mjs"
-      - "--workspace"
-      - "/absolute/path/to/docs"
-    tools:
-      resources: true
-      prompts: true
-    # trust: untrusted   # require approval before every write (see Safety)
-```
-
-**Claude Desktop, Cursor, and other `mcpServers` clients** use the same command
-and arguments under the `mcpServers` key:
-
-```json
-{
-  "mcpServers": {
-    "software-docs": {
-      "command": "node",
-      "args": [
-        "/absolute/path/to/SecuenceDiagrams/dist-mcp/server.mjs",
-        "--workspace",
-        "/absolute/path/to/docs"
-      ]
-    }
-  }
-}
-```
-
-`npm link` puts `software-docs-mcp` on the `PATH` (the package's `bin`), so
-`"command": "software-docs-mcp"` also works.
-
-The server implements both protocol eras: the legacy `initialize` handshake and
-the stateless `2026-07-28` revision (`server/discover`, per-request `_meta`,
-`resultType`), so a client of either generation connects without configuration.
-
-### Tools
-
-| Tool                   | What it does                                                                                      |
-| ---------------------- | ------------------------------------------------------------------------------------------------- |
-| `list_projects`        | Projects in the workspace, with resource and diagnostic counts.                                   |
-| `create_project`       | Create a project (a workspace subdirectory) and its `project.json`.                               |
-| `get_project_overview` | One project's counts, symbols by kind, and resources — the best first call.                       |
-| `list_resources`       | Every resource with its stable id, path, type, title and shape metrics.                           |
-| `read_resource`        | The full text of one resource, by stable id, path, file name, or title.                           |
-| `get_outline`          | A diagram's statement tree, an event flow's groups, or a document's headings.                     |
-| `search_documentation` | Text search with `kind:`, `project:` and `participant:` scopes.                                   |
-| `find_references`      | Every declaration and usage of a symbol name in a project.                                        |
-| `create_resource`      | Create a diagram (`.seq`), event flow (`.eventseq`) or document (`.md`); validates what it wrote. |
-| `update_resource`      | Replace, append to, or prepend to a resource's text.                                              |
-| `rename_resource`      | Move a file while keeping its stable id, so links survive.                                        |
-| `delete_resource`      | Delete a resource; requires `confirm: true`.                                                      |
-| `validate_source`      | Validate text before writing it — the self-correction loop.                                       |
-| `validate_resource`    | Diagnostics for one resource, semantic checks included.                                           |
-| `validate_project`     | Every diagnostic in a project, addressed to its resource and line.                                |
-| `render_diagram`       | The SVG for a diagram or event flow, inline or written to a path.                                 |
-| `audit_documentation`  | Documentation gaps: broken links, untitled or empty files, unlinked resources, thin prose.        |
-
-### Resources and prompts
-
-Resources are context the host can attach before the model acts; prompts are
-reusable workflows the user can invoke:
-
-| Resource / prompt                                      | What it gives the model                                                            |
-| ------------------------------------------------------ | ---------------------------------------------------------------------------------- |
-| `sequencediagrams://reference/sequence-dsl`            | Every sequence-language construct, generated from the editor's own reference data. |
-| `sequencediagrams://reference/event-flow-dsl`          | Every event-flow construct.                                                        |
-| `sequencediagrams://reference/markdown`                | The markdown dialect, wiki-links, relative links and `{{diagram:…}}` embeds.       |
-| `sequencediagrams://guide/documenting-an-application`  | A workflow for turning a system into a navigable documentation set.                |
-| `sequencediagrams://guide/tool-workflow`               | What each tool does, plus a worked create → validate → audit loop.                 |
-| `sequencediagrams://project/{project}/resource/{path}` | A resource template for reading one project file directly.                         |
-| Prompt `document-application`                          | Document a system end to end: overview, diagrams, event flows, links.              |
-| Prompt `improve-documentation`                         | Audit a project and fix what the audit finds.                                      |
-| Prompt `diagram-interaction-flow`                      | Turn one described flow into a focused sequence diagram.                           |
-| Prompt `model-event-driven-architecture`               | Turn a broker topology into an event flow.                                         |
-
-The DSL references are generated from `src/language/dsl-reference.ts` — the same
-data the editor's **Docs** view renders and its tests assert against the grammar
-— so the reference an agent reads cannot drift behind the parser.
-
-### What a session looks like
-
-An agent asked to "document the checkout flow" typically runs:
-
-```text
-list_projects
-create_project            { name: "Payments" }                 # if none exists
-get_project_overview      { project: "Payments" }
-# read sequencediagrams://reference/sequence-dsl, then:
-create_resource           { project: "Payments", kind: "diagram",
-                            name: "checkout-flow", title: "Checkout flow",
-                            content: "..." }
-validate_resource         { project: "Payments", resource: "checkout-flow" }
-create_resource           { project: "Payments", kind: "note",
-                            name: "architecture", title: "Payments architecture",
-                            content: "… [[Checkout flow]] …" }
-validate_project          { project: "Payments" }
-audit_documentation       { project: "Payments" }
-```
-
-Every write returns the diagnostics for what was written, so the model can fix a
-document before moving on instead of reporting a broken one as done.
-
-### Safety
-
-- **The workspace root is a hard boundary.** Every file name is validated as a
-  single path segment, so `..`, separators and NUL are rejected before they
-  reach the filesystem; the only files written are project resources and an
-  explicit `render_diagram` output path inside the root.
-- **Deletion is confirmed.** `delete_resource` fails unless it is called with
-  `confirm: true`, and the refusal explains what would have been removed.
-- **Reads and writes are annotated.** Every tool carries MCP
-  `readOnlyHint`/`destructiveHint` annotations, so a host that treats the server
-  as untrusted (Hermes' `trust: untrusted`) can require approval for the tools
-  that write and auto-approve the ones that only read.
-- **Local only.** The server opens no network sockets; it reads and writes the
-  workspace directory it was pointed at.
-
-### Verifying it
-
-`npm run test:mcp` builds the bundle and drives it over real stdio — the same
-approach `npm run test:e2e` takes for the browser bundle — checking the
-handshake, the tool catalog, a full create → validate → audit loop against a
-temporary workspace, and the protocol/tool error channels.
-
-## Remote MCP service (Phase 6)
-
-Phase 6 turns the remote MCP from a route on the API into an **independently
-deployable HTTPS service**. It is its own image (`Dockerfile.mcp`), its own
-process, its own hostname and its own security policy, and it shares _code_ with
-the API — never an HTTP call.
+The static local-first deployment needs only the web image:
 
 ```bash
-npm run mcp:service:build
-DATABASE_URL=postgres://sdm:pass@localhost:5432/sdm \
-MCP_PUBLIC_URL=https://mcp.docs.example.com \
-TOKEN_PEPPER="$(openssl rand -base64 48)" \
-node dist-mcp-service/server.mjs
+docker compose up --build -d
 ```
 
-| Image                  | Contains                                      | Does not contain        |
-| ---------------------- | --------------------------------------------- | ----------------------- |
-| `software-docs-web` | nginx + the static bundle                     | Node, MCP runtime       |
-| `software-docs-api` | the API bundle + `pg`                         | frontend, MCP runtime   |
-| `software-docs-mcp` | the MCP bundle + `pg`, non-root, read-only FS | frontend, nginx, PGlite |
+It serves the browser at <http://localhost:8080/> by default. Portainer users
+can use [`deploy/portainer-stack.yml`](./deploy/portainer-stack.yml); pin
+`IMAGE_TAG` to an immutable image tag for repeatable deployments.
 
-### Transport and protocol
-
-`POST /mcp` uses the official `@modelcontextprotocol/sdk` **Streamable HTTP**
-transport in **stateless JSON mode**: a fresh server and transport per request,
-no session id, no server-initiated stream. Request 1 may land on instance A and
-request 2 on instance B and both work, so no sticky session is needed. `GET`
-answers `405`; `DELETE` is a `204` no-op.
-
-The installed SDK implements protocol `2025-11-25` (its newest) and validates
-`MCP-Protocol-Version` itself. `Mcp-Method` and `Mcp-Name` — which the SDK does
-not know — are validated here and fail closed when they disagree with the body.
-
-### Authentication
-
-Every request must present `Authorization: Bearer sdm_pat_…`. There are no
-anonymous tools, and a browser session cookie is never accepted: a request that
-carries only a cookie is a `401`. The MCP edge calls the _same_
-`authenticateBearerToken` the API calls; `verifyMcpPat()` does not exist. The
-verifier is already a chain, so Phase 7 appends an OAuth access-token verifier
-without touching a tool.
-
-| Situation                                | Answer                     |
-| ---------------------------------------- | -------------------------- |
-| no credential                            | `401` + `WWW-Authenticate` |
-| malformed / revoked / expired / disabled | `401`                      |
-| valid credential, missing scope or role  | `403`                      |
-| unknown or invisible project             | `404`                      |
-
-### Tools
-
-Twenty tools in three levels. Prefer the semantic tools: they parse, validate,
-preserve identity and apply the revision in one idempotent operation.
-
-- **Discovery** — `list_projects`, `get_project`, `get_project_index`,
-  `list_resources`, `get_resource_metadata`, `search_project`
-- **Primitive resources** — `read_resource`, `create_resource`,
-  `update_resource`, `move_resource`, `delete_resource`
-- **Semantic** — `read_diagram`, `upsert_sequence_diagram`, `upsert_event_flow`,
-  `render_diagram`, `read_documentation`, `upsert_documentation`,
-  `get_event_catalog`, `find_event_producers`, `find_event_consumers`,
-  `validate_project`
-
-Every list-like tool paginates with `limit` + `cursor`; search returns
-`{resourceId, path, line, snippet}` rather than whole files; every mutating tool
-accepts an `idempotencyKey`. Project content is also exposed as MCP resources
-under `seqdocs://projects/<id>/…`, read through the same authorized use case.
-
-### Operational limits
-
-| Concern       | Setting                                                                                 |
-| ------------- | --------------------------------------------------------------------------------------- |
-| Request body  | `MCP_MAX_BODY_BYTES` → `413`                                                            |
-| Document size | `MCP_MAX_SEQ_BYTES`, `MCP_MAX_EVENTSEQ_BYTES`, `MCP_MAX_MARKDOWN_BYTES`                 |
-| Rate limits   | per credential, per class (`MCP_RATE_READ_LIMIT`, `…_WRITE_LIMIT`, `…_DELETE_LIMIT`, …) |
-| Tool deadline | `MCP_TOOL_TIMEOUT_MS`, combined with the client's abort signal                          |
-
-`/health` is liveness, `/ready` checks PostgreSQL and the project volume, and
-`/metrics` exposes Prometheus counters with bounded labels. Structured logs are
-JSON lines carrying `requestId` and `traceId`; secrets and document bodies are
-never logged.
-
-### Storage reliability
-
-PostgreSQL and the project volume cannot share a transaction, so every resource
-mutation is journaled (ADR-048): the intent, the row change, the audit row and
-the idempotency record commit together, the new bytes are promoted with one
-atomic rename, and recovery at boot finishes anything a crash left half-done. A
-failed move restores the old path; a failed delete leaves a record recovery uses
-to remove the file. A partial unique index permits one unfinished operation per
-resource, which is what closes the check→write window.
-
-### Deployment
+The full server deployment runs the reverse proxy, web app, API, remote MCP,
+and PostgreSQL:
 
 ```bash
 docker compose -f compose.production.yml up --build -d
 ```
 
-Reverse proxy, web, API, MCP and PostgreSQL, with no source bind mounts. The
-proxy routes three hostnames (`docs.`, `api.`, `mcp.`) and strips `Cookie` on the
-MCP route. See [`deploy/reverse-proxy/nginx.conf`](./deploy/reverse-proxy/nginx.conf)
-and [`.env.example`](./.env.example).
+Configure the required secrets, database, public URLs, and OIDC values from
+[`.env.example`](./.env.example). Published images can be supplied through
+`WEB_IMAGE`, `API_IMAGE`, `MCP_IMAGE`, and `PROXY_IMAGE`.
 
-### Verifying it
+## Documentation Map
 
-```bash
-npm run test:mcp         # stdio smoke + the MCP service integration suite
-npm run test:containers  # builds the real images and runs the real composition
-```
+- [Architecture and ADRs](./ARCHITECTURE.md)
+- [Current vocabulary](./CONTEXT.md)
+- [H01 architecture baseline](./docs/architecture-baseline.md)
+- [Historical plans and reports](./docs/history/README.md)
+- [Production deployment files](./deploy/)
+- [Static Docker composition](./docker-compose.yml)
+- [Full server composition](./compose.production.yml)
 
-The container suite proves the property that matters most: a resource created
-through the MCP is visible to the API, and one created through the API is visible
-to the MCP.
-
-## Docker
-
-The app is a static bundle, so it ships as a two-stage image: a Node stage
-builds the production bundle, and an `nginx` stage serves it over HTTP with
-client-side-routing fallback.
-
-```bash
-docker build -t software-docs:latest .
-docker run -d --name software-docs -p 8080:8080 software-docs:latest
-# open http://localhost:8080/
-```
-
-Stop and remove it with `docker rm -f software-docs`. The image is
-reproducible — `node_modules`, `dist`, and the npm cache are excluded via
-`.dockerignore`, and the build installs fresh from `package-lock.json`.
-
-### Publishing an image
-
-[`.github/workflows/publish-image.yml`](./.github/workflows/publish-image.yml)
-builds the image on every push to `master` and publishes it to the GitHub
-Container Registry as `ghcr.io/osviel91/softeare_docs`:
-
-| Ref      | Tags                                    |
-| -------- | --------------------------------------- |
-| `master` | `latest`, `master`, `sha-<short>`       |
-| `v1.2.3` | `1.2.3`, `1.2`, `v1.2.3`, `sha-<short>` |
-
-A push builds `linux/amd64` and `linux/arm64` as one manifest, so a single tag
-works on an x86 server and on an ARM NAS alike. A pull request only builds the
-image to prove it still builds; nothing is published for it.
-
-Three gates stand between a commit and a tag. `lint`, `typecheck` and the unit
-suite must pass, the Chromium smoke test must drive the built bundle, and — once
-the image is pushed — the workflow serves that published image and checks the
-app, its SPA fallback and a hashed bundle asset. The last gate is what makes the
-tag safe to deploy: it exercises the artefact Portainer will pull rather than
-the source tree.
-
-### Deploying with Portainer
-
-[`deploy/portainer-stack.yml`](./deploy/portainer-stack.yml) is a ready-made
-stack: in Portainer open **Stacks → Add stack → Web editor**, paste it, and
-deploy. Two variables are read when the stack is deployed:
-
-| Variable    | Default  | Purpose                                                        |
-| ----------- | -------- | -------------------------------------------------------------- |
-| `WEB_PORT`  | `8080`   | host port to publish the app on                                |
-| `IMAGE_TAG` | `latest` | tag to run; pin `sha-<short>` when a deploy must be repeatable |
-
-The stack pulls on every deploy (`pull_policy: always`), so the flow for a
-change is: merge to `master`, let the workflow finish, then **Update the stack**
-in Portainer. There is no backend, database, or volume to migrate — the app is a
-static bundle and all state lives in the browser.
-
-For the full server stack, use a Git Repository stack with
-`compose.production.yml`, or configure these four published images in a Web
-editor stack: `WEB_IMAGE`, `API_IMAGE`, `MCP_IMAGE` and `PROXY_IMAGE`. The proxy
-is packaged with its nginx configuration, so the Web editor does not need any
-host bind mounts.
-
-The package is public for this repository, so a stack pulls it with no
-credentials configured. Should it ever be switched to private — or a fork
-publish its own — give Portainer a registry entry first (**Registries → Add
-registry → Custom**: `ghcr.io`, your GitHub username, and a PAT carrying
-`read:packages`), otherwise the deploy fails to pull the image.
-
-To try a change before pushing it, `docker-compose.yml` builds the same image
-from the working tree: `docker compose up --build -d`, then
-<http://localhost:8080/>.
-
-## Server mode (multi-user, in progress)
-
-Local-first remains the default and the only mode the application needs. The
-server stack is being added beside it, not instead of it, so a project can be
-either a local workspace (IndexedDB or a folder you open) or a server project
-(authenticated, shared, reachable by an agent over HTTPS).
-
-```
-docker compose -f compose.server.yml up --build -d   # web + api + postgres
-```
-
-Configuration lives in `.env` (see `.env.example`). `DATABASE_URL` and
-`COOKIE_SECRET` are required; `OIDC_ISSUER`, `OIDC_CLIENT_ID` and
-`OIDC_CLIENT_SECRET` enable sign-in and must be set together. Without an
-identity provider the API still runs, and `/auth/login` answers `503` rather
-than half-working.
-
-What exists today:
-
-- **`apps/api`** — an authenticated HTTP host over `src/application`, bundled to
-  `dist-api/server.mjs`. Routes: `/healthz`, `/api/me`, the four `/auth/*`
-  routes, and `/api/projects` with its resources and members.
-- **PostgreSQL** — users, projects, memberships, resources, sessions and audit
-  events. Content stays as `.seq`, `.eventseq` and `.md` files on a volume, so a
-  server project is as portable as a local one.
-- **Sign-in** — OIDC authorization code with PKCE and a server-side session in an
-  `HttpOnly` cookie; no token is ever put in `localStorage`.
-- **Authorization** — one policy (`src/application/authorization.ts`, ADR-042)
-  decides every project operation, and use cases enforce it themselves. The
-  server workspace provider asks the same policy before it hands out a writable
-  repository, so a read-only caller cannot write through the shared
-  documentation service.
-- **Optimistic concurrency** — every server write names the revision it read, and
-  a stale write is a `409` rather than a silent overwrite.
-- **Browser consumption (Phase 4)** — the explorer's workspace switcher lists
-  `LOCAL` sources (in-browser projects, an opened folder) and the signed-in user's
-  `SERVER` projects. Opening one binds the _same_ editor to a
-  `ServerWorkspaceRepository` over the API: create, edit, rename, move and delete
-  a diagram or a Markdown document, reload, and continue. A `409` opens a conflict
-  dialog offering _Reload server version_, _Keep my changes_ (an explicitly
-  confirmed overwrite) or _Copy my changes_ — never a silent overwrite, and never
-  a discarded buffer. Signing in is only required for server projects; local mode
-  is never gated.
-- **Cross-site protection** — a state-changing request is refused unless its
-  `Sec-Fetch-Site`/`Origin` says it came from this application
-  (`apps/api/http/csrf.ts`), on top of `SameSite=Lax` cookies and JSON-only
-  request bodies.
-
-The **stdio MCP server** still runs on the local filesystem by design; the remote
-MCP service is separate and authenticated. **OAuth-compatible MCP authorization**
-(discovery, protected-resource metadata and an access-token verifier) is Phase 7;
-the Phase 6 verifier chain and the canonical resource URL are already in place for
-it. The migration plans, their definition-of-done reviews and their known
-compromises are recorded under [`docs/plan/`](./docs/plan/) — most recently
-[server-migration-5.md](docs/plan/server-migration-5.md) and
-[server-migration-6.md](docs/plan/server-migration-6.md).
-
-## Repository layout
-
-```
-src/
-  app/            React application shell and (later) routing & commands
-  application/    The one layer every host calls: principal/context, ports,
-                  project services, the local workspace provider (ADR-039)
-  shared/         Framework-agnostic helpers: Result, id factories
-  domain/         Domain model: diagram, note, eventflow, project, resource,
-                  links; project-wide search (search/); project index (project/);
-                  the capability vocabulary (access/)
-  language/       Two DSLs (lexer, parser, diagnostics) — `sequence/` and
-                  `eventflow/` — plus the markdown renderer
-  layout/         AST -> geometry (independent of SVG)
-  renderer/       SVG rendering of the layout model, plus the shared preview
-                  pipeline (pipeline/) every host renders through
-  workspace/      Persistence abstraction + implementations; portable
-                  project archives (transfer/)
-  persistence/    Server persistence: the SQL client port (`pg` in production,
-                  PGlite in tests), migrations, repositories, the project
-                  storage volume and the filesystem path boundary (ADR-040)
-  features/       React feature modules:
-                    explorer, editor, preview (+ viewport), tabs, commands, docs,
-                    notes (markdown editor/view), history (version timeline),
-                    search (project find-in-files), ui (dialogs, context menu)
-mcp/              MCP server for coding agents: a Node filesystem workspace
-                  adapter, the two-era protocol layer, the tool catalog, the
-                  reference resources, the workflow prompts, and its tests
-apps/api/         The authenticated HTTP API: config, the HTTP transport, the
-                  route table, and the composition root. An adapter over
-                  `src/application`, never imported by a sibling host
-apps/mcp/         The remote MCP service: config, the bearer/PAT edge, the SDK
-                  Streamable HTTP handler, the tool/resource catalog, rate
-                  limiting, observability, health/ready. Its own image, its own
-                  port, shared code, never an HTTP call to the API
-scripts/          Repo scripts: the MCP bundle, and the MCP/browser smoke tests
-tests/            Browser-independent and workflow tests
-docs/plan/        Mission plans: intent, deliverables, and verification
-deploy/           Portainer stack for the published image
-.github/          CI: the image publish workflow
-```
-
-The `dist-mcp/` directory is the bundled stdio server `npm run mcp:build`
-produces and `dist-mcp-service/` is the bundled remote service
-`npm run mcp:service:build` produces; both are build output, not source.
-
-The early structure is intentionally small; layers are added as phases demand
-them while keeping the boundaries above intact.
-
-## Development phases
-
-Work proceeds in disciplined, commit-per-phase milestones (see
-[ARCHITECTURE.md](./ARCHITECTURE.md#phases)). Each phase's mission — its goal,
-deliverables and boundaries — is recorded under [`docs/plan/`](./docs/plan/).
-
-0. Repository foundation (this phase)
-1. Sequence language core (DSL, parser, diagnostics, validation)
-2. Layout + SVG rendering
-3. Interactive live editor
-4. In-browser projects (IndexedDB)
-5. Local folder projects (File System Access API)
-6. Editing productivity (tabs, commands, search)
-7. DSL v2 constructs (actors, labelled ids, the full arrow family, activations, notes, and control-flow fragments)
-8. Export (SVG, then PNG)
-9. Documentation workspace (mixed document tabs, project-wide search, portable project archives)
-10. Project intelligence (stable resource ids, project index, diagnostics, outline, completion, quick open, find/references, rename)
-11. Event-driven modeling (`*.eventseq`: events, producers, consumers, brokers, channels, fan-out, causal chains)
-12. MCP server (agent-facing tools, resources, and prompts over the same engine)
-
-## Status
-
-**Phases 0–11 are implemented** on this branch. `npm test` runs 1801 tests,
-`npm run test:e2e` drives the production bundle in Chromium (including a
-browser ↔ MCP consistency scenario), `npm run test:containers` runs the real
-production composition, and `npm run typecheck`, `npm run lint`, `npm run build`
-and `npm run format:check` are clean.
-
-**Server migration Phase 6 is implemented.** The remote MCP is an independently
-deployable authenticated HTTPS service with its own image, port and hostname; the
-API and MCP share one application layer, one authorization policy and one
-journaled mutation path; per-credential rate limiting, body and resource limits,
-structured logs, metrics and health/readiness endpoints are in place. PAT bearer
-is the only credential accepted — OAuth is Phase 7. See
-[Remote MCP service](#remote-mcp-service-phase-6) above and
-[docs/plan/server-migration-6.md](docs/plan/server-migration-6.md).
-
-**Phase 12 (MCP server) is implemented.** A coding agent can now document an
-application through the Model Context Protocol: 17 tools cover orientation,
-reading, authoring, validation, rendering and a documentation audit; five
-reference and guide resources carry both DSLs and the workflow; and four prompts
-package the common jobs. The server links the browser engine's own modules over
-a Node filesystem repository, so an agent's diagrams and diagnostics are exactly
-the editor's. `npm run test:mcp` drives the bundled server over real stdio. See
-[MCP server](#mcp-server-for-coding-agents) above.
-
-**Server migration Phases 0–3 are implemented** — the application layer
-(ADR-039), server persistence (ADR-040), OIDC sign-in (ADR-041) and the
-authorization policy (ADR-042). The migration then stops, as its mission
-instructs, before Personal Access Tokens and remote MCP; local-first mode is
-untouched and remains the default. See
-[Server mode](#server-mode-multi-user-in-progress) above and
-[docs/plan/server-migration-0-3.md](docs/plan/server-migration-0-3.md) for the
-definition-of-done review and the compromises that remain.
-
-**Phase 11 (event-driven modeling).** A project can now document an
-event-driven architecture in its own language, `*.eventseq`:
-
-```text
-title Order Processing
-
-event OrderCreated {
-  version: 2
-  domain: Orders
-}
-
-broker Kafka
-topic orders on Kafka
-
-producer OrderService
-consumer BillingService
-
-OrderService publishes OrderCreated to orders
-BillingService consumes OrderCreated from orders
-```
-
-- **A second language, not a different arrow.** Events, producers, consumers,
-  brokers and channels are first-class in the model (`src/domain/eventflow/ast.ts`)
-  rather than being styled sequence messages, because the documentation is _about_
-  those concepts. Publications and subscriptions are the mission's
-  `EventPublication { producer, event, channel }` and
-  `EventSubscription { consumer, event, channel }`.
-- **Both spellings of an edge.** `OrderService publishes OrderCreated to orders`
-  and `publish OrderCreated from OrderService to orders` parse to the same node,
-  so a document can be written the way it reads best.
-- **Extensible event metadata.** `event X { … }` holds arbitrary `key: value`
-  pairs — version, domain, schema, correlation key, partition key — with no field
-  hard-coded in the parser.
-- **Fan-out is explicit.** The layout draws one row per event with its producer
-  on the left, the channel and event in the middle, and one box per consumer on
-  the right, so competing consumers are visible rather than implied by a count.
-- **Causal chains.** Events are ordered by a stable topological sort over
-  "a service consumes A and publishes B", so a cascade reads top to bottom; a
-  cycle is reported and its rows are tagged rather than silently reordered.
-- **The same project intelligence.** An event flow contributes events, services,
-  channels and brokers to the project index, so quick open, find-references,
-  the overview and the Problems panel cover it exactly as they cover a sequence
-  diagram — and the event-driven checks (`Event X has no producer`, `Unknown
-service "Ghost"`) are what an EDD review actually wants.
-- **Everything else works too.** Event flows open in the same tab strip (with a
-  `⇄` glyph), the same editor with context-aware completion
-  (`OrderService publishes ␣` offers the events the project declares, including
-  ones another flow declares), the same outline, the same viewport, the same
-  source↔diagram selection, and the same export pipeline (SVG/PNG/PDF).
-
-**Phases 0–9 are implemented** on this branch: the sequence language and its
-renderer, the interactive editor, in-browser and folder-backed projects, tabs and
-commands, the DSL v2 backlog, the documentation workspace, and the project
-intelligence layer described below. `npm test` runs 1000+ tests, `npm run
-test:e2e` drives 70 checks against the production bundle in Chromium, and
-`npm run lint`, `npm run typecheck`, `npm run build` and `npm run format:check`
-are clean.
-
-**Phase 10 (project intelligence).** The app stopped being a set of editors over
-files and became a project-aware IDE:
-
-- **Stable resource ids.** A file's _path_ can change; its _id_ cannot. Every
-  resource gets an id (`diagram-payment-processing`) recorded in the project's
-  `project.json`, so `resource://` links survive renaming and moving, and an agent
-  can read a project's identity without running the app. A project that predates
-  ids gains them deterministically the first time it is opened — see
-  `src/domain/workspace/metadata.ts`.
-- **A project index.** Every symbol (participants, actors, and an inferred
-  architectural role), every reference, every usage span and every diagnostic is
-  derived from the files into a `ProjectIndex`. Analysis is per-resource and cached
-  by content fingerprint, so editing one diagram re-parses one diagram, not the
-  project (`src/domain/project/`).
-- **Problems panel.** Project-wide diagnostics from one UI-independent service:
-  parse errors, unresolved participants, unused participants, duplicate resource
-  ids, duplicate titles, broken stable references, broken embeds and unresolved
-  links. Every row names the **project and the document** it belongs to
-  (`Payments › Order flow:4`), and clicking it opens that exact file and selects
-  the range — a project can hold two files with the same name, so the row carries
-  the identity rather than a bare path. The status bar counts the **open
-  document's** problems, diagnosed by that document's own language: an event flow
-  is never checked against the sequence grammar.
-- **Outline panel.** A statement tree for a diagram (title, participants, flow,
-  fragments and their branches) and a heading tree for a document. Clicking a row
-  selects the corresponding source.
-- **Semantic completion and hover.** Completion is context-aware — after an arrow
-  only participants, inside a fragment only the statements that can appear there,
-  never inside a label — and draws names from the index, so `Pay` offers
-  `PaymentService`. The popup never takes a key the user did not give it: Enter
-  inserts a newline unless a suggestion has first been highlighted with ↓/↑ (so a
-  blank line is always possible), `Tab` accepts the highlighted suggestion (the
-  top one if none is highlighted), ↓/↑ walk the list only while it is open, and
-  Escape dismisses it. A blank line opens no popup at all — only a word being
-  typed, or a position that names participants or events, does. Hover answers
-  "what is this?" with the declaration site and how many interactions use it.
-- **Quick open (`Ctrl/Cmd+P`)** over resources, participant symbols and document
-  headings, with fuzzy ranking. The command palette is `Ctrl/Cmd+Shift+P`, and
-  **every command carries its own shortcut** — printed beside its palette entry,
-  shown on the toolbar button, and honoured wherever focus is by one listener
-  (`src/features/commands/shortcuts.ts`). Chords pair the platform modifier with
-  `Alt` (for example `Ctrl/Cmd+Alt+N` for New Diagram, `F2` for Rename Symbol) so
-  they never collide with the browser's own bindings.
-- **Source ↔ diagram selection.** Every addressable AST node gets a deterministic
-  id from its source range; the layout carries it and the SVG exposes it as
-  `data-node-id`. Clicking a rendered message, participant, note, activation or
-  fragment selects exactly that statement in the editor, and moving the caret
-  highlights the corresponding element — in both directions by id lookup, never by
-  matching text.
-- **Find references and semantic rename.** A symbol's declarations and every
-  endpoint mention, listed across the project; renaming rewrites only the spans the
-  analyser identified, so prose that mentions the same word is untouched.
-- **Diagram embedding.** `{{diagram:<id>}}` renders the current diagram inside a
-  markdown document; clicking the embedded picture opens its source, and a target
-  that does not exist renders a visible placeholder and a project error.
-- **Project overview.** A dashboard over the index — resources, symbols,
-  diagnostics — that counts what the index already derived rather than recomputing
-  anything.
-
-**Phases 0–7 are complete** and committed on `master`: repository foundation,
-sequence language core, layout + SVG rendering, the interactive live editor,
-in-browser projects (IndexedDB), local folder projects (File System Access API),
-editing productivity (tabs, command palette, search), and the DSL v2 backlog. The
-branch builds, serves, lints, type-checks, and passes its test suite — 786 unit
-tests plus 60 browser checks against the production bundle (`npm run test:e2e`),
-and the same bundle is served by the Docker image.
-
-**Phase 7 (DSL v2) has landed its Mermaid-parity backlog.** The sequence language
-now covers participants, actors, aliases, every arrow family, activations,
-notes, and the control-flow fragments:
-
-- **Participants, actors, and labels** — `participant User` declares a name box,
-  `actor User` a human figure, and `participant auth as "Authentication Service"`
-  pairs a stable id with a readable label. Declaration order controls placement,
-  and the participant band grows when any lifeline is an actor so the glyphs stay
-  aligned.
-- **Aliases** — `alias X = participant` binds a shorthand that messages may use
-  in place of the full participant name. An alias whose target is undeclared is
-  reported as a diagnostic, and aliases may not chain. Layout resolves a
-  shorthand to the target lifeline, so an aliased sender's arrow attaches
-  correctly instead of falling back to the margin.
-- **The message model** — a message carries `lineStyle` (`solid` / `dashed`) and
-  `arrowStyle` (`none` / `arrow` / `open` / `cross` / `bidirectional`) rather
-  than an arrow string, and the parser maps all ten spellings onto it. The
-  renderer draws the matching ending, including a chevron for the async `-)` and
-  an ✕ for the failed `-x`.
-- **Self-messages** — `A ->> A: Work` (or two spellings of one participant via
-  an alias) draws a loop out of and back onto that lifeline, with the arrowhead
-  pointing at the lifeline and the label beside the loop. Two self-messages are
-  not treated as one: each takes its own row, and the canvas widens so a loop and
-  its label on the rightmost lifeline stay inside the drawing.
-- **Activations** — `activate X` / `deactivate X` draw a bar over a lifeline for
-  the span in which that participant is working, and the inline `+` / `-`
-  suffixes on a message are normalized into the same statements (`+` activates
-  the receiver, `-` deactivates the sender) so the bar's edge lines up with the
-  arrow. Bars nest, take no message row of their own, and a bar left open runs to
-  the bottom; a `deactivate` with no open bar is reported.
-- **Notes** — `note left/right of <participant>`, `note over <participant>`, a
-  spanning `note over API,DB : text`, a diagram-wide `note over : text`, a note
-  attached to a message by its step number (`note on 3 : text`, matched against
-  the circled sequence number), and a multiline body closed by `end note`. A note
-  flows fully through the pipeline — a `note` lexer token, a `NoteNode` in the
-  AST, `MalformedNote` / `UnknownMessageNumber` diagnostics, placement in the
-  layout engine, and a folded note box in the SVG renderer.
-- **Control-flow fragments** — `loop`, `alt`/`else`, `opt`, `par`/`and`,
-  `critical`/`option`, and `break` are explicit nested statements
-  (`loop`/`opt`/`break` own a `statements` list; the others own labelled
-  branches). The layout engine frames the rows a fragment contains, sizes the
-  frame to the participants it mentions, insets nested frames, and the renderer
-  labels the frame and each `else` / `and` / `option` divider. Fragments nest
-  arbitrarily, and an unclosed one is reported instead of silently swallowing the
-  rest of the document.
-
-Phase 8 (export to SVG, then PNG) has not started.
-
-**Phase 9 (documentation workspace) is implemented on top of that**, in the
-working tree. Its first milestone is the documentation half of the product: the
-workspace stopped being only a container for `.seq` files and became a place to
-document a system.
-
-- **One tab strip for every document kind.** A `Tab` used to be diagram-shaped.
-  It is now a `TabDocument` carrying a `kind` (`diagram` or `note`) alongside its
-  id, project, name, and buffer, so a diagram and a markdown document stay open
-  side by side, switching follows the tab, and closing the active tab moves the
-  editor to the tab that replaces it. Each tab also remembers the buffer it last
-  persisted, which is what the strip's modified indicator reports. The shared
-  shape lives in `src/domain/workspace/resource.ts`, a thin view over the
-  existing stores rather than a second domain.
-- **Markdown is a first-class resource.** The renderer gained pipe tables and
-  images, and an ordinary relative link (`[Payment flow](../diagrams/pay.seq)`)
-  now resolves against the project's resources (`src/domain/workspace/project-link.ts`)
-  and opens in-app, exactly as a `[[wiki-link]]` does. Resolution stays in the UI:
-  the renderer emits `data-resource-link` and never learns about the workspace.
-- **Project-wide search.** `Ctrl/Cmd+Shift+F` opens a find-in-files overlay over
-  every diagram and document. The scan is a pure function
-  (`src/domain/search/project-search.ts`) over documents built lazily while the
-  overlay is open, so editing never pays for an index. Queries understand
-  `kind:`, `project:`, and `participant:` scopes; a result opens its document and
-  selects the matched range through a value-shaped reveal request
-  (`src/features/editor/reveal.ts`) shared by both editors.
-- **Portable project archives.** **Export Project** writes the selected project
-  to a deterministic ZIP — a `project.json` manifest plus `diagrams/` and `docs/`
-  — and **Import Project…** recreates it with fresh ids, so importing can never
-  overwrite something local. The ZIP codec is owned in-process
-  (`src/workspace/transfer/zip.ts`) rather than added as a dependency, in keeping
-  with the project's "own the domain" stance.
-
-Phase 8's remaining half (SVG/PNG/PDF diagram export with options) has not
-started; the archive above is a project export, not a diagram export.
-
-Alongside the language work, the workspace gained **safe delete**, a **Trajectory
-version history**, **collapsible note bullets**, and a **documentation layer**:
-
-- Deletes are confirmed in a dialog. With a local folder open the user chooses
-  between removing an entry from the app (a hidden-path set kept in
-  `src/workspace/hidden-paths.ts`, so the file survives on disk) and deleting it
-  from disk; hidden entries can be restored from the explorer.
-- Version history lives in its own store (`src/workspace/version-history.ts` plus
-  an IndexedDB implementation), separate from the workspace repository, because a
-  timeline is app-local metadata that must survive independently of which
-  repository is active. Checkpoints are content-aware, so an unchanged buffer
-  never grows the timeline. A local-folder rename moves the timeline to the file's
-  new id.
-- Notes render as bullets attached to their element and expand into their callout
-  on click. The expanded set is a render-time option, so the layout — and the
-  viewport's pan/zoom — is unaffected by toggling.
-- A project now holds markdown notes as well as diagrams, and its `＋` button
-  offers to create either kind (the explorer's context menu renames, retitles,
-  duplicates, or deletes either kind). Duplicates are named by
-  `src/domain/workspace/copy-name.ts`, so in-browser and folder projects agree. In
-  a local folder the
-  extension is what distinguishes them (`.md` is a note, anything else a diagram),
-  so a project directory is a readable documentation tree outside the app too. The
-  markdown renderer and title helpers live in `src/language/markdown`, and the
-  IndexedDB schema gained a `notes` store (version 2), which upgrades in place.
-
-The **interface** was reworked alongside the language work: a modern dark
-three-pane shell with a `Code`/`Docs` view switch, line numbers and snippets in the
-editor, an auto-update switch, and a pan/zoom canvas with a minimap. See
-[The interface](#the-interface) above. That work also corrected the vertical layout
-bands: participant `topY` is now derived from the same title height the message
-band uses, so the first message row clears the name boxes instead of landing on
-them, and an untitled diagram no longer positions its boxes partly off-canvas.
-
-Phase 3 wires the pipeline into a live, IDE-style editor. The app shell now owns
-the DSL source and feeds one memoized analysis to both panes: the editor
-(`src/features/editor`) shows the source with a diagnostics list, and the preview
-(`src/features/preview`) renders the SVG. The preview pipeline
-(`src/features/preview/diagram-to-svg.ts`) is the only place the UI reaches
-across the language → layout → renderer layers, so the editor never computes
-geometry and the renderer never parses text. See `src/features/` for the new
-React feature modules.
-
-Phase 4 adds a local-first workspace of projects and diagram files backed by
-IndexedDB. A framework-free `WorkspaceRepository` interface sits above two
-implementations — an IndexedDB repository (`src/workspace/indexed-db.ts`, behind
-a small promise adapter) and an in-memory fallback — so persistence stays
-testable in isolation and the app works even where IndexedDB is unavailable. The
-explorer (`src/features/explorer`) manages projects and diagram selection; the
-editor saves edits back through a single `useWorkspace` hook. A snapshot
-(`src/workspace/serialize.ts`) exports the whole workspace to human-readable JSON
-for sharing or as a fallback format.
-
-Phase 5 lets the user open a folder on their machine as the workspace, via the
-File System Access API (`window.showDirectoryPicker`). The opened folder _is_ the
-workspace: a subdirectory is a project and a file is a diagram, so ids are derived
-from paths rather than generated — opening the same folder twice yields the same
-ids. The repository holds no cache; every operation reads the current directory
-tree, so files changed elsewhere appear immediately. The browser API lives behind
-`createFileSystemRepository` (`src/workspace/fs-access/create-file-system-repository.ts`),
-which adapts the native handles to a tiny framework-free adapter
-(`src/workspace/fs-access/fs-access-adapter.ts`) and feature-detects support. The
-explorer swaps the active repository to the folder-backed one when a folder is
-open and back to in-browser projects when it is closed.
-
-Phase 6 rounds out editing productivity on top of that workspace: open diagrams
-become closable tabs (`src/features/tabs`), a command palette
-(`src/features/commands`) exposes the frequent actions — new and empty diagrams,
-save, export — from a single keyboard-driven surface, and the explorer gains a
-search box that filters diagram names across _every_ project. The search works
-because `useWorkspace` (`src/features/explorer/use-workspace.ts`) loads all
-projects' diagrams up front into a workspace-wide list (`allDiagrams`), kept
-current as files are created, opened, or saved; the explorer filters that list by
-name while a query is present, so a diagram from another project resolves even
-after navigating away. These stay testable in isolation: the command and tab logic
-drive pure state reducers, and the explorer search is covered with the component
-rendered against the same folder-backed repository the app uses.
-
-On top of the palette, the interface was tightened around management. Explorer
-rows are menu-first — a project folds to its header with a `▾`/`▸` and both
-projects and files keep rename and delete in a `⋯` menu rather than on a bare
-button (see **Project header actions** and **File actions** above). Projects
-gained `renameProject` across all three repositories, and commands gained
-data-driven shortcuts (`src/features/commands/shortcuts.ts`) that the palette
-prints beside each entry and one listener runs.
+Build output in `dist/`, `dist-mcp/`, `dist-api/`, and `dist-mcp-service/` is
+generated and is not source documentation.

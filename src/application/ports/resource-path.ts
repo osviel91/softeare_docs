@@ -1,5 +1,5 @@
 /**
- * The resource-path boundary's error (Phase 4D).
+ * The resource-path boundary's error.
  *
  * `normalizeResourcePath` lives in the persistence layer because it is the
  * filesystem boundary, but the *failure* it reports is part of the contract the

@@ -1,5 +1,5 @@
 /**
- * The dialog shown when a save loses a race (Phase 4A).
+ * The dialog shown when a save loses a race.
  *
  * A `409` is the one failure that must not be reported as an error, because
  * nothing the user typed is wrong: the document simply changed underneath them.

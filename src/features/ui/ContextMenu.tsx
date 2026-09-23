@@ -6,10 +6,8 @@
  * position and receives a callback per item, so the menu itself has no knowledge
  * of workspaces or files.
  *
- * It closes on Escape, on a click outside, and on scroll or resize — the three
- * ways a fixed-position menu would otherwise be left floating over stale
- * coordinates. Items are real buttons inside a `role="menu"`, so keyboard users
- * get the usual button semantics.
+ * It closes on Escape, on a click outside, or on resize. Items are real buttons
+ * inside a `role="menu"`, so keyboard users get the usual button semantics.
  *
  * Because it is `position: fixed`, an anchor near the bottom or right edge of
  * the window would otherwise place the menu's own items off-screen, where
@@ -123,11 +121,9 @@ export default function ContextMenu({
     // opens its own.
     document.addEventListener("pointerdown", onPointerDown, true);
     window.addEventListener("resize", onDismiss);
-    window.addEventListener("scroll", onDismiss, true);
     return () => {
       document.removeEventListener("pointerdown", onPointerDown, true);
       window.removeEventListener("resize", onDismiss);
-      window.removeEventListener("scroll", onDismiss, true);
     };
   }, [onClose]);
 

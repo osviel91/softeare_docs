@@ -58,6 +58,14 @@ describe("ContextMenu", () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
+  it("stays mounted while the page scrolls before an item click", () => {
+    const onClose = vi.fn();
+    render(<ContextMenu x={0} y={0} items={items()} onClose={onClose} />);
+    fireEvent.scroll(window);
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByTestId("context-menu-title")).toBeInTheDocument();
+  });
+
   it("marks a destructive item", () => {
     render(<ContextMenu x={0} y={0} items={items()} onClose={vi.fn()} />);
     expect(screen.getByTestId("context-menu-delete")).toHaveClass(

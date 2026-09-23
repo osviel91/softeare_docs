@@ -45,6 +45,10 @@ export const AUDIT_ACTIONS = [
   "credential.revoked",
   "credential.rotated",
   "mcp.tool.executed",
+  "account.registered",
+  "account.activated",
+  "account.suspended",
+  "login.rejected",
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];

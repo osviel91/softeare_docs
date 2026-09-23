@@ -96,7 +96,14 @@ export function createAuthRoutes(
   dependencies: AppDependencies,
   client: OidcClient | null = oidcClientFor(dependencies),
 ): AuthRoutes {
-  const { config, sessions, users } = dependencies;
+  const { audit, config, sessions, users } = dependencies;
+
+  const recordAudit = (event: Parameters<typeof audit.record>[0]) =>
+    audit.record(event).catch((error: unknown) => {
+      process.stderr.write(
+        `authentication audit failed: ${error instanceof Error ? error.message : String(error)}\n`,
+      );
+    });
 
   /** Clear the login-state cookie on every completion path. */
   const clearLogin = () => clearCookie(LOGIN_COOKIE, { path: "/" });
@@ -214,7 +221,7 @@ export function createAuthRoutes(
           return { ...response, headers: [...response.headers, clearLogin()] };
         }
 
-        const user = await users.findOrCreateByExternalIdentity(identity);
+        let user = await users.findOrCreateByExternalIdentity(identity);
         if (
           config.platformAdminEmail !== null &&
           user.email?.toLowerCase() === config.platformAdminEmail &&
@@ -224,6 +231,7 @@ export function createAuthRoutes(
             "UPDATE users SET platform_admin = true, status = 'ACTIVE', updated_at = now() WHERE id = $1",
             [user.id],
           );
+          user = { ...user, platformAdmin: true, status: "ACTIVE" };
         } else if (
           config.platformAdminEmail !== null &&
           user.status === "ACTIVE"
@@ -232,6 +240,19 @@ export function createAuthRoutes(
             "UPDATE users SET status = 'PENDING', updated_at = now() WHERE id = $1",
             [user.id],
           );
+        }
+        if (user.status !== "ACTIVE" && !user.platformAdmin) {
+          await recordAudit({
+            action: "login.rejected",
+            subjectUserId: user.id,
+            actorType: "system",
+            actorId: "system",
+            authType: "oauth",
+            requestId,
+            detail: { reason: "account_not_active" },
+          });
+          const response = failedLogin(requestId, "account is not active");
+          return { ...response, headers: [...response.headers, clearLogin()] };
         }
         const sessionCookie = await createSessionCookie(request, user.id);
         const response = redirect(safeReturnTo(transaction.returnTo), 303);
@@ -271,11 +292,17 @@ export function createAuthRoutes(
             : email.split("@", 1)[0];
         const passwordData = await hashPassword(password);
         try {
-          await users.createLocalAccount({
+          const user = await users.createLocalAccount({
             email,
             displayName,
             passwordSalt: passwordData.salt,
             passwordHash: passwordData.hash,
+          });
+          await recordAudit({
+            action: "account.registered",
+            subjectUserId: user.id,
+            authType: "local",
+            requestId: correlationId(request),
           });
         } catch {
           return errorResponse(
@@ -307,6 +334,15 @@ export function createAuthRoutes(
             )
           : false;
         if (!record || !valid) {
+          await recordAudit({
+            action: "login.rejected",
+            subjectUserId: record?.user.id ?? null,
+            actorType: "system",
+            actorId: "system",
+            authType: "local",
+            requestId: correlationId(request),
+            detail: { reason: "invalid_credentials" },
+          });
           return errorResponse(
             401,
             "unauthorized",
@@ -314,6 +350,15 @@ export function createAuthRoutes(
           );
         }
         if (record.user.status !== "ACTIVE" && !record.user.platformAdmin) {
+          await recordAudit({
+            action: "login.rejected",
+            subjectUserId: record.user.id,
+            actorType: "system",
+            actorId: "system",
+            authType: "local",
+            requestId: correlationId(request),
+            detail: { reason: "account_not_active" },
+          });
           return errorResponse(
             403,
             "forbidden",

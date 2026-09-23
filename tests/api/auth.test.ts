@@ -18,7 +18,12 @@ import path from "node:path";
 import { loadConfig } from "../../apps/api/config";
 import { closeApp, createApp, type AppDependencies } from "../../apps/api/app";
 import { createRouter } from "../../apps/api/routes";
-import { SESSION_COOKIE, sessionIdOf } from "../../apps/api/context";
+import {
+  SESSION_COOKIE,
+  createSessionToken,
+  hashSessionToken,
+  sessionIdOf,
+} from "../../apps/api/context";
 import {
   LOGIN_COOKIE,
   decodeLoginState,
@@ -524,6 +529,15 @@ describe("local account authentication", () => {
 
     const local = await dependencies.users.findLocalByEmail(email);
     expect(local?.user.status).toBe("PENDING");
+    const pendingEvents = await dependencies.audit.listForUser(
+      local!.user.id,
+      10,
+    );
+    expect(pendingEvents.map((event) => event.action)).toEqual([
+      "login.rejected",
+      "account.registered",
+    ]);
+    expect(pendingEvents[0].detail).toEqual({ reason: "account_not_active" });
     await dependencies.users.setStatus(local!.user.id, "ACTIVE");
 
     const login = await router.handle(
@@ -543,6 +557,54 @@ describe("local account authentication", () => {
     );
     expect(me.status).toBe(200);
     expect(JSON.parse(me.body).user.email).toBe(email);
+  });
+
+  it("audits platform-admin account activation and suspension", async () => {
+    const router = createRouter(dependencies);
+    const admin = await dependencies.users.findOrCreateByExternalIdentity({
+      issuer: provider.issuer,
+      subject: `audit-admin-${Date.now()}`,
+      displayName: "Audit Admin",
+      email: null,
+    });
+    await dependencies.sql.query(
+      "UPDATE users SET platform_admin = true WHERE id = $1",
+      [admin.id],
+    );
+    const token = createSessionToken(crypto.randomUUID());
+    await dependencies.sessions.create({
+      id: sessionIdOf(token)!,
+      userId: admin.id,
+      tokenHash: hashSessionToken(token),
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    const target = await dependencies.users.findOrCreateByExternalIdentity({
+      issuer: provider.issuer,
+      subject: `audit-target-${Date.now()}`,
+      displayName: "Audit Target",
+      email: null,
+    });
+    await dependencies.users.setStatus(target.id, "PENDING");
+
+    for (const status of ["ACTIVE", "SUSPENDED"] as const) {
+      const response = await router.handle(
+        request("PATCH", `/api/admin/users/${target.id}`, {
+          headers: {
+            cookie: `${SESSION_COOKIE}=${encodeURIComponent(token)}`,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({ status }),
+        }),
+      );
+      expect(response.status).toBe(200);
+    }
+
+    const events = await dependencies.audit.listForUser(target.id, 10);
+    expect(events.map((event) => event.action)).toEqual([
+      "account.suspended",
+      "account.activated",
+    ]);
+    expect(events.every((event) => event.actorId === admin.id)).toBe(true);
   });
 });
 
@@ -726,6 +788,43 @@ describe("the authentication routes", () => {
         .filter((header) => header.name === "set-cookie")
         .some((header) => header.value.startsWith(`${LOGIN_COOKIE}=;`)),
     ).toBe(true);
+  });
+
+  it("audits and refuses a suspended OIDC account before issuing a session", async () => {
+    const router = createRouter(dependencies);
+    const subject = `suspended-oidc-${Date.now()}`;
+    const user = await dependencies.users.findOrCreateByExternalIdentity({
+      issuer: provider.issuer,
+      subject,
+      displayName: "Suspended OIDC",
+      email: null,
+    });
+    await dependencies.users.setStatus(user.id, "SUSPENDED");
+    const start = await router.handle(request("GET", "/auth/login"));
+    const state = cookieFrom(start.headers, LOGIN_COOKIE) ?? "";
+    const transaction = decodeLoginState("a".repeat(48), state);
+    const code = provider.issueCode({
+      codeChallenge: codeChallengeS256(transaction?.codeVerifier ?? ""),
+      nonce: transaction?.nonce ?? "",
+      subject,
+    });
+
+    const callback = await router.handle(
+      request(
+        "GET",
+        `/auth/callback?code=${code}&state=${transaction?.state}`,
+        { headers: { cookie: `${LOGIN_COOKIE}=${encodeURIComponent(state)}` } },
+      ),
+    );
+
+    expect(callback.status).toBe(303);
+    expect(cookieFrom(callback.headers, SESSION_COOKIE)).toBeNull();
+    const events = await dependencies.audit.listForUser(user.id, 10);
+    expect(events[0]).toMatchObject({
+      action: "login.rejected",
+      authType: "oauth",
+      detail: { reason: "account_not_active" },
+    });
   });
 
   it("refuses a callback with no login state", async () => {

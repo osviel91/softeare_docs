@@ -21,7 +21,7 @@ observable browser workflow and automated tests.
 
 ## Phases
 
-### Phase 1 — Approval-aware authentication (partially implemented)
+### Phase 1 — Approval-aware authentication (delivered)
 
 Deliver a complete browser-testable account flow:
 
@@ -32,11 +32,10 @@ Deliver a complete browser-testable account flow:
 - [x] Platform-admin bootstrap through `PLATFORM_ADMIN_EMAIL`.
 - [x] Minimal admin user list and activate/suspend controls.
 - [x] `/api/me` exposes the account status needed by the browser.
-- [ ] Audit events for registration, activation, suspension, and rejected login.
+- [x] Audit events for registration, activation, suspension, and rejected login.
 
 Delivered checkpoint: approval-aware Google and local authentication, account status
-handling, platform-admin API and browser controls (`6bb15c5`, `49680f4`). Audit events
-remain outstanding.
+handling, platform-admin API and browser controls (`6bb15c5`, `49680f4`).
 
 Acceptance workflow:
 

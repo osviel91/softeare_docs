@@ -163,6 +163,22 @@ export function createRouter(dependencies: AppDependencies): Router {
         );
       }
       const user = await dependencies.users.setStatus(params.userId, status);
+      const action =
+        status === "ACTIVE"
+          ? "account.activated"
+          : status === "SUSPENDED"
+            ? "account.suspended"
+            : null;
+      if (action !== null) {
+        await dependencies.audit.record({
+          action,
+          subjectUserId: user.id,
+          actorType: "user",
+          actorId: context.principal.subjectUserId,
+          authType: context.principal.authType,
+          requestId: context.requestId,
+        });
+      }
       return json(200, {
         user: {
           id: user.id,

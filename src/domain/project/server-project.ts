@@ -21,6 +21,8 @@ import type { ProjectRole } from "../access/permissions";
 export interface ServerProject {
   /** UUIDv7 primary key. The authoritative identifier at every edge. */
   id: string;
+  /** The workspace that contains the project and gates its membership. */
+  workspaceId: string;
   /** The user who created it, and the only implicit OWNER. */
   ownerId: string;
   /** Display name. Not unique — two projects may share a name. */

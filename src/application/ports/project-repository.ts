@@ -56,6 +56,7 @@ export interface ProjectRepository {
   /** Create a project and make its creator the OWNER member. */
   create(input: {
     ownerId: string;
+    workspaceId?: string;
     name: string;
     slug?: string;
   }): Promise<ServerProject>;
@@ -70,7 +71,7 @@ export interface ProjectRepository {
    * Every project the user can see — owned or shared — with the user's role and
    * the project's resource count, newest first.
    */
-  listForUser(userId: string): Promise<ProjectListing[]>;
+  listForUser(userId: string, workspaceId?: string): Promise<ProjectListing[]>;
 
   /** Rename a project (and optionally change its slug). */
   update(

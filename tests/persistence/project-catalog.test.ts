@@ -16,6 +16,7 @@ import { createProjectCatalog } from "../../src/application/project-catalog";
 import { createFsProjectStorage } from "../../src/persistence/fs-project-storage";
 import { createWorkspaceOperationRepository } from "../../src/persistence/workspace-operation-repository";
 import { createProjectRepository } from "../../src/persistence/project-repository";
+import { createWorkspaceRepository } from "../../src/persistence/workspace-repository";
 import { createUserRepository } from "../../src/persistence/user-repository";
 import { createAuditRepository } from "../../src/persistence/audit-repository";
 import { ApplicationError } from "../../src/application/errors";
@@ -30,6 +31,7 @@ import { openTestDatabase, closeTestDatabase } from "./test-database";
 let client: SqlClient;
 let catalog: ReturnType<typeof createProjectCatalog>;
 let users: ReturnType<typeof createUserRepository>;
+let workspaces: ReturnType<typeof createWorkspaceRepository>;
 let audit: ReturnType<typeof createAuditRepository>;
 let volume: string;
 
@@ -38,9 +40,11 @@ beforeAll(async () => {
   volume = await mkdtemp(path.join(tmpdir(), "sd-catalog-"));
   const projects = createProjectRepository(client);
   users = createUserRepository(client);
+  workspaces = createWorkspaceRepository(client);
   audit = createAuditRepository(client);
   catalog = createProjectCatalog({
     projects,
+    workspaces,
     audit,
     // Phase 6: resource mutations run through the durable operation journal.
     operations: createWorkspaceOperationRepository(client),
@@ -91,7 +95,10 @@ const ALL_SCOPES: Permission[] = [...ALL_PERMISSIONS];
 async function aProject(name = "Payments") {
   const ownerId = await aUser("Owner");
   const context = contextFor(ownerId, { scopes: ALL_SCOPES });
-  const listing = await catalog.createProject(context, { name });
+  const listing = await catalog.createProject(context, {
+    name,
+    workspaceId: ownerId,
+  });
   return { ownerId, context, project: listing.project };
 }
 
@@ -111,7 +118,7 @@ describe("project lifecycle", () => {
     const { ownerId, context, project } = await aProject("Ledger");
     const listing = await catalog.getProject(context, project.id);
     expect(listing.role).toBe("OWNER");
-    const mine = await catalog.listProjects(context);
+    const mine = await catalog.listProjects(context, ownerId);
     expect(mine.map((entry) => entry.project.id)).toContain(project.id);
     expect(mine.find((entry) => entry.project.id === project.id)?.role).toBe(
       "OWNER",
@@ -122,7 +129,10 @@ describe("project lifecycle", () => {
   it("refuses a blank project name", async () => {
     const ownerId = await aUser();
     const failure = await failureOf(
-      catalog.createProject(contextFor(ownerId), { name: "   " }),
+      catalog.createProject(contextFor(ownerId), {
+        name: "   ",
+        workspaceId: ownerId,
+      }),
     );
     expect(failure.code).toBe("invalid");
   });
@@ -135,7 +145,23 @@ describe("project lifecycle", () => {
     );
     expect(failure.code).toBe("not_found");
     expect(failure.status).toBe(404);
-    expect(await catalog.listProjects(contextFor(strangerId))).toEqual([]);
+    expect(
+      await catalog.listProjects(contextFor(strangerId), strangerId),
+    ).toEqual([]);
+  });
+
+  it("requires workspace membership in addition to a project role", async () => {
+    const { ownerId, context, project } = await aProject("Workspace gated");
+    const memberId = await aUser("Project-only member");
+    const member = contextFor(memberId);
+    await catalog.setMember(context, project.id, memberId, "VIEWER");
+
+    expect((await failureOf(catalog.getProject(member, project.id))).code).toBe(
+      "not_found",
+    );
+
+    await workspaces.setMember(ownerId, memberId, "VIEWER");
+    expect((await catalog.getProject(member, project.id)).role).toBe("VIEWER");
   });
 
   it("renames a project for its owner", async () => {
@@ -172,6 +198,7 @@ describe("authorization by role", () => {
     const { ownerId, context, project } = await aProject("Shared read");
     const viewerId = await aUser("Viewer");
     await catalog.setMember(context, project.id, viewerId, "VIEWER");
+    await workspaces.setMember(ownerId, viewerId, "VIEWER");
     const viewer = contextFor(viewerId, { scopes: ALL_SCOPES });
 
     const created = await catalog.createResource(context, project.id, {
@@ -199,6 +226,11 @@ describe("authorization by role", () => {
     const { context, project } = await aProject("Scoped access");
     const agentId = await aUser("Agent");
     await catalog.setMember(context, project.id, agentId, "EDITOR");
+    await workspaces.setMember(
+      context.principal.subjectUserId,
+      agentId,
+      "EDITOR",
+    );
     // The role grants the write; the credential does not. Both grants must line
     // up, so the advisory answer must not advertise a capability the token lacks.
     const readOnly = contextFor(agentId, {
@@ -220,6 +252,11 @@ describe("authorization by role", () => {
     const { context, project } = await aProject("Shared write");
     const editorId = await aUser("Editor");
     await catalog.setMember(context, project.id, editorId, "EDITOR");
+    await workspaces.setMember(
+      context.principal.subjectUserId,
+      editorId,
+      "EDITOR",
+    );
     const editor = contextFor(editorId, { scopes: ALL_SCOPES });
 
     const created = await catalog.createResource(editor, project.id, {
@@ -243,6 +280,11 @@ describe("authorization by role", () => {
     const { context, project } = await aProject("Admin only");
     const editorId = await aUser("Editor");
     await catalog.setMember(context, project.id, editorId, "EDITOR");
+    await workspaces.setMember(
+      context.principal.subjectUserId,
+      editorId,
+      "EDITOR",
+    );
     const editor = contextFor(editorId, { scopes: ALL_SCOPES });
     const otherId = await aUser("Other");
 
@@ -283,6 +325,16 @@ describe("authorization by role", () => {
     const agentId = await aUser("Agent");
     await catalog.setMember(context, project.id, agentId, "EDITOR");
     await catalog.setMember(other.context, other.project.id, agentId, "EDITOR");
+    await workspaces.setMember(
+      context.principal.subjectUserId,
+      agentId,
+      "EDITOR",
+    );
+    await workspaces.setMember(
+      other.context.principal.subjectUserId,
+      agentId,
+      "EDITOR",
+    );
 
     const restricted = contextFor(agentId, {
       authType: "pat",
@@ -290,7 +342,10 @@ describe("authorization by role", () => {
       allowedProjectIds: [project.id],
     });
 
-    const visible = await catalog.listProjects(restricted);
+    const visible = await catalog.listProjects(
+      restricted,
+      context.principal.subjectUserId,
+    );
     expect(visible.map((entry) => entry.project.id)).toEqual([project.id]);
 
     const failure = await failureOf(

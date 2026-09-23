@@ -145,7 +145,7 @@ async function refusalOf(work: () => Promise<unknown>): Promise<string | null> {
 async function aProject(ownerId: string, name = "Payments") {
   const listing = await dependencies.catalog.createProject(
     sessionContext(ownerId),
-    { name },
+    { name, workspaceId: ownerId },
   );
   return listing.project.id;
 }
@@ -237,6 +237,7 @@ describe("scopes compose with project roles", () => {
     const viewer = await aUser();
     const projectId = await aProject(owner, "Viewer project");
     await dependencies.projects.setMember(projectId, viewer, "VIEWER");
+    await dependencies.workspaces.setMember(owner, viewer, "VIEWER");
     const context = await credentialContext(viewer, [
       "resource:read",
       "resource:write",
@@ -263,13 +264,17 @@ describe("scopes compose with project roles", () => {
     const reader = await credentialContext(owner, ["resource:read"]);
     expect(
       await refusalOf(() =>
-        dependencies.catalog.createProject(reader, { name: "Escalation" }),
+        dependencies.catalog.createProject(reader, {
+          name: "Escalation",
+          workspaceId: owner,
+        }),
       ),
     ).toBe("forbidden");
 
     const writer = await credentialContext(owner, ["project:create"]);
     const created = await dependencies.catalog.createProject(writer, {
       name: "Agent-made",
+      workspaceId: owner,
     });
     expect(created.project.name).toBe("Agent-made");
   });
@@ -285,7 +290,9 @@ describe("project isolation through a credential", () => {
       "resource:write",
     ]);
 
-    expect(await dependencies.catalog.listProjects(context)).toEqual([]);
+    expect(await dependencies.catalog.listProjects(context, stranger)).toEqual(
+      [],
+    );
     expect(
       await refusalOf(() =>
         dependencies.catalog.listResources(context, projectId),
@@ -312,7 +319,7 @@ describe("project isolation through a credential", () => {
       [visible],
     );
 
-    const listed = await dependencies.catalog.listProjects(context);
+    const listed = await dependencies.catalog.listProjects(context, owner);
     expect(listed.map((entry) => entry.project.id)).toEqual([visible]);
     expect(
       await refusalOf(() =>
@@ -471,7 +478,7 @@ describe("the shared API serves a credential too", () => {
     await aProject(owner, "Shared");
     const context = await credentialContext(owner, ["project:read"]);
     expect(context.principal.scopes).toContain("project:read");
-    const listed = await dependencies.catalog.listProjects(context);
+    const listed = await dependencies.catalog.listProjects(context, owner);
     expect(listed).toHaveLength(1);
   });
 });

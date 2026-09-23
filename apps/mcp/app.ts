@@ -91,6 +91,7 @@ export async function createMcpService(
 
   const catalog = createProjectCatalog({
     projects: runtime.projects,
+    workspaces: runtime.workspaces,
     audit: runtime.audit,
     storage: runtime.storageFor,
     mutations: runtime.mutations,

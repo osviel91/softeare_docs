@@ -25,6 +25,7 @@ import { createProjectCatalog } from "../../src/application/project-catalog";
 import { createFsProjectStorage } from "../../src/persistence/fs-project-storage";
 import { createWorkspaceOperationRepository } from "../../src/persistence/workspace-operation-repository";
 import { createProjectRepository } from "../../src/persistence/project-repository";
+import { createWorkspaceRepository } from "../../src/persistence/workspace-repository";
 import { createUserRepository } from "../../src/persistence/user-repository";
 import { createAuditRepository } from "../../src/persistence/audit-repository";
 import { createIdGenerator } from "../../src/shared/ids/uuid";
@@ -57,6 +58,7 @@ async function owner(audit?: AuditRepository, onAuditFailure?: () => void) {
   const users = createUserRepository(client);
   const catalog = createProjectCatalog({
     projects: createProjectRepository(client),
+    workspaces: createWorkspaceRepository(client),
     audit,
     operations: createWorkspaceOperationRepository(client),
     storage: (projectId) =>
@@ -78,7 +80,10 @@ async function owner(audit?: AuditRepository, onAuditFailure?: () => void) {
       scopes: ALL_SCOPES,
     },
   };
-  const listing = await catalog.createProject(context, { name: "Audited" });
+  const listing = await catalog.createProject(context, {
+    name: "Audited",
+    workspaceId: user.id,
+  });
   return { catalog, context, projectId: listing.project.id };
 }
 

@@ -144,17 +144,11 @@ export function createProjectRepository(
       const id = newId();
 
       return client.transaction(async (tx) => {
-        await tx.query(
-          `INSERT INTO workspaces (id, owner_id, name, is_default)
-           VALUES ($1, $1, $2, true)
-           ON CONFLICT (id) DO NOTHING`,
-          [input.ownerId, `${name} Workspace`],
-        );
         const inserted = await tx.query(
           `INSERT INTO projects (id, owner_id, workspace_id, name, slug)
-           VALUES ($1, $2, $2, $3, $4)
-           RETURNING *`,
-          [id, input.ownerId, name, slug],
+            VALUES ($1, $2, $3, $4, $5)
+            RETURNING *`,
+          [id, input.ownerId, input.workspaceId ?? input.ownerId, name, slug],
         );
         await tx.query(
           `INSERT INTO project_members (project_id, user_id, role)
@@ -183,15 +177,15 @@ export function createProjectRepository(
       return row ? toServerProject(row) : null;
     },
 
-    async listForUser(userId) {
+    async listForUser(userId, workspaceId = userId) {
       const result = await client.query(
         `SELECT p.*, m.role,
                 (SELECT count(*)::int FROM resources r WHERE r.project_id = p.id) AS resource_count
            FROM projects p
            JOIN project_members m ON m.project_id = p.id
-          WHERE m.user_id = $1
-          ORDER BY p.created_at DESC, p.id DESC`,
-        [userId],
+           WHERE m.user_id = $1 AND p.workspace_id = $2
+           ORDER BY p.created_at DESC, p.id DESC`,
+        [userId, workspaceId],
       );
       return result.rows.map((row) => ({
         project: toServerProject(row),

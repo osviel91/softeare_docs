@@ -66,6 +66,7 @@ const WRITE_PERMISSION = "resource:update";
 export function useServerWorkspaces(
   client: ServerApiClient,
   auth: AuthState,
+  selectedWorkspaceId: string | null,
 ): ServerWorkspacesHook {
   const [projects, setProjects] = useState<ServerProject[]>([]);
   const [projectsLoading, setProjectsLoading] = useState(false);
@@ -79,7 +80,7 @@ export function useServerWorkspaces(
   const authenticated = auth.status === "authenticated";
 
   const refresh = useCallback(async (): Promise<void> => {
-    if (!authenticated) {
+    if (!authenticated || selectedWorkspaceId === null) {
       setProjects([]);
       setProjectsError(null);
       return;
@@ -87,7 +88,7 @@ export function useServerWorkspaces(
     setProjectsLoading(true);
     setProjectsError(null);
     try {
-      setProjects(await client.listProjects());
+      setProjects(await client.listProjects(selectedWorkspaceId));
     } catch (error) {
       setProjects([]);
       setProjectsError(
@@ -98,7 +99,7 @@ export function useServerWorkspaces(
     } finally {
       setProjectsLoading(false);
     }
-  }, [client, authenticated]);
+  }, [client, authenticated, selectedWorkspaceId]);
 
   useEffect(() => {
     void refresh();
@@ -114,6 +115,14 @@ export function useServerWorkspaces(
       setOpening(false);
     }
   }, [authenticated]);
+
+  useEffect(() => {
+    if (active?.project.workspaceId !== selectedWorkspaceId) {
+      openTicket.current += 1;
+      setActive(null);
+      setOpenError(null);
+    }
+  }, [active?.project.workspaceId, selectedWorkspaceId]);
 
   const openProject = useCallback(
     async (project: ServerProject): Promise<void> => {
@@ -153,9 +162,10 @@ export function useServerWorkspaces(
 
   const createProject = useCallback(
     async (name: string): Promise<void> => {
+      if (selectedWorkspaceId === null) return;
       setOpenError(null);
       try {
-        const created = await client.createProject(name);
+        const created = await client.createProject(name, selectedWorkspaceId);
         await refresh();
         await openProject(created);
       } catch (error) {
@@ -166,7 +176,7 @@ export function useServerWorkspaces(
         );
       }
     },
-    [client, refresh, openProject],
+    [client, openProject, refresh, selectedWorkspaceId],
   );
 
   const close = useCallback((): void => {

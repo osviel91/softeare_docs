@@ -29,6 +29,7 @@ function reply(status: number, body?: unknown): Response {
 /** The project every listing serves. */
 const PROJECT = {
   id: "p1",
+  workspaceId: "w1",
   name: "Payments",
   slug: "payments",
   ownerId: "u1",
@@ -54,7 +55,9 @@ function fakeApi(options: FakeOptions = {}) {
   const calls: string[] = [];
   const fetch = async (input: string, init?: RequestInit) => {
     const url = new URL(input, "http://app.test");
-    calls.push(`${(init?.method ?? "GET").toUpperCase()} ${url.pathname}`);
+    calls.push(
+      `${(init?.method ?? "GET").toUpperCase()} ${url.pathname}${url.search}`,
+    );
     if (url.pathname === "/api/me") {
       if (options.meFails) throw new Error("ECONNREFUSED");
       return reply(200, {
@@ -162,7 +165,9 @@ describe("useServerWorkspaces", () => {
   it("lists the caller's projects once authenticated", async () => {
     const api = fakeApi({ signedIn: true });
     const client = new ServerApiClient({ fetch: api.fetch });
-    const { result } = renderHook(() => useServerWorkspaces(client, signedIn));
+    const { result } = renderHook(() =>
+      useServerWorkspaces(client, signedIn, "w1"),
+    );
 
     await waitFor(() => {
       expect(result.current.projects).toHaveLength(1);
@@ -173,7 +178,9 @@ describe("useServerWorkspaces", () => {
   it("reports a failed listing instead of an empty list", async () => {
     const api = fakeApi({ signedIn: true, listFails: true });
     const client = new ServerApiClient({ fetch: api.fetch });
-    const { result } = renderHook(() => useServerWorkspaces(client, signedIn));
+    const { result } = renderHook(() =>
+      useServerWorkspaces(client, signedIn, "w1"),
+    );
 
     await waitFor(() => {
       expect(result.current.projectsError).not.toBeNull();
@@ -184,7 +191,9 @@ describe("useServerWorkspaces", () => {
   it("opens a project into a writable repository when the role allows it", async () => {
     const api = fakeApi({ signedIn: true, permissions: ["resource:update"] });
     const client = new ServerApiClient({ fetch: api.fetch });
-    const { result } = renderHook(() => useServerWorkspaces(client, signedIn));
+    const { result } = renderHook(() =>
+      useServerWorkspaces(client, signedIn, "w1"),
+    );
     await waitFor(() => expect(result.current.projects).toHaveLength(1));
 
     await act(async () => {
@@ -199,7 +208,9 @@ describe("useServerWorkspaces", () => {
   it("opens a read-only repository when the role carries no write capability", async () => {
     const api = fakeApi({ signedIn: true, permissions: ["project:read"] });
     const client = new ServerApiClient({ fetch: api.fetch });
-    const { result } = renderHook(() => useServerWorkspaces(client, signedIn));
+    const { result } = renderHook(() =>
+      useServerWorkspaces(client, signedIn, "w1"),
+    );
     await waitFor(() => expect(result.current.projects).toHaveLength(1));
 
     await act(async () => {
@@ -216,7 +227,9 @@ describe("useServerWorkspaces", () => {
   it("creates a project and opens it", async () => {
     const api = fakeApi({ signedIn: true });
     const client = new ServerApiClient({ fetch: api.fetch });
-    const { result } = renderHook(() => useServerWorkspaces(client, signedIn));
+    const { result } = renderHook(() =>
+      useServerWorkspaces(client, signedIn, "w1"),
+    );
 
     await act(async () => {
       await result.current.createProject("Payments");
@@ -230,7 +243,8 @@ describe("useServerWorkspaces", () => {
     const api = fakeApi({ signedIn: true });
     const client = new ServerApiClient({ fetch: api.fetch });
     const { result, rerender } = renderHook(
-      ({ auth }: { auth: AuthState }) => useServerWorkspaces(client, auth),
+      ({ auth }: { auth: AuthState }) =>
+        useServerWorkspaces(client, auth, "w1"),
       { initialProps: { auth: signedIn as AuthState } },
     );
     await waitFor(() => expect(result.current.projects).toHaveLength(1));

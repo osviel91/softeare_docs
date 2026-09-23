@@ -296,7 +296,10 @@ export function createRouter(dependencies: AppDependencies): Router {
   router.get("/api/projects", async (request) =>
     guarded(correlationId(request), async () => {
       const context = await contextOf(request);
-      const listings = await catalog.listProjects(context);
+      const listings = await catalog.listProjects(
+        context,
+        requireQueryString(request.query, "workspaceId"),
+      );
       return json(200, {
         projects: listings.map((listing) => projectView(listing)),
       });
@@ -309,6 +312,7 @@ export function createRouter(dependencies: AppDependencies): Router {
       const body = parseJsonBody(request.body);
       const listing = await catalog.createProject(context, {
         name: requireBodyString(body, "name"),
+        workspaceId: requireBodyString(body, "workspaceId"),
         ...(typeof body.slug === "string" ? { slug: body.slug } : {}),
       });
       return json(201, { project: projectView(listing) });
@@ -520,6 +524,7 @@ export function createRouter(dependencies: AppDependencies): Router {
 function projectView(listing: {
   project: {
     id: string;
+    workspaceId: string;
     name: string;
     slug: string;
     ownerId: string;
@@ -607,6 +612,7 @@ function principalView(context: {
 /** The fields every project response carries, whether or not it has a role. */
 function projectFieldsView(project: {
   id: string;
+  workspaceId: string;
   name: string;
   slug: string;
   ownerId: string;
@@ -615,6 +621,7 @@ function projectFieldsView(project: {
 }): Record<string, unknown> {
   return {
     id: project.id,
+    workspaceId: project.workspaceId,
     name: project.name,
     slug: project.slug,
     ownerId: project.ownerId,
@@ -650,6 +657,19 @@ function requireBodyString(
     throw invalid(`The "${name}" field is required.`);
   }
   return value;
+}
+
+/** Read a required string query parameter. */
+function requireQueryString(
+  query: Record<string, string | string[] | undefined>,
+  name: string,
+): string {
+  const value = query[name];
+  const single = Array.isArray(value) ? value[0] : value;
+  if (typeof single !== "string" || single === "") {
+    throw invalid(`The "${name}" query parameter is required.`);
+  }
+  return single;
 }
 
 /**

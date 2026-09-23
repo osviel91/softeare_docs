@@ -147,8 +147,14 @@ export default function AgentsAndTokens({
     if (auth.status !== "authenticated") return;
     let cancelled = false;
     client
-      .listProjects()
-      .then((listed) => {
+      .listWorkspaces()
+      .then((workspaces) =>
+        Promise.all(
+          workspaces.map((workspace) => client.listProjects(workspace.id)),
+        ),
+      )
+      .then((lists) => {
+        const listed = lists.flat();
         if (!cancelled) setProjects(listed);
       })
       .catch(() => {

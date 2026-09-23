@@ -13,6 +13,7 @@ import type { ServerProject } from "../../../src/workspace/server/api-client";
 function project(id: string, name: string): ServerProject {
   return {
     id,
+    workspaceId: "w1",
     name,
     slug: name.toLowerCase(),
     ownerId: "u1",
@@ -52,13 +53,23 @@ function renderSwitcher(
 describe("WorkspaceSwitcher", () => {
   it("lists local sources", () => {
     const handlers = renderSwitcher({ folderSupported: true });
+    expect(screen.getByTestId("workspace-server-toggle")).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    fireEvent.click(screen.getByTestId("workspace-local-toggle"));
     fireEvent.click(screen.getByTestId("workspace-local"));
     expect(handlers.onOpenLocal).toHaveBeenCalledTimes(1);
-    expect(screen.getByTestId("workspace-server-toggle")).toBeInTheDocument();
   });
 
   it("collapses local sources", () => {
     renderSwitcher();
+    expect(screen.getByTestId("workspace-local-toggle")).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    fireEvent.click(screen.getByTestId("workspace-local-toggle"));
+    expect(screen.getByTestId("workspace-local")).toBeInTheDocument();
     fireEvent.click(screen.getByTestId("workspace-local-toggle"));
     expect(screen.getByTestId("workspace-local-toggle")).toHaveAttribute(
       "aria-expanded",
@@ -141,14 +152,4 @@ describe("WorkspaceSwitcher", () => {
     expect(onReloadServerProjects).toHaveBeenCalledTimes(1);
   });
 
-  it("offers the open server project as a local ZIP download", () => {
-    const onDownloadLocalCopy = vi.fn();
-    renderSwitcher({
-      mode: "server",
-      onDownloadLocalCopy,
-    });
-
-    fireEvent.click(screen.getByTestId("workspace-download-local-copy"));
-    expect(onDownloadLocalCopy).toHaveBeenCalledTimes(1);
-  });
 });

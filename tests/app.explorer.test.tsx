@@ -6,7 +6,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import App from "./app-harness";
 
 /** Create an in-browser project named `name` and wait for its header. */
@@ -76,6 +76,27 @@ describe("App — project management", () => {
     await waitFor(() => {
       expect(screen.queryByTestId("explorer-project")).toBeNull();
     });
+  });
+
+  it("copies a project's ID from its ⋯ actions menu", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    try {
+      render(<App />);
+      await createProject("Notes");
+
+      fireEvent.click(screen.getByTestId("project-menu-button"));
+      fireEvent.click(screen.getByTestId("context-menu-copy-project-id"));
+
+      await waitFor(() => {
+        expect(writeText).toHaveBeenCalledWith(expect.any(String));
+      });
+    } finally {
+      Reflect.deleteProperty(navigator, "clipboard");
+    }
   });
 
   it("collapses and re-expands a project from its header chevron", async () => {

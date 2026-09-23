@@ -21,6 +21,7 @@ import { createWorkspaceOperationRepository } from "../../src/persistence/worksp
 import { hashWorkspaceContent } from "../../src/persistence/server-runtime";
 import { createFsProjectStorage } from "../../src/persistence/fs-project-storage";
 import { createProjectRepository } from "../../src/persistence/project-repository";
+import { createWorkspaceRepository } from "../../src/persistence/workspace-repository";
 import { createUserRepository } from "../../src/persistence/user-repository";
 import { createAuditRepository } from "../../src/persistence/audit-repository";
 import { ApplicationError } from "../../src/application/errors";
@@ -80,6 +81,7 @@ function serviceOver(context: ApplicationContext): DocumentationWorkspace {
   });
   const catalog = createProjectCatalog({
     projects,
+    workspaces: createWorkspaceRepository(client),
     audit: createAuditRepository(client),
     storage: (projectId) =>
       createFsProjectStorage({ root: path.join(volume, projectId) }),
@@ -286,6 +288,7 @@ describe("the shared service cannot bypass the policy", () => {
   function aCatalog() {
     return createProjectCatalog({
       projects,
+      workspaces: createWorkspaceRepository(client),
       storage: (projectId) =>
         createFsProjectStorage({ root: path.join(volume, projectId) }),
       operations: createWorkspaceOperationRepository(client),
@@ -310,11 +313,16 @@ describe("the shared service cannot bypass the policy", () => {
       viewer.principal.subjectUserId,
       "VIEWER",
     );
+    await createWorkspaceRepository(client).setMember(
+      owner.principal.subjectUserId,
+      viewer.principal.subjectUserId,
+      "VIEWER",
+    );
+    const resourceId = (await aCatalog().listResources(owner, project.id))[0]!
+      .id;
 
-    const viewerService = serviceOver(viewer);
-    const opened = await viewerService.resolveProject("Shared read-only");
     await expect(
-      viewerService.updateResource(opened, "a.seq", {
+      aCatalog().updateResource(viewer, project.id, resourceId, {
         content: "two",
         expectedRevision: 1,
       }),
@@ -343,13 +351,23 @@ describe("the shared service cannot bypass the policy", () => {
       editor.principal.subjectUserId,
       "EDITOR",
     );
+    await createWorkspaceRepository(client).setMember(
+      owner.principal.subjectUserId,
+      editor.principal.subjectUserId,
+      "EDITOR",
+    );
+    const resourceId = (await aCatalog().listResources(owner, project.id))[0]!
+      .id;
 
-    const editorService = serviceOver(editor);
-    const opened = await editorService.resolveProject("Shared writable");
-    const updated = await editorService.updateResource(opened, "a.seq", {
-      content: "two",
-      expectedRevision: 1,
-    });
+    const updated = await aCatalog().updateResource(
+      editor,
+      project.id,
+      resourceId,
+      {
+        content: "two",
+        expectedRevision: 1,
+      },
+    );
     expect(updated.revision).toBe(2);
   });
 });
@@ -359,11 +377,15 @@ describe("the catalog is the only way in", () => {
     const owner = await aContext();
     const catalog = createProjectCatalog({
       projects,
+      workspaces: createWorkspaceRepository(client),
       storage: (projectId) =>
         createFsProjectStorage({ root: path.join(volume, projectId) }),
       operations: createWorkspaceOperationRepository(client),
     });
-    const listing = await catalog.createProject(owner, { name: "Mapped" });
+    const listing = await catalog.createProject(owner, {
+      name: "Mapped",
+      workspaceId: owner.principal.subjectUserId,
+    });
 
     const stranger = await aContext();
     try {

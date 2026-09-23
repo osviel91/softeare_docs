@@ -538,7 +538,7 @@ describe("project restrictions", () => {
     const other = await signIn();
     const project = await call("POST", "/api/projects", {
       cookie: owner.cookie,
-      body: { name: "Restricted project" },
+      body: { name: "Restricted project", workspaceId: owner.userId },
     });
     const agent = await createAgent(owner.cookie);
 
@@ -591,16 +591,20 @@ describe("the shared API converges on one principal", () => {
     const user = await signIn();
     await call("POST", "/api/projects", {
       cookie: user.cookie,
-      body: { name: "Bearer visible" },
+      body: { name: "Bearer visible", workspaceId: user.userId },
     });
     const agent = await createAgent(user.cookie);
     const { secret } = await createCredential(user.cookie, agent.id, {
       scopes: ["project:read"],
     });
 
-    const listed = await call("GET", "/api/projects", {
-      authorization: `Bearer ${secret}`,
-    });
+    const listed = await call(
+      "GET",
+      `/api/projects?workspaceId=${user.userId}`,
+      {
+        authorization: `Bearer ${secret}`,
+      },
+    );
     expect(listed.status).toBe(200);
     expect(listed.body.projects.map((entry: any) => entry.name)).toContain(
       "Bearer visible",
@@ -635,21 +639,25 @@ describe("the shared API converges on one principal", () => {
     const otherUser = await signIn();
     await call("POST", "/api/projects", {
       cookie: sessionUser.cookie,
-      body: { name: "Session project" },
+      body: { name: "Session project", workspaceId: sessionUser.userId },
     });
     await call("POST", "/api/projects", {
       cookie: otherUser.cookie,
-      body: { name: "Bearer project" },
+      body: { name: "Bearer project", workspaceId: otherUser.userId },
     });
     const agent = await createAgent(otherUser.cookie);
     const { secret } = await createCredential(otherUser.cookie, agent.id, {
       scopes: ["project:read"],
     });
 
-    const listed = await call("GET", "/api/projects", {
-      cookie: sessionUser.cookie,
-      authorization: `Bearer ${secret}`,
-    });
+    const listed = await call(
+      "GET",
+      `/api/projects?workspaceId=${otherUser.userId}`,
+      {
+        cookie: sessionUser.cookie,
+        authorization: `Bearer ${secret}`,
+      },
+    );
     const names = listed.body.projects.map((entry: any) => entry.name);
     expect(names).toContain("Bearer project");
     expect(names).not.toContain("Session project");

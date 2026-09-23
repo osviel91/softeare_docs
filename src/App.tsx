@@ -246,16 +246,20 @@ export default function App() {
   // handling, error mapping and base URL in one place for every feature.
   const apiClient = useMemo(() => new ServerApiClient(), []);
   const auth = useAuth(apiClient);
-  const server = useServerWorkspaces(apiClient, auth);
+  const [selectedServerWorkspaceId, setSelectedServerWorkspaceId] = useState<
+    string | null
+  >(null);
+  const server = useServerWorkspaces(
+    apiClient,
+    auth,
+    selectedServerWorkspaceId,
+  );
   const [adminUsers, setAdminUsers] = useState<ServerAdminUser[]>([]);
   const [serverWorkspaces, setServerWorkspaces] = useState<ServerWorkspace[]>(
     [],
   );
   const [workspaceMembersByWorkspaceId, setWorkspaceMembersByWorkspaceId] =
     useState<Record<string, ServerWorkspaceMember[]>>({});
-  const [selectedServerWorkspaceId, setSelectedServerWorkspaceId] = useState<
-    string | null
-  >(null);
   const refreshServerWorkspaces = useCallback(() => {
     void apiClient
       .listWorkspaces()
@@ -899,15 +903,10 @@ export default function App() {
   );
 
   /**
-   * Write the selected project to a portable ZIP: a manifest plus one
+   * Write one project to a portable ZIP: a manifest plus one
    * human-readable file per diagram and markdown document.
    */
-  const exportActiveProject = useCallback(async (): Promise<void> => {
-    const project = projects.find((entry) => entry.id === selectedProjectId);
-    if (!project) {
-      setTransferError("Select a project before exporting it.");
-      return;
-    }
+  const exportProject = useCallback(async (project: Project): Promise<void> => {
     const [diagramsResult, notesResult] = await Promise.all([
       activeRepo.listDiagramFiles(project.id),
       activeRepo.listNoteFiles(project.id),
@@ -923,7 +922,16 @@ export default function App() {
     );
     downloadBytes(bytes, `${archiveSlug(project.name)}.zip`, "application/zip");
     setTransferError(null);
-  }, [projects, selectedProjectId, activeRepo]);
+  }, [activeRepo]);
+
+  const exportActiveProject = useCallback((): Promise<void> => {
+    const project = projects.find((entry) => entry.id === selectedProjectId);
+    if (!project) {
+      setTransferError("Select a project before exporting it.");
+      return Promise.resolve();
+    }
+    return exportProject(project);
+  }, [projects, selectedProjectId, exportProject]);
 
   /** Read a chosen archive and recreate it as a project in this workspace. */
   const importProjectFile = useCallback(
@@ -2016,6 +2024,22 @@ export default function App() {
             ]
           : []),
         {
+          id: "download-project",
+          label: "Download local copy (.zip)",
+          onSelect: () => {
+            void exportProject(project);
+          },
+        },
+        {
+          id: "copy-project-id",
+          label: "Copy project ID",
+          onSelect: () => {
+            void navigator.clipboard
+              ?.writeText(project.id)
+              .catch(() => undefined);
+          },
+        },
+        {
           id: "rename-project",
           label: "Rename project…",
           onSelect: () => setPrompt({ kind: "rename-project", project }),
@@ -2443,7 +2467,6 @@ export default function App() {
                       onReloadServerProjects={() => {
                         void server.refresh();
                       }}
-                      onDownloadLocalCopy={exportProjectCommand}
                     />
                   }
                   onAddMenu={(project, position) =>
@@ -2466,13 +2489,13 @@ export default function App() {
                   onUnhideAll={unhideAll}
                   onOpenFolder={openFolder}
                   folderName={openedFolder?.folderName ?? null}
-                  workspaceLabel={
-                    server.active
-                      ? `Server project: ${server.active.project.name}`
-                      : openedFolder
-                        ? `Local folder: ${openedFolder.folderName}`
-                        : "Browser local"
-                  }
+                    workspaceLabel={
+                      server.active
+                        ? `Server project: ${server.active.project.name}`
+                        : openedFolder
+                          ? `Local folder: ${openedFolder.folderName}`
+                          : undefined
+                    }
                   folderSupported={supportsFileSystemAccess()}
                 />
                 <button

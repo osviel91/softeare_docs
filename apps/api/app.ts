@@ -152,6 +152,7 @@ export async function createApp(
     // host uses, so there is one implementation of "update a resource".
     catalog: createProjectCatalog({
       projects: runtime.projects,
+      workspaces: runtime.workspaces,
       audit: runtime.audit,
       storage: runtime.storageFor,
       mutations: runtime.mutations,

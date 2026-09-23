@@ -373,7 +373,12 @@ export function createMcpTools(): McpTool[] {
       async run(args, toolContext) {
         const listing = await toolContext.catalog.createProject(
           toolContext.context,
-          { name: stringArg(args, "name") },
+          {
+            name: stringArg(args, "name"),
+            workspaceId: await toolContext.catalog.defaultWorkspaceId(
+              toolContext.context,
+            ),
+          },
         );
         return {
           text: `Created project "${listing.project.name}" (id: ${listing.project.id}).`,
@@ -404,6 +409,7 @@ export function createMcpTools(): McpTool[] {
       async run(_args, toolContext) {
         const listings = await toolContext.catalog.listProjects(
           toolContext.context,
+          await toolContext.catalog.defaultWorkspaceId(toolContext.context),
         );
         const text =
           listings.length === 0

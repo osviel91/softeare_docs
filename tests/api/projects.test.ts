@@ -132,9 +132,22 @@ async function aProject(name = "Payments") {
   const user = await signIn();
   const created = await call("POST", "/api/projects", {
     cookie: user.cookie,
-    body: { name },
+    body: { name, workspaceId: user.userId },
   });
   return { ...user, projectId: created.body.project.id as string, created };
+}
+
+async function addWorkspaceMember(
+  owner: { cookie: string; userId: string },
+  memberId: string,
+  role: "ADMIN" | "EDITOR" | "VIEWER" = "VIEWER",
+): Promise<void> {
+  const response = await call(
+    "PUT",
+    `/api/workspaces/${owner.userId}/members/${memberId}`,
+    { cookie: owner.cookie, body: { role } },
+  );
+  expect(response.status).toBe(200);
 }
 
 describe("project routes", () => {
@@ -154,7 +167,7 @@ describe("project routes", () => {
     const user = await signIn();
     const created = await call("POST", "/api/projects", {
       cookie: user.cookie,
-      body: { name: "Payments Platform" },
+      body: { name: "Payments Platform", workspaceId: user.userId },
     });
     expect(created.status).toBe(201);
     expect(created.body.project).toMatchObject({
@@ -164,7 +177,13 @@ describe("project routes", () => {
       resourceCount: 0,
     });
 
-    const listed = await call("GET", "/api/projects", { cookie: user.cookie });
+    const listed = await call(
+      "GET",
+      `/api/projects?workspaceId=${user.userId}`,
+      {
+        cookie: user.cookie,
+      },
+    );
     expect(listed.body.projects.map((entry: any) => entry.id)).toContain(
       created.body.project.id,
     );
@@ -174,7 +193,19 @@ describe("project routes", () => {
     const user = await signIn();
     const created = await call("POST", "/api/projects", {
       cookie: user.cookie,
-      body: {},
+      body: { workspaceId: user.userId },
+    });
+    expect(created.status).toBe(422);
+  });
+
+  it("requires a workspace for project listing and creation", async () => {
+    const user = await signIn();
+    const listed = await call("GET", "/api/projects", { cookie: user.cookie });
+    expect(listed.status).toBe(422);
+
+    const created = await call("POST", "/api/projects", {
+      cookie: user.cookie,
+      body: { name: "No workspace" },
     });
     expect(created.status).toBe(422);
   });
@@ -209,6 +240,7 @@ describe("project routes", () => {
   it("adds and removes a member, and lets the member read", async () => {
     const owner = await aProject("Shared");
     const member = await signIn();
+    await addWorkspaceMember(owner, member.userId);
 
     const added = await call(
       "PUT",
@@ -385,6 +417,7 @@ describe("resource routes", () => {
   it("refuses a viewer's write with 403 and allows a read", async () => {
     const owner = await aProject("Viewer API");
     const viewer = await signIn();
+    await addWorkspaceMember(owner, viewer.userId);
     await call(
       "PUT",
       `/api/projects/${owner.projectId}/members/${viewer.userId}`,
@@ -451,6 +484,7 @@ describe("the access endpoint", () => {
   it("tells a viewer exactly what it cannot do", async () => {
     const owner = await aProject("Viewer capabilities");
     const viewer = await signIn();
+    await addWorkspaceMember(owner, viewer.userId);
     await call(
       "PUT",
       `/api/projects/${owner.projectId}/members/${viewer.userId}`,
@@ -491,7 +525,7 @@ describe("the audit trail over HTTP", () => {
     const user = await signIn();
     const created = await call("POST", "/api/projects", {
       cookie: user.cookie,
-      body: { name: "Audited API" },
+      body: { name: "Audited API", workspaceId: user.userId },
     });
     const projectId = created.body.project.id;
     const resource = await call(

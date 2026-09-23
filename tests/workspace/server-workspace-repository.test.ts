@@ -511,13 +511,13 @@ describe("ServerApiClient error mapping", () => {
 
   it("maps 403 to an access denial", async () => {
     await expect(
-      respond(403, "forbidden").listProjects(),
+      respond(403, "forbidden").listProjects("w1"),
     ).rejects.toBeInstanceOf(AccessDeniedError);
   });
 
   it("maps 422 to a validation failure", async () => {
     await expect(
-      respond(422, "invalid").createProject("x"),
+      respond(422, "invalid").createProject("x", "w1"),
     ).rejects.toBeInstanceOf(ValidationFailedError);
   });
 
@@ -542,7 +542,9 @@ describe("ServerApiClient error mapping", () => {
         throw new Error("ECONNREFUSED");
       },
     });
-    await expect(client.listProjects()).rejects.toBeInstanceOf(NetworkError);
+    await expect(client.listProjects("w1")).rejects.toBeInstanceOf(
+      NetworkError,
+    );
   });
 
   it("tolerates a 204 with no body", async () => {

@@ -232,7 +232,7 @@ describe("project repository", () => {
       (await projects.listForUser(viewer.id)).map((e) => e.project.id),
     ).not.toContain(project.id);
     await projects.setMember(project.id, viewer.id, "VIEWER");
-    const listing = await projects.listForUser(viewer.id);
+    const listing = await projects.listForUser(viewer.id, project.workspaceId);
     expect(listing.find((entry) => entry.project.id === project.id)?.role).toBe(
       "VIEWER",
     );

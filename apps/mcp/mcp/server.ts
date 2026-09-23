@@ -324,7 +324,10 @@ function registerResources(
     "project",
     new ResourceTemplate("seqdocs://projects/{projectId}", {
       list: async () => {
-        const listings = await catalog.listProjects(context);
+        const listings = await catalog.listProjects(
+          context,
+          await catalog.defaultWorkspaceId(context),
+        );
         return {
           resources: listings.slice(0, 200).map((entry) => ({
             uri: `seqdocs://projects/${entry.project.id}`,
@@ -369,7 +372,10 @@ function registerResources(
       "seqdocs://projects/{projectId}/resources/{resourceId}",
       {
         list: async () => {
-          const listings = await catalog.listProjects(context);
+          const listings = await catalog.listProjects(
+            context,
+            await catalog.defaultWorkspaceId(context),
+          );
           const resources = [];
           for (const entry of listings.slice(0, 20)) {
             const listed = await catalog.listResources(

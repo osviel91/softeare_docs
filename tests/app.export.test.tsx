@@ -4,6 +4,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import App from "./app-harness";
@@ -142,6 +143,38 @@ describe("App — export", () => {
     );
     expect(indexHtml).toContain("<html");
     expect(indexHtml).toContain("Payments");
+  });
+
+  it("exports the project chosen from its ⋯ menu", async () => {
+    render(<App />);
+    fireEvent.change(screen.getByTestId("project-name-input"), {
+      target: { value: "First" },
+    });
+    fireEvent.click(screen.getByTestId("create-project-button"));
+    await waitFor(() => {
+      expect(screen.getByTestId("project-name")).toHaveTextContent("First");
+    });
+    fireEvent.change(screen.getByTestId("project-name-input"), {
+      target: { value: "Second" },
+    });
+    fireEvent.click(screen.getByTestId("create-project-button"));
+    await waitFor(() => {
+      expect(screen.getAllByTestId("explorer-project")).toHaveLength(2);
+    });
+
+    fireEvent.click(
+      within(screen.getAllByTestId("explorer-project")[0]).getByTestId(
+        "project-menu-button",
+      ),
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("context-menu-download-project"));
+    });
+
+    await waitFor(() => {
+      expect(transfer.downloads).toHaveLength(1);
+    });
+    expect(transfer.downloads[0].filename).toBe("First.zip");
   });
 
   it("reports a site export attempted with no project selected", async () => {

@@ -24,6 +24,7 @@ import App from "../src/App";
 /** The project the fake API serves. */
 const PROJECT = {
   id: "p1",
+  workspaceId: "w1",
   name: "Payments",
   slug: "payments",
   ownerId: "u1",
@@ -126,6 +127,28 @@ function fakeFetch(input: string, init?: RequestInit): Promise<Response> {
     return Promise.resolve(
       reply(200, { projects: state.signedIn ? [PROJECT] : [] }),
     );
+  }
+  if (path === "/api/workspaces") {
+    return Promise.resolve(
+      reply(200, {
+        workspaces: state.signedIn
+          ? [
+              {
+                id: "w1",
+                ownerId: "u1",
+                name: "Personal",
+                isDefault: true,
+                role: "ADMIN",
+                createdAt: new Date(0).toISOString(),
+                updatedAt: new Date(0).toISOString(),
+              },
+            ]
+          : [],
+      }),
+    );
+  }
+  if (path === "/api/workspaces/w1/members") {
+    return Promise.resolve(reply(200, { members: [] }));
   }
   if (path === "/api/projects/p1/access") {
     return Promise.resolve(
@@ -264,7 +287,8 @@ describe("App — authenticated browser", () => {
     ]);
     render(<App />);
 
-    fireEvent.click(await screen.findByTestId("workspace-server-toggle"));
+    const toggle = await screen.findByTestId("workspace-server-toggle");
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
     const row = await screen.findByTestId("workspace-server-project");
     expect(row).toHaveTextContent("Payments");
     await act(async () => {

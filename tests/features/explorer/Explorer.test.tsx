@@ -264,44 +264,6 @@ describe("Explorer", () => {
     expect(onCreateProject).toHaveBeenCalledWith("New project");
   });
 
-  it("shows the folder picker when onOpenFolder is provided", () => {
-    render(
-      <Explorer
-        projects={[]}
-        diagrams={[]}
-        selectedProjectId={null}
-        selectedDiagramId={null}
-        isLoading={false}
-        onCreateProject={vi.fn()}
-        onLoadDiagram={vi.fn()}
-        onOpenFolder={vi.fn()}
-        folderSupported={true}
-      />,
-    );
-    expect(screen.getByTestId("open-folder-button")).toHaveTextContent(
-      "Open folder…",
-    );
-  });
-
-  it("calls onOpenFolder when the folder button is clicked", () => {
-    const onOpenFolder = vi.fn();
-    render(
-      <Explorer
-        projects={[]}
-        diagrams={[]}
-        selectedProjectId={null}
-        selectedDiagramId={null}
-        isLoading={false}
-        onCreateProject={vi.fn()}
-        onLoadDiagram={vi.fn()}
-        onOpenFolder={onOpenFolder}
-        folderSupported={true}
-      />,
-    );
-    fireEvent.click(screen.getByTestId("open-folder-button"));
-    expect(onOpenFolder).toHaveBeenCalledTimes(1);
-  });
-
   it("switches to Close folder and shows the folder name when one is open", () => {
     render(
       <Explorer
@@ -325,7 +287,7 @@ describe("Explorer", () => {
     );
   });
 
-  it("disables the folder button when the API is unsupported", () => {
+  it("does not render the duplicate folder button for browser projects", () => {
     render(
       <Explorer
         projects={[]}
@@ -339,7 +301,7 @@ describe("Explorer", () => {
         folderSupported={false}
       />,
     );
-    expect(screen.getByTestId("open-folder-button")).toBeDisabled();
+    expect(screen.queryByTestId("open-folder-button")).toBeNull();
   });
 
   it("renders a diagram search box", () => {

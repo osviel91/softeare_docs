@@ -81,6 +81,7 @@ export function toUser(row: SqlRow): User {
 export function toServerProject(row: SqlRow): ServerProject {
   return {
     id: text(row, "id"),
+    workspaceId: text(row, "workspace_id"),
     ownerId: text(row, "owner_id"),
     name: text(row, "name"),
     slug: text(row, "slug"),

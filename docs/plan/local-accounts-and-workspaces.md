@@ -70,15 +70,17 @@ Acceptance workflow status: users can create, rename, select, and delete their
 own non-default workspaces. Workspace selection is retained by the browser;
 project filtering and workspace-targeted creation begin in Phase 4.
 
-### Phase 4 — Workspace-aware projects (not started)
+### Phase 4 — Workspace-aware projects (delivered)
 
-- Create projects inside a selected workspace.
-- List projects only through accessible workspaces.
-- Require workspace membership before project authorization.
-- Preserve existing project roles and resource behavior.
+- [x] Create projects inside a selected workspace.
+- [x] List projects only through accessible workspaces.
+- [x] Require workspace membership before project authorization.
+- [x] Preserve existing project roles and resource behavior.
 
-Acceptance workflow: switching workspaces changes the visible project list and
-does not leak projects from another workspace.
+Acceptance workflow status: switching workspaces changes the visible project
+list. Workspace membership gates access before existing project-role permissions
+are evaluated, so a project membership alone cannot leak a project after workspace
+access is removed.
 
 ### Phase 5 — Invitations (not started)
 

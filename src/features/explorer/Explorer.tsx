@@ -216,34 +216,35 @@ export default function Explorer({
         ? notes.filter((note) => note.projectId === projectId)
         : allNotes.filter((note) => note.projectId === projectId);
 
-  const modeLabel =
-    workspaceLabel ?? (folderName ? `“${folderName}”` : "In-browser projects");
+  const modeLabel = workspaceLabel ?? (folderName ? `“${folderName}”` : null);
 
   return (
     <nav className="explorer" data-testid="explorer">
       {switcher}
-      <div
-        className="explorer__header"
-        data-testid="explorer-header"
-        role="region"
-        aria-label="Workspace source"
-      >
-        <span className="explorer__mode" data-testid="explorer-mode">
-          {modeLabel}
-        </span>
-        {onOpenFolder && (
-          <button
-            type="button"
-            className="explorer__open-button"
-            data-testid="open-folder-button"
-            aria-label={folderName ? "Close folder" : "Open a local folder"}
-            disabled={!folderSupported}
-            onClick={onOpenFolder}
-          >
-            {folderName ? "Close folder" : "Open folder…"}
-          </button>
-        )}
-      </div>
+      {modeLabel && (
+        <div
+          className="explorer__header"
+          data-testid="explorer-header"
+          role="region"
+          aria-label="Workspace source"
+        >
+          <span className="explorer__mode" data-testid="explorer-mode">
+            {modeLabel}
+          </span>
+          {onOpenFolder && (
+            <button
+              type="button"
+              className="explorer__open-button"
+              data-testid="open-folder-button"
+              aria-label={folderName ? "Close folder" : "Open a local folder"}
+              disabled={!folderSupported}
+              onClick={onOpenFolder}
+            >
+              {folderName ? "Close folder" : "Open folder…"}
+            </button>
+          )}
+        </div>
+      )}
 
       {hiddenCount > 0 && onUnhideAll && (
         <div className="explorer__hidden" data-testid="explorer-hidden">

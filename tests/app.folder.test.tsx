@@ -168,11 +168,23 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+async function openFolder(): Promise<void> {
+  const toggle = screen.getByTestId("workspace-local-toggle");
+  if (toggle.getAttribute("aria-expanded") === "false") {
+    fireEvent.click(toggle);
+  }
+  const folderButton = await screen.findByTestId("workspace-open-folder");
+  await act(async () => {
+    fireEvent.click(folderButton);
+  });
+}
+
 describe("App — local folder (Phase 5)", () => {
   it("opens a folder through the explorer and shows its name", async () => {
     render(<App />);
 
-    const button = screen.getByTestId("open-folder-button");
+    fireEvent.click(screen.getByTestId("workspace-local-toggle"));
+    const button = screen.getByTestId("workspace-open-folder");
     expect(button).toBeEnabled();
 
     await act(async () => {
@@ -201,9 +213,7 @@ describe("App — local folder (Phase 5)", () => {
     );
     render(<App />);
 
-    await act(async () => {
-      fireEvent.click(screen.getByTestId("open-folder-button"));
-    });
+    await openFolder();
     fireEvent.change(screen.getByTestId("project-name-input"), {
       target: { value: "Docs" },
     });
@@ -219,9 +229,7 @@ describe("App — local folder (Phase 5)", () => {
   it("renames a diagram from the title in its source, live", async () => {
     render(<App />);
 
-    await act(async () => {
-      fireEvent.click(screen.getByTestId("open-folder-button"));
-    });
+    await openFolder();
 
     // The file on disk is `welcome.seq`; `title Welcome` names it everywhere.
     await waitFor(() => {
@@ -255,23 +263,19 @@ describe("App — local folder (Phase 5)", () => {
   it("closes the folder and returns to in-browser projects", async () => {
     render(<App />);
 
-    await act(async () => {
-      fireEvent.click(screen.getByTestId("open-folder-button"));
-    });
+    await openFolder();
     await waitFor(() => {
       expect(screen.getByTestId("explorer-mode")).toHaveTextContent(
         "Local folder: Test Folder",
       );
     });
 
-    // The mode now reads "Close folder"; clicking it clears the folder.
+    // The local source now reads "Folder: Test Folder"; clicking it clears it.
     await act(async () => {
-      fireEvent.click(screen.getByTestId("open-folder-button"));
+      fireEvent.click(screen.getByTestId("workspace-open-folder"));
     });
     await waitFor(() => {
-      expect(screen.getByTestId("explorer-mode")).toHaveTextContent(
-        "Browser local",
-      );
+      expect(screen.queryByTestId("explorer-header")).toBeNull();
     });
   });
 
@@ -300,9 +304,7 @@ describe("App — local folder (Phase 5)", () => {
 
     // The app does not auto-open a folder; clicking the button drives the
     // mocked picker at this tree.
-    await act(async () => {
-      fireEvent.click(screen.getByTestId("open-folder-button"));
-    });
+    await openFolder();
 
     // The FS repo replaces the default IDB repo. Wait for both projects to load.
     await waitFor(() => {
@@ -338,9 +340,7 @@ describe("App — local folder (Phase 5)", () => {
 /** Open the local folder and wait until its diagram is listed. */
 async function openFolderWithDiagram(): Promise<void> {
   render(<App />);
-  await act(async () => {
-    fireEvent.click(screen.getByTestId("open-folder-button"));
-  });
+  await openFolder();
   await waitFor(() => {
     expect(screen.getByLabelText("Load diagram Welcome")).toBeInTheDocument();
   });

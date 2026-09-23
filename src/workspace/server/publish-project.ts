@@ -18,7 +18,11 @@ export async function publishProject(
     throw new Error("Could not read the project's files.");
   }
 
-  const destination = await client.createProject(project.name);
+  const workspace = (await client.listWorkspaces()).find(
+    (entry) => entry.isDefault,
+  );
+  if (!workspace) throw new Error("No default server workspace is available.");
+  const destination = await client.createProject(project.name, workspace.id);
   for (const diagram of diagrams.value) {
     await client.createResource(destination.id, {
       path: diagram.name,

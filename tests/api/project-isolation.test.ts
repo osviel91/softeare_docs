@@ -231,7 +231,7 @@ async function createOwnedProject(
 ): Promise<OwnedProject> {
   const created = await call("POST", "/api/projects", {
     cookie: owner.cookie,
-    body: { name },
+    body: { name, workspaceId: owner.userId },
   });
   if (created.status !== 201) {
     throw new Error(`Could not create "${name}": ${created.status}`);
@@ -287,9 +287,13 @@ beforeAll(async () => {
 describe("two owners, two projects: neither can reach the other's", () => {
   it("lists each owner's own project and never the other's", async () => {
     for (const { member, own, other } of directions()) {
-      const listed = await call("GET", "/api/projects", {
-        cookie: member.cookie,
-      });
+      const listed = await call(
+        "GET",
+        `/api/projects?workspaceId=${member.userId}`,
+        {
+          cookie: member.cookie,
+        },
+      );
       expect(listed.status).toBe(200);
       const ids = listed.body.projects.map((entry: any) => entry.id);
       expect(ids).toContain(own.projectId);
@@ -299,6 +303,7 @@ describe("two owners, two projects: neither can reach the other's", () => {
       // boundary is membership and not the listing route.
       const direct = await dependencies.catalog.listProjects(
         contextFor(member.userId),
+        member.userId,
       );
       expect(direct.map((entry) => entry.project.id)).toContain(own.projectId);
       expect(direct.map((entry) => entry.project.id)).not.toContain(
@@ -826,6 +831,12 @@ describe("no membership and the wrong role are refused differently", () => {
     });
     projectId = project.projectId;
     resourceId = project.resourceId;
+    const workspaceMember = await call(
+      "PUT",
+      `/api/workspaces/${owner.userId}/members/${viewer.userId}`,
+      { cookie: owner.cookie, body: { role: "VIEWER" } },
+    );
+    expect(workspaceMember.status).toBe(200);
     const added = await call(
       "PUT",
       `/api/projects/${projectId}/members/${viewer.userId}`,

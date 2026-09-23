@@ -75,7 +75,8 @@ export function createServerWorkspaceProvider(
     },
 
     async listProjects(): Promise<Project[]> {
-      const listings = await catalog.listProjects(context);
+      const workspaceId = await catalog.defaultWorkspaceId(context);
+      const listings = await catalog.listProjects(context, workspaceId);
       return listings.map((listing) => toDomainProject(listing.project));
     },
 
@@ -114,7 +115,11 @@ export function createServerWorkspaceProvider(
     },
 
     async createProject(name: string): Promise<Project | null> {
-      const listing = await catalog.createProject(context, { name });
+      const workspaceId = await catalog.defaultWorkspaceId(context);
+      const listing = await catalog.createProject(context, {
+        name,
+        workspaceId,
+      });
       return toDomainProject(listing.project);
     },
   };

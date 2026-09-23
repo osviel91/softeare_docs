@@ -46,6 +46,7 @@ export interface ServerAdminUser {
 /** A project listing, as the API renders it. */
 export interface ServerProject {
   id: string;
+  workspaceId: string;
   name: string;
   slug: string;
   ownerId: string;
@@ -315,21 +316,24 @@ export class ServerApiClient {
     );
   }
 
-  /** Every project the caller is a member of. */
-  async listProjects(): Promise<ServerProject[]> {
+  /** Every project the caller can access in one workspace. */
+  async listProjects(workspaceId: string): Promise<ServerProject[]> {
     const body = await this.request<{ projects: ServerProject[] }>(
       "GET",
-      "/api/projects",
+      `/api/projects?workspaceId=${encodeURIComponent(workspaceId)}`,
     );
     return body.projects ?? [];
   }
 
   /** Create a project and return its listing (the caller becomes its owner). */
-  async createProject(name: string): Promise<ServerProject> {
+  async createProject(
+    name: string,
+    workspaceId: string,
+  ): Promise<ServerProject> {
     const body = await this.request<{ project: ServerProject }>(
       "POST",
       "/api/projects",
-      { name },
+      { name, workspaceId },
     );
     return body.project;
   }

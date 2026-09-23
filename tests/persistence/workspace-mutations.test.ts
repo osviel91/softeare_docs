@@ -23,6 +23,7 @@ import { ALL_PERMISSIONS } from "../../src/domain/access/permissions";
 import { ApplicationError } from "../../src/application/errors";
 import type { ApplicationContext } from "../../src/application/context";
 import { createProjectRepository } from "../../src/persistence/project-repository";
+import { createWorkspaceRepository } from "../../src/persistence/workspace-repository";
 import { createUserRepository } from "../../src/persistence/user-repository";
 import { createFsProjectStorage } from "../../src/persistence/fs-project-storage";
 import { createWorkspaceOperationRepository } from "../../src/persistence/workspace-operation-repository";
@@ -565,6 +566,7 @@ function createMutationServiceWithoutJournal(): WorkspaceMutationService {
   // Reuses the real catalog's refusal, which is what a deployment would hit.
   const catalog = createProjectCatalog({
     projects,
+    workspaces: createWorkspaceRepository(client),
     storage: (projectId) =>
       createFsProjectStorage({ root: path.join(volume, projectId) }),
   });

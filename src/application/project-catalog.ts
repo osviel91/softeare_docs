@@ -40,6 +40,7 @@ import type { ProjectStorage } from "./project-storage";
 import { InvalidResourcePathError } from "./ports/resource-path";
 import type { AuditAction, AuditRepository } from "./ports/audit-repository";
 import type { WorkspaceOperationRepository } from "./ports/workspace-operation-repository";
+import type { WorkspaceRepository } from "./ports/workspace-repository";
 import {
   createWorkspaceMutationService,
   type ResourceView,
@@ -68,6 +69,7 @@ export type ProjectStorageFactory = (projectId: string) => ProjectStorage;
 /** What the catalog needs to run. */
 export interface ProjectCatalogOptions {
   projects: ProjectRepository;
+  workspaces: WorkspaceRepository;
   storage: ProjectStorageFactory;
   audit?: AuditRepository;
   /**
@@ -122,7 +124,13 @@ function reportAuditFailure(error: unknown, event: AuditFailureContext): void {
 /** The server project use cases. */
 export interface ProjectCatalog {
   /** Every project the caller is a member of, newest first. */
-  listProjects(context: ApplicationContext): Promise<ProjectListing[]>;
+  listProjects(
+    context: ApplicationContext,
+    workspaceId: string,
+  ): Promise<ProjectListing[]>;
+
+  /** The caller's default workspace, for hosts without a workspace selector. */
+  defaultWorkspaceId(context: ApplicationContext): Promise<string>;
 
   /** One project and the caller's role in it. */
   getProject(
@@ -133,7 +141,7 @@ export interface ProjectCatalog {
   /** Create a project, its membership and its storage directory. */
   createProject(
     context: ApplicationContext,
-    input: { name: string; slug?: string },
+    input: { name: string; workspaceId: string; slug?: string },
   ): Promise<ProjectListing>;
 
   /**
@@ -309,7 +317,7 @@ function toCatalogResource(record: ResourceRecord): CatalogResource {
 export function createProjectCatalog(
   options: ProjectCatalogOptions,
 ): ProjectCatalog {
-  const { projects, storage, audit } = options;
+  const { projects, workspaces, storage, audit } = options;
   const policy =
     options.policy ?? createAuthorizationPolicy<ServerProject>(projects);
 
@@ -365,7 +373,25 @@ export function createProjectCatalog(
     );
     // The policy resolved the project on the way to its decision, so there is no
     // second read here and no window in which the row could change underneath it.
+    const workspaceRole = await workspaces.roleOf(
+      grant.project.workspaceId,
+      context.principal.subjectUserId,
+    );
+    if (workspaceRole === null) {
+      throw notFound(`No project with id ${projectId}.`);
+    }
     return { project: grant.project, role: grant.role };
+  };
+
+  const requireWorkspaceMember = async (
+    context: ApplicationContext,
+    workspaceId: string,
+  ): Promise<void> => {
+    const role = await workspaces.roleOf(
+      workspaceId,
+      context.principal.subjectUserId,
+    );
+    if (role === null) throw notFound(`No workspace with id ${workspaceId}.`);
   };
 
   const writeAudit = async (
@@ -410,13 +436,23 @@ export function createProjectCatalog(
   };
 
   return {
-    async listProjects(context) {
+    async listProjects(context, workspaceId) {
+      await requireWorkspaceMember(context, workspaceId);
       const listings = await projects.listForUser(
         context.principal.subjectUserId,
+        workspaceId,
       );
       const restricted = restrictionOf(context.principal);
       if (restricted === null) return listings;
       return listings.filter((entry) => restricted.includes(entry.project.id));
+    },
+
+    async defaultWorkspaceId(context) {
+      const workspace = (
+        await workspaces.listForUser(context.principal.subjectUserId)
+      ).find((entry) => entry.isDefault);
+      if (!workspace) throw notFound("No default workspace is available.");
+      return workspace.id;
     },
 
     async getProject(context, projectId) {
@@ -426,7 +462,10 @@ export function createProjectCatalog(
         "project:read",
       );
       const listing = (
-        await projects.listForUser(context.principal.subjectUserId)
+        await projects.listForUser(
+          context.principal.subjectUserId,
+          project.workspaceId,
+        )
       ).find((entry) => entry.project.id === project.id);
       return {
         project,
@@ -466,8 +505,10 @@ export function createProjectCatalog(
       }
       const name = input.name.trim();
       if (name === "") throw invalid("A project name is required.");
+      await requireWorkspaceMember(context, input.workspaceId);
       const project = await projects.create({
         ownerId: context.principal.subjectUserId,
+        workspaceId: input.workspaceId,
         name,
         ...(input.slug === undefined ? {} : { slug: input.slug }),
       });

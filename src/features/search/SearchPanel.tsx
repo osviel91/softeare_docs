@@ -104,7 +104,7 @@ export default function SearchPanel({
           className="palette__input"
           data-testid="search-input"
           type="search"
-          placeholder="Search project… (kind:diagram, project:name, participant:Name)"
+          placeholder="Search project… (tag:payments, type:diagram, project:name)"
           aria-label="Search project"
           value={query}
           onChange={(event) => {
@@ -156,6 +156,13 @@ export default function SearchPanel({
                   <span className="search__result-excerpt">
                     {match.excerpt}
                   </span>
+                  {match.metadata?.tags &&
+                    match.metadata.tags.length > 0 &&
+                    match.matchedFields.includes("tags") && (
+                      <span className="search__result-excerpt">
+                        Tags: {match.metadata.tags.join(", ")}
+                      </span>
+                    )}
                 </button>
               </li>
             ))

@@ -520,7 +520,6 @@ body {
   flex-direction: column;
   min-width: 0;
   flex: 1 1 auto;
-  height: 100%;
 }
 
 .editor__code {

@@ -16,6 +16,7 @@ const match = (overrides: Partial<SearchMatch> = {}): SearchMatch => ({
   length: 6,
   text: "Save",
   excerpt: "PaymentService ->> DB: Save",
+  matchedFields: ["content"],
   ...overrides,
 });
 

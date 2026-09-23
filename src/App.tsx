@@ -1637,6 +1637,7 @@ export default function App() {
         length: name.length,
         text: name,
         excerpt: `${site.role} · ${site.context}`,
+        matchedFields: ["content"],
       };
     });
     setReferenceTitle(`References to ${name}`);

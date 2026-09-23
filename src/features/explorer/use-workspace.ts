@@ -1315,7 +1315,12 @@ export function useWorkspace(
     const merge = (current: DiagramFile[]): DiagramFile[] =>
       current.map((diagram) =>
         diagram.id === edited.id
-          ? { ...diagram, name: edited.name, source: edited.source }
+          ? {
+              ...diagram,
+              name: edited.name,
+              source: edited.source,
+              metadata: edited.metadata,
+            }
           : diagram,
       );
     setDiagrams(merge);
@@ -1326,7 +1331,12 @@ export function useWorkspace(
     const merge = (current: NoteFile[]): NoteFile[] =>
       current.map((note) =>
         note.id === edited.id
-          ? { ...note, name: edited.name, markdown: edited.markdown }
+          ? {
+              ...note,
+              name: edited.name,
+              markdown: edited.markdown,
+              metadata: edited.metadata,
+            }
           : note,
       );
     setNotes(merge);

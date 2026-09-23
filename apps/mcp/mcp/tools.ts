@@ -359,6 +359,7 @@ async function searchDocuments(
       name: resource.path,
       title: resource.path,
       content,
+      metadata: resource.metadata,
     });
   }
   return documents;
@@ -660,13 +661,13 @@ export function createMcpTools(): McpTool[] {
       name: "search_project",
       title: "Search a project",
       description:
-        "Search a project's documents and return matching locations with short snippets — never whole files. Supports a query string and an optional resource-kind filter. Paginated.",
+        "Search a project's documents and metadata with bounded snippets — never whole files. Supports plain text plus `tag:payments`, `type:diagram`, and the existing project/kind/participant filters. Paginated.",
       inputSchema: {
         projectId: projectId(),
         query: z
           .string()
           .describe(
-            "The text to find. Supports `kind:diagram` and `kind:note` filters.",
+            "Plain text or filters such as `tag:payments`, `type:diagram`, `kind:note`, `project:name`, and `participant:Name`.",
           ),
         limit: limit(50, 200),
         cursor: cursor(),
@@ -712,6 +713,9 @@ export function createMcpTools(): McpTool[] {
               line: match.line,
               column: match.column,
               snippet: match.excerpt,
+              description: match.metadata?.description,
+              tags: match.metadata?.tags,
+              matchedFields: match.matchedFields,
             })),
             nextCursor,
           },

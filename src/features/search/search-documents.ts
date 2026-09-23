@@ -59,6 +59,7 @@ export function buildSearchDocuments(
     name: diagram.name,
     title: diagramDisplayName(diagram.name, diagram.source),
     content: diagram.source,
+    metadata: diagram.metadata,
     facets: { participants: participantFacet(diagram.source) },
   }));
 
@@ -70,6 +71,7 @@ export function buildSearchDocuments(
     name: note.name,
     title: noteDisplayName(note.name, note.markdown),
     content: note.markdown,
+    metadata: note.metadata,
   }));
 
   return [...diagramDocuments, ...noteDocuments];

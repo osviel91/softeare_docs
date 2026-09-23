@@ -959,6 +959,9 @@ export class DocumentationWorkspace {
           name: descriptor.path,
           title: descriptor.title,
           content: this.contentOf(snapshot, descriptor),
+          metadata: snapshot.metadata.resources.find(
+            (resource) => resource.id === descriptor.id,
+          )?.metadata,
           facets: { participants },
         });
       }

@@ -43,6 +43,10 @@ The browser editor provides an explorer, source editor, outline and problems
 views, live or explicit rendering, pan/zoom navigation, version history, safe
 delete, Markdown preview, and project-wide search.
 
+Project search is metadata-aware: plain text searches names, descriptions, tags,
+and content. Use `tag:payments`, `tag:ddd aggregate`, `type:diagram checkout`, or
+`type:note deployment` to combine exact tag/type filters with a text query.
+
 ## Local And Server Operation
 
 Local-first is the default. A browser can store projects in IndexedDB or open a

@@ -104,4 +104,43 @@ describe("useWorkspace — a file in a project that is not selected", () => {
       { id: "diagram-untitled-2", path: "Untitled" },
     ]);
   });
+
+  it("keeps saved resource metadata in the in-memory lists", async () => {
+    const repo = createInMemoryWorkspaceRepository();
+    const hook = renderHook(() => useWorkspace(repo));
+    const projectId = await createProject(hook, "Metadata");
+
+    let diagram;
+    await act(async () => {
+      diagram = await hook.result.current.createEmptyDiagram(projectId);
+    });
+    await act(async () => {
+      await hook.result.current.createEmptyNote(projectId);
+    });
+    const note = hook.result.current.allNotes.find(
+      (entry) => entry.projectId === projectId,
+    );
+    expect(diagram).toBeTruthy();
+    expect(note).toBeTruthy();
+
+    act(() => {
+      hook.result.current.applyDiagramEdit({
+        ...diagram!,
+        metadata: { description: "Diagram context", tags: ["diagram"] },
+      });
+      hook.result.current.applyNoteEdit({
+        ...note!,
+        metadata: { description: "Note context", tags: ["note"] },
+      });
+    });
+
+    expect(
+      hook.result.current.allDiagrams.find((entry) => entry.id === diagram!.id)
+        ?.metadata,
+    ).toEqual({ description: "Diagram context", tags: ["diagram"] });
+    expect(
+      hook.result.current.allNotes.find((entry) => entry.id === note!.id)
+        ?.metadata,
+    ).toEqual({ description: "Note context", tags: ["note"] });
+  });
 });

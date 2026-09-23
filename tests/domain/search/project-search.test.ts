@@ -19,6 +19,10 @@ const diagram: SearchDocument = {
     "participant PaymentService",
     "CheckoutService ->> PaymentService: POST /payments",
   ].join("\n"),
+  metadata: {
+    description: "Coordinates payment authorization.\nReserves inventory.",
+    tags: ["DDD", "payments", "async"],
+  },
   facets: { participants: ["CheckoutService", "PaymentService"] },
 };
 
@@ -73,6 +77,21 @@ describe("parseSearchQuery", () => {
   it("returns empty text for an empty query", () => {
     expect(parseSearchQuery("   ")).toEqual({ text: "" });
   });
+
+  it("parses tag and type filters", () => {
+    expect(
+      parseSearchQuery("tag:DDD tag:payments type:diagram checkout"),
+    ).toEqual({
+      text: "checkout",
+      kinds: ["diagram"],
+      tags: ["ddd", "payments"],
+    });
+  });
+
+  it("leaves unknown and empty filters as plain text", () => {
+    expect(parseSearchQuery("type:unknown")).toEqual({ text: "type:unknown" });
+    expect(parseSearchQuery("tag:")).toEqual({ text: "tag:" });
+  });
 });
 
 describe("searchProject", () => {
@@ -93,6 +112,45 @@ describe("searchProject", () => {
 
   it("matches case-insensitively", () => {
     expect(searchProject(documents, { text: "paymentservice" })).toHaveLength(
+      3,
+    );
+  });
+
+  it("matches descriptions, tags, and names without duplicating body hits", () => {
+    const [description] = searchProject(documents, { text: "inventory" });
+    expect(description.matchedFields).toEqual(["description"]);
+    expect(description.excerpt).toBe("Reserves inventory.");
+
+    const [tag] = searchProject(documents, { text: "async" });
+    expect(tag.matchedFields).toEqual(["tags"]);
+
+    const [name] = searchProject(documents, { text: "checkout.seq" });
+    expect(name.matchedFields).toEqual(["name"]);
+  });
+
+  it("uses exact, case-insensitive tag identity for tag filters", () => {
+    expect(searchProject(documents, { text: "", tags: ["ddd"] })).toHaveLength(
+      1,
+    );
+    expect(
+      searchProject(
+        [
+          ...documents,
+          { ...note, id: "note-2", metadata: { tags: ["dddish"] } },
+        ],
+        { text: "", tags: ["ddd"] },
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("supports type filters and combines filters with text", () => {
+    expect(
+      runSearch(documents, "type:diagram payment").every(
+        (m) => m.kind === "diagram",
+      ),
+    ).toBe(true);
+    expect(runSearch(documents, "type:note payment")).toHaveLength(2);
+    expect(runSearch(documents, "tag:payments tag:async payment")).toHaveLength(
       3,
     );
   });

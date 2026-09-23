@@ -20,6 +20,7 @@ const diagram: DiagramFile = {
     "participant DB",
     "api ->> DB: Save",
   ].join("\n"),
+  metadata: { description: "Coordinates checkout.", tags: ["payments"] },
 };
 
 const note: NoteFile = {
@@ -38,6 +39,7 @@ describe("buildSearchDocuments", () => {
       projectName: "Docs",
       title: "Checkout Flow",
       content: diagram.source,
+      metadata: diagram.metadata,
     });
     expect(second).toMatchObject({
       kind: "note",
@@ -45,6 +47,7 @@ describe("buildSearchDocuments", () => {
       projectName: "Docs",
       title: "Architecture",
       content: note.markdown,
+      metadata: note.metadata,
     });
   });
 

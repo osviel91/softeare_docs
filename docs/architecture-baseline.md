@@ -78,6 +78,19 @@ architecture.
   from the project index. Rendering reads the resource through the workspace
   service before selecting the language-specific renderer.
 
+### Event Flow Views
+
+- The Event Flow pipeline is `source → parser/analyzer → EventFlow semantic
+model → Flow projection → FlowViewModel → Flow layout → Flow renderer → SVG`.
+- The semantic model contains documented-system facts such as events, services,
+  channels, brokers, publications, subscriptions, and event metadata. The
+  `FlowViewModel` contains the row view's presentation decisions, but no pixel
+  coordinates; layout owns geometry and the renderer owns SVG.
+- One Event Flow resource stores one semantic model/source. Views are pure
+  projections and are not separately persisted resources. Future Catalog and
+  Topology views will consume the same semantic model; they are not implemented
+  by this boundary.
+
 ### Resource Dimensions
 
 - `ResourceKind` is the broad stored-resource class: `diagram` or `note`.

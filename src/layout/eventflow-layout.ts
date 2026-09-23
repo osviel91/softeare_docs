@@ -1,7 +1,7 @@
 /**
  * Event-flow layout engine.
  *
- * Pure and deterministic: given an {@link EventFlow} AST it produces an
+ * Pure and deterministic: given a {@link FlowViewModel} it produces an
  * {@link EventFlowLayout}. It knows nothing about SVG or the DOM — it only
  * computes coordinates. The renderer consumes this layout.
  *
@@ -39,21 +39,13 @@
  *    renderer can say so instead of pretending the order is causal.
  */
 import {
-  channelsOf,
-  publicationsOf,
-  subscriptionsOf,
-  type ChannelDeclaration,
-  type EventDeclaration,
-  type EventFlow,
-  type EventPublication,
-  type EventSubscription,
-  type SourceRange,
-} from "../domain/eventflow/ast";
-import {
-  nodeIdOf,
-  type AstNodeId,
-  type AstNodeKind,
-} from "../domain/diagram/node-id";
+  type FlowChannelRef,
+  type FlowEndpoint,
+  type FlowViewModel,
+} from "../domain/eventflow/flow-projection";
+import type { AstNodeId } from "../domain/diagram/node-id";
+
+export { UNKNOWN_CHANNEL_KIND } from "../domain/eventflow/flow-projection";
 
 /** Horizontal margin around the widest row. */
 export const EVENT_MARGIN_X = 24;
@@ -121,9 +113,6 @@ export const EVENT_ARROW_HEAD_HEIGHT = 10;
  */
 export const NO_PRODUCER_LABEL = "(no producer)";
 
-/** The channel kind used when an edge names a channel that was never declared. */
-export const UNKNOWN_CHANNEL_KIND = "channel";
-
 /** Rectangular geometry shared by everything the renderer draws in a row. */
 export interface EventBoxGeometry {
   x: number;
@@ -141,27 +130,13 @@ export interface EventBoxGeometry {
  * otherwise at the edge statement that mentioned it, so the chip is always
  * traceable back to source.
  */
-export interface EventChannelRef {
-  name: string;
-  kind: string;
-  nodeId?: AstNodeId;
-}
+export type EventChannelRef = FlowChannelRef;
 
 /**
  * One side of an event's causal relationship: the service that published it, or
  * one service that consumes it.
  */
-export interface EventEndpointLayout {
-  name: string;
-  /**
-   * The addressable node this endpoint came from: the `publishes` /
-   * `consumes` statement. That is the line a click should reveal, not the
-   * service declaration, which may be shared by many edges.
-   */
-  nodeId: AstNodeId;
-  /** The channel the edge named, if it named one. */
-  channel?: EventChannelRef;
-}
+export type EventEndpointLayout = FlowEndpoint;
 
 /** Geometry of the channel chip, when a row has one. */
 export interface EventChannelChipLayout {
@@ -254,184 +229,47 @@ function noProducerWidth(): number {
   );
 }
 
-/** An addressable node a row or endpoint can be traced back to. */
-interface Mention {
-  kind: AstNodeKind;
-  range: SourceRange;
-}
-
 /**
- * Resolve one edge's channel to a {@link EventChannelRef}.
- *
- * A declared channel contributes its kind and its declaration id; an undeclared
- * one (a semantic error the validator reports) still gets a chip, labelled with
- * {@link UNKNOWN_CHANNEL_KIND} and pointing at the edge that mentioned it, so a
- * click on the chip always lands somewhere useful.
- */
-function channelRef(
-  name: string,
-  declared: Map<string, ChannelDeclaration>,
-  edge: EventPublication | EventSubscription,
-): EventChannelRef {
-  const declaration = declared.get(name);
-  if (declaration) {
-    return {
-      name,
-      kind: declaration.channelKind,
-      nodeId: nodeIdOf("channel", declaration.range),
-    };
-  }
-  return {
-    name,
-    kind: UNKNOWN_CHANNEL_KIND,
-    nodeId: nodeIdOf(edge.type, edge.range),
-  };
-}
-
-/**
- * Lay out an event flow AST into geometry.
+ * Lay out a Flow view model into geometry.
  *
  * Total: a document with no statements produces an empty layout with a sane
  * canvas rather than throwing, because the editor previews every keystroke and
  * an empty document is the first thing a user has.
  */
-export function layoutEventFlow(flow: EventFlow): EventFlowLayout {
+export function layoutEventFlow(flow: FlowViewModel): EventFlowLayout {
   const titleHeight = flow.title ? EVENT_TITLE_HEIGHT : 0;
-
-  const declaredChannels = new Map(
-    channelsOf(flow).map((channel) => [channel.name, channel]),
-  );
-  const declaredEvents = new Map<string, EventDeclaration>();
-  /** First appearance of each event name anywhere in the document. */
-  const firstMention = new Map<string, Mention>();
-  /** Event names in first-appearance order — the stable tie-break. */
-  const order: string[] = [];
-
-  for (const statement of flow.statements) {
-    if (statement.type === "event") {
-      if (!firstMention.has(statement.name)) {
-        firstMention.set(statement.name, {
-          kind: "event",
-          range: statement.range,
-        });
-      }
-      if (!declaredEvents.has(statement.name)) {
-        declaredEvents.set(statement.name, statement);
-      }
-      if (!order.includes(statement.name)) order.push(statement.name);
-      continue;
-    }
-    if (statement.type === "publication" || statement.type === "subscription") {
-      if (!firstMention.has(statement.event)) {
-        firstMention.set(statement.event, {
-          kind: statement.type,
-          range: statement.range,
-        });
-      }
-      if (!order.includes(statement.event)) order.push(statement.event);
-    }
-  }
-
-  // The first publication is the producer, mirroring "one row per event name".
-  const producerByEvent = new Map<string, EventPublication>();
-  for (const publication of publicationsOf(flow)) {
-    if (!producerByEvent.has(publication.event)) {
-      producerByEvent.set(publication.event, publication);
-    }
-  }
-
-  // Every distinct consumer, by name, in source order.
-  const consumersByEvent = new Map<string, EventSubscription[]>();
-  const seenConsumers = new Map<string, Set<string>>();
-  for (const subscription of subscriptionsOf(flow)) {
-    let consumers = consumersByEvent.get(subscription.event);
-    if (!consumers) {
-      consumers = [];
-      consumersByEvent.set(subscription.event, consumers);
-    }
-    let seen = seenConsumers.get(subscription.event);
-    if (!seen) {
-      seen = new Set<string>();
-      seenConsumers.set(subscription.event, seen);
-    }
-    if (seen.has(subscription.consumer)) continue;
-    seen.add(subscription.consumer);
-    consumers.push(subscription);
-  }
-
-  // A causal edge A → B exists whenever one service consumes A and publishes B.
-  const edges = new Map<string, Set<string>>();
-  const publications = publicationsOf(flow);
-  const subscriptions = subscriptionsOf(flow);
-  for (const publication of publications) {
-    for (const subscription of subscriptions) {
-      if (subscription.consumer !== publication.producer) continue;
-      let targets = edges.get(subscription.event);
-      if (!targets) {
-        targets = new Set<string>();
-        edges.set(subscription.event, targets);
-      }
-      targets.add(publication.event);
-    }
-  }
-
-  // Stable topological sort: repeatedly place the ready event that appears
-  // earliest in the document. Whatever is left when no event is ready is a
-  // cycle (or depends on one) and keeps its written order.
-  const indegree = new Map<string, number>(order.map((name) => [name, 0]));
-  for (const targets of edges.values()) {
-    for (const target of targets) {
-      indegree.set(target, (indegree.get(target) ?? 0) + 1);
-    }
-  }
-  const placed = new Set<string>();
-  const ordered: string[] = [];
-  for (;;) {
-    const next = order.find(
-      (name) => !placed.has(name) && (indegree.get(name) ?? 0) === 0,
-    );
-    if (next === undefined) break;
-    placed.add(next);
-    ordered.push(next);
-    for (const target of edges.get(next) ?? []) {
-      if (placed.has(target)) continue;
-      indegree.set(target, (indegree.get(target) ?? 0) - 1);
-    }
-  }
-  const residual = order.filter((name) => !placed.has(name));
-  const cyclic = residual.length > 0;
-  const orderedNames = [...ordered, ...residual];
-  const residualNames = new Set(residual);
+  const orderedNames = flow.rows.map((row) => row.event);
 
   // Fixed column widths, so every row's boxes line up under the one above.
   let producerColumnWidth = 0;
   let channelColumnWidth = 0;
   let eventColumnWidth = EVENT_MIN_EVENT_WIDTH;
   let consumerColumnWidth = 0;
-  for (const name of orderedNames) {
-    const producer = producerByEvent.get(name);
+  for (const row of flow.rows) {
+    const name = row.event;
+    const producer = row.producer;
     producerColumnWidth = Math.max(
       producerColumnWidth,
-      producer ? serviceBoxWidth(producer.producer) : noProducerWidth(),
+      producer ? serviceBoxWidth(producer.name) : noProducerWidth(),
     );
     if (producer?.channel !== undefined) {
       channelColumnWidth = Math.max(
         channelColumnWidth,
-        channelChipWidth(producer.channel),
+        channelChipWidth(producer.channel.name),
       );
     }
     eventColumnWidth = Math.max(eventColumnWidth, eventBoxWidth(name));
-    for (const subscription of consumersByEvent.get(name) ?? []) {
+    for (const consumer of row.consumers) {
       consumerColumnWidth = Math.max(
         consumerColumnWidth,
-        serviceBoxWidth(subscription.consumer),
+        serviceBoxWidth(consumer.name),
       );
     }
   }
 
   // The cycle tag owns a left-hand column, but only when one is needed, so an
   // acyclic document keeps the full margin.
-  const left = EVENT_MARGIN_X + (cyclic ? EVENT_CYCLE_TAG_WIDTH : 0);
+  const left = EVENT_MARGIN_X + (flow.cyclic ? EVENT_CYCLE_TAG_WIDTH : 0);
   const producerX = left;
   const channelX = producerX + producerColumnWidth + EVENT_COLUMN_GAP;
   const eventX =
@@ -447,9 +285,10 @@ export function layoutEventFlow(flow: EventFlow): EventFlowLayout {
   /** Top edge of the next row. */
   let cursorY = titleHeight + EVENT_MARGIN_Y;
 
-  for (const name of orderedNames) {
-    const producer = producerByEvent.get(name);
-    const subscriptionsForEvent = consumersByEvent.get(name) ?? [];
+  for (const row of flow.rows) {
+    const name = row.event;
+    const producer = row.producer;
+    const subscriptionsForEvent = row.consumers;
     const stackHeight =
       subscriptionsForEvent.length === 0
         ? 0
@@ -462,37 +301,25 @@ export function layoutEventFlow(flow: EventFlow): EventFlowLayout {
     // fan-out never overlaps however many consumers an event has.
     const stackTop = cursorY + (height - stackHeight) / 2;
 
-    const declaration = declaredEvents.get(name);
-    const mention = firstMention.get(name);
-    const eventNodeId = declaration
-      ? nodeIdOf("event", declaration.range)
-      : nodeIdOf(mention?.kind ?? "event", mention?.range ?? emptyRange());
-
     rows.push({
       event: name,
-      eventNodeId,
+      eventNodeId: row.eventNodeId,
       y: cursorY,
       height,
       producer: producer
         ? {
-            name: producer.producer,
-            nodeId: nodeIdOf("publication", producer.range),
-            channel:
-              producer.channel === undefined
-                ? undefined
-                : channelRef(producer.channel, declaredChannels, producer),
+            name: producer.name,
+            nodeId: producer.nodeId,
+            channel: producer.channel,
           }
         : null,
-      consumers: subscriptionsForEvent.map((subscription) => ({
-        name: subscription.consumer,
-        nodeId: nodeIdOf("subscription", subscription.range),
-        channel:
-          subscription.channel === undefined
-            ? undefined
-            : channelRef(subscription.channel, declaredChannels, subscription),
+      consumers: subscriptionsForEvent.map((consumer) => ({
+        name: consumer.name,
+        nodeId: consumer.nodeId,
+        channel: consumer.channel,
       })),
-      declaredOnly: producer === undefined,
-      cyclic: residualNames.has(name),
+      declaredOnly: row.declaredOnly,
+      cyclic: row.cyclic,
       eventBox: {
         x: eventX,
         y: centerY - EVENT_BOX_HEIGHT / 2,
@@ -519,7 +346,7 @@ export function layoutEventFlow(flow: EventFlow): EventFlowLayout {
           : {
               x: channelX,
               y: centerY - EVENT_CHANNEL_CHIP_HEIGHT / 2,
-              width: channelChipWidth(producer.channel),
+              width: channelChipWidth(producer.channel.name),
               height: EVENT_CHANNEL_CHIP_HEIGHT,
             },
       consumerBoxes: subscriptionsForEvent.map((_, index) => ({
@@ -542,13 +369,8 @@ export function layoutEventFlow(flow: EventFlow): EventFlowLayout {
       orderedNames.length === 0
         ? titleHeight + EVENT_MARGIN_Y * 2
         : cursorY - EVENT_ROW_GAP + EVENT_MARGIN_Y,
-    title: flow.title ? flow.title.value : undefined,
+    title: flow.title,
     rows,
-    cyclic,
+    cyclic: flow.cyclic,
   };
-}
-
-/** A zero-width range at the document origin, for a mention that cannot exist. */
-function emptyRange(): SourceRange {
-  return { start: { line: 0, column: 0 }, end: { line: 0, column: 0 } };
 }

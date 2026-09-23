@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { EventFlow } from "../../src/domain/eventflow/ast";
+import { projectEventFlowToFlowView } from "../../src/domain/eventflow/flow-projection";
 import { nodeIdOf } from "../../src/domain/diagram/node-id";
 import {
   EVENT_BOX_HEIGHT,
@@ -10,13 +11,17 @@ import {
   EVENT_ROW_GAP,
   EVENT_TITLE_HEIGHT,
   UNKNOWN_CHANNEL_KIND,
-  layoutEventFlow,
+  layoutEventFlow as layoutFlow,
 } from "../../src/layout/eventflow-layout";
 import { parseEventFlow } from "../../src/language/eventflow/parser";
 
 /** Parse source into the flow the layout engine consumes. */
 function flowFrom(source: string): EventFlow {
   return parseEventFlow(source).flow;
+}
+
+function layoutEventFlow(flow: EventFlow) {
+  return layoutFlow(projectEventFlowToFlowView(flow));
 }
 
 const THREE_STEP_CHAIN = `event Third

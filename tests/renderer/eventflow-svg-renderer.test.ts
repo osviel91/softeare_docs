@@ -6,11 +6,12 @@ import {
   subscriptionsOf,
   type EventFlow,
 } from "../../src/domain/eventflow/ast";
+import { projectEventFlowToFlowView } from "../../src/domain/eventflow/flow-projection";
 import { nodeIdOf } from "../../src/domain/diagram/node-id";
 import {
   EVENT_MARGIN_X,
   NO_PRODUCER_LABEL,
-  layoutEventFlow,
+  layoutEventFlow as layoutFlow,
   type EventFlowLayout,
 } from "../../src/layout/eventflow-layout";
 import { parseEventFlow } from "../../src/language/eventflow/parser";
@@ -27,7 +28,7 @@ function flowFrom(source: string): EventFlow {
 
 /** Lay a source document out, so renderer tests exercise real geometry. */
 function layoutOf(source: string): EventFlowLayout {
-  return layoutEventFlow(flowFrom(source));
+  return layoutFlow(projectEventFlowToFlowView(flowFrom(source)));
 }
 
 /** Parse an SVG string into a document, as the browser would. */
@@ -121,7 +122,7 @@ S publishes A&B
 describe("renderEventFlowToSvg — data-node-id", () => {
   it("emits an id on the producer, channel, event and consumer boxes", () => {
     const flow = flowFrom(FAN_OUT);
-    const layout = layoutEventFlow(flow);
+    const layout = layoutFlow(projectEventFlowToFlowView(flow));
     const svg = renderEventFlowToSvg(layout);
     const rendered = new Set(
       Array.from(documentOf(svg).querySelectorAll("[data-node-id]")).map(
@@ -320,7 +321,7 @@ describe("eventFlowCanvasSize", () => {
   });
 
   it("keeps a sane minimum for an empty layout", () => {
-    const empty = layoutEventFlow({ statements: [] });
+    const empty = layoutFlow(projectEventFlowToFlowView({ statements: [] }));
     const size = eventFlowCanvasSize(empty);
     expect(size.width).toBe(EVENT_MARGIN_X * 2);
     expect(size.height).toBeGreaterThan(0);

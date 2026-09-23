@@ -6,6 +6,7 @@
  * the editor never computes geometry, the renderer never parses text.
  */
 import type { EventFlow } from "../../domain/eventflow/ast";
+import { projectEventFlowToFlowView } from "../../domain/eventflow/flow-projection";
 import { layoutEventFlow } from "../../layout/eventflow-layout";
 import {
   eventFlowCanvasSize,
@@ -43,7 +44,9 @@ export function renderEventFlowDocument(
   flow: EventFlow | null,
   options: EventFlowRenderOptions = {},
 ): EventFlowDocument {
-  const layout = layoutEventFlow(flow ?? EMPTY_FLOW);
+  const layout = layoutEventFlow(
+    projectEventFlowToFlowView(flow ?? EMPTY_FLOW),
+  );
   return {
     svg: renderEventFlowToSvg(layout, options),
     // Padding changes the canvas the SVG is drawn on, so the size reported to

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { projectEventFlowToFlowView } from "../../../src/domain/eventflow/flow-projection";
 import { layoutEventFlow } from "../../../src/layout/eventflow-layout";
 import { eventFlowCanvasSize } from "../../../src/renderer/svg/eventflow-svg-renderer";
 import {
@@ -84,7 +85,9 @@ describe("renderEventFlowDocument", () => {
   it("reports the canvas size the renderer drew", () => {
     const { flow } = parseEventFlow(VALID);
     const document = renderEventFlowDocument(flow);
-    const size = eventFlowCanvasSize(layoutEventFlow(flow));
+    const size = eventFlowCanvasSize(
+      layoutEventFlow(projectEventFlowToFlowView(flow)),
+    );
     expect(document.width).toBe(size.width);
     expect(document.height).toBe(size.height);
     expect(document.svg).toContain(`width="${size.width}"`);
@@ -93,7 +96,10 @@ describe("renderEventFlowDocument", () => {
   it("reports the padded canvas size when padding is given", () => {
     const { flow } = parseEventFlow(VALID);
     const document = renderEventFlowDocument(flow, { padding: 8 });
-    const size = eventFlowCanvasSize(layoutEventFlow(flow), 8);
+    const size = eventFlowCanvasSize(
+      layoutEventFlow(projectEventFlowToFlowView(flow)),
+      8,
+    );
     expect(document.width).toBe(size.width);
     expect(document.height).toBe(size.height);
   });

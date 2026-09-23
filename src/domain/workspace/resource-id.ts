@@ -17,15 +17,69 @@ import type { ResourceKind } from "./resource";
 /** A stable identifier for a project resource. */
 export type ResourceId = string;
 
-/**
- * What a resource *is*, in documentation terms.
- *
- * Deliberately separate from {@link ResourceKind}, which says which store a file
- * lives in. A future event flow is a new type over an existing (or new) store,
- * and existing links keep resolving either way.
- */
+/** How a resource's content is interpreted. */
+export type ResourceRepresentation = "sequence" | "event-flow" | "markdown";
+
+/** Persisted/API spelling retained for compatibility. */
 export type ResourceType =
-  "sequence-diagram" | "event-flow" | "markdown-document";
+  | "sequence-diagram"
+  | "event-flow"
+  | "markdown-document";
+
+/** The two independent facts derived from a resource type. */
+export interface ResourceClassification {
+  kind: ResourceKind;
+  representation: ResourceRepresentation;
+}
+
+/** Resolve the explicit domain representation from persisted/API terminology. */
+export function resourceRepresentationOfType(
+  type: ResourceType,
+): ResourceRepresentation {
+  switch (type) {
+    case "event-flow":
+      return "event-flow";
+    case "markdown-document":
+      return "markdown";
+    default:
+      return "sequence";
+  }
+}
+
+/** Map a domain representation back to the persisted/API spelling. */
+export function resourceTypeOfRepresentation(
+  representation: ResourceRepresentation,
+): ResourceType {
+  switch (representation) {
+    case "event-flow":
+      return "event-flow";
+    case "markdown":
+      return "markdown-document";
+    default:
+      return "sequence-diagram";
+  }
+}
+
+/** Resolve both resource dimensions from existing persisted information. */
+export function resourceClassificationOf(
+  type: ResourceType,
+): ResourceClassification {
+  const representation = resourceRepresentationOfType(type);
+  return {
+    representation,
+    kind: representation === "markdown" ? "note" : "diagram",
+  };
+}
+
+/** Classify a descriptor while accepting legacy callers that only provide type. */
+export function resourceClassificationOfDescriptor(
+  descriptor: { type: ResourceType } & Partial<ResourceClassification>,
+): ResourceClassification {
+  if (descriptor.kind && descriptor.representation) {
+    return { kind: descriptor.kind, representation: descriptor.representation };
+  }
+  return resourceClassificationOf(descriptor.type);
+}
 
 /**
  * The resource type a stored file kind maps onto.
@@ -40,6 +94,15 @@ export function resourceTypeOf(kind: ResourceKind): ResourceType {
   return kind === "note" ? "markdown-document" : "sequence-diagram";
 }
 
+/** Resolve the representation implied by a file name. */
+export function resourceRepresentationOfName(
+  name: string,
+): ResourceRepresentation {
+  if (/\.md$/i.test(name)) return "markdown";
+  if (/\.eventseq$/i.test(name)) return "event-flow";
+  return "sequence";
+}
+
 /**
  * The resource type a file name implies.
  *
@@ -49,9 +112,7 @@ export function resourceTypeOf(kind: ResourceKind): ResourceType {
  * checks through the UI.
  */
 export function resourceTypeOfName(name: string): ResourceType {
-  if (/\.md$/i.test(name)) return "markdown-document";
-  if (/\.eventseq$/i.test(name)) return "event-flow";
-  return "sequence-diagram";
+  return resourceTypeOfRepresentation(resourceRepresentationOfName(name));
 }
 
 /** The stored file kind a resource type maps back onto. */

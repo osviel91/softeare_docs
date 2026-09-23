@@ -78,6 +78,18 @@ architecture.
   from the project index. Rendering reads the resource through the workspace
   service before selecting the language-specific renderer.
 
+### Resource Dimensions
+
+- `ResourceKind` is the broad stored-resource class: `diagram` or `note`.
+- `ResourceRepresentation` is the language used to interpret content: `sequence`,
+  `event-flow`, or `markdown`. Sequence diagrams and Event Flows are both
+  diagrams; Markdown is a note. Existing persisted/API `type` values remain
+  compatible spellings of these representations.
+- A representation is not a visualization. An Event Flow has representation
+  `event-flow` and can later support multiple views of the same semantic model,
+  such as flow, catalogue, topology, or matrix views. Those views do not create
+  new resource kinds or representations.
+
 ## Known Debt, Not H01 Work
 
 - `ARCHITECTURE.md` contains historical phase and ADR wording that does not

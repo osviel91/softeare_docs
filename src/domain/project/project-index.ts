@@ -31,7 +31,13 @@ import {
   isExternalHref,
   basenameOf,
 } from "../workspace/project-link";
-import type { ResourceId, ResourceType } from "../workspace/resource-id";
+import type { ResourceKind } from "../workspace/resource";
+import type {
+  ResourceId,
+  ResourceRepresentation,
+  ResourceType,
+} from "../workspace/resource-id";
+import { resourceClassificationOfDescriptor } from "../workspace/resource-id";
 import type { MarkdownReferenceKind } from "../../language/markdown/markdown";
 
 /** A resource as the index describes it: stable identity plus current location. */
@@ -42,6 +48,10 @@ export interface ResourceDescriptor {
   projectId: string;
   /** Where the resource lives now (its file name / project-relative path). */
   path: string;
+  /** The broad resource class, independent of its language. */
+  kind?: ResourceKind;
+  /** How the resource content is interpreted. */
+  representation?: ResourceRepresentation;
   /** What the resource is. */
   type: ResourceType;
   /** The display title (a diagram `title`, a document's first heading). */
@@ -454,7 +464,11 @@ export function buildProjectIndex(
 
   const resources = ordered.map((analysis) => analysis.descriptor);
   const diagrams: DiagramDescriptor[] = ordered
-    .filter((analysis) => analysis.descriptor.type === "sequence-diagram")
+    .filter(
+      (analysis) =>
+        resourceClassificationOfDescriptor(analysis.descriptor)
+          .representation === "sequence",
+    )
     .map((analysis) => ({
       ...analysis.descriptor,
       type: "sequence-diagram",
@@ -463,7 +477,11 @@ export function buildProjectIndex(
       titled: analysis.descriptor.title !== analysis.descriptor.path,
     }));
   const eventFlows: EventFlowDescriptor[] = ordered
-    .filter((analysis) => analysis.descriptor.type === "event-flow")
+    .filter(
+      (analysis) =>
+        resourceClassificationOfDescriptor(analysis.descriptor)
+          .representation === "event-flow",
+    )
     .map((analysis) => ({
       ...analysis.descriptor,
       type: "event-flow",
@@ -473,7 +491,11 @@ export function buildProjectIndex(
       channels: analysis.metrics.channels,
     }));
   const documents: DocumentDescriptor[] = ordered
-    .filter((analysis) => analysis.descriptor.type === "markdown-document")
+    .filter(
+      (analysis) =>
+        resourceClassificationOfDescriptor(analysis.descriptor)
+          .representation === "markdown",
+    )
     .map((analysis) => ({
       ...analysis.descriptor,
       type: "markdown-document",

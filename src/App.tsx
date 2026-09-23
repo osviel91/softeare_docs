@@ -116,8 +116,8 @@ import {
   eventFlowNodeById,
 } from "./domain/eventflow/node-lookup";
 import {
+  resourceRepresentationOfName,
   resourceTypeOfName,
-  type ResourceType,
 } from "./domain/workspace/resource-id";
 import ProblemsPanel from "./features/problems/ProblemsPanel";
 import QuickOpen from "./features/quickopen/QuickOpen";
@@ -1208,12 +1208,12 @@ export default function App() {
 
   // Which language the active document is written in. A project holds three, and
   // the extension is what says so — the same rule a folder project uses.
-  const activeDocumentType: ResourceType = selectedDiagram
-    ? resourceTypeOfName(selectedDiagram.name)
+  const activeRepresentation = selectedDiagram
+    ? resourceRepresentationOfName(selectedDiagram.name)
     : selectedNote
-      ? "markdown-document"
-      : "sequence-diagram";
-  const isEventFlow = activeDocumentType === "event-flow";
+      ? "markdown"
+      : "sequence";
+  const isEventFlow = activeRepresentation === "event-flow";
 
   // An event flow is parsed once per edit and its diagnostics and AST are derived
   // from that single analysis, so the two can never disagree.
@@ -1341,7 +1341,7 @@ export default function App() {
             { label: "Kind", value: node.kind },
             {
               label: "Declared",
-              value: `${activeDocumentType === "event-flow" ? "this flow" : ""}:${declared}`,
+              value: `${activeRepresentation === "event-flow" ? "this flow" : ""}:${declared}`,
             },
           ],
         };
@@ -1361,7 +1361,7 @@ export default function App() {
       ast,
       index,
       activeResourceId,
-      activeDocumentType,
+      activeRepresentation,
     ],
   );
 

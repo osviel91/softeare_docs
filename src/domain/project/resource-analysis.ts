@@ -28,6 +28,7 @@ import type {
   MarkdownHeading,
 } from "./project-index";
 import { referenceKindOf } from "./project-index";
+import { resourceClassificationOfDescriptor } from "../workspace/resource-id";
 import { analyze } from "../../language/analyze";
 import {
   analyzeEventFlow,
@@ -306,6 +307,8 @@ export function analyzeResource(
   descriptor: ResourceDescriptor,
   content: string,
 ): ResourceAnalysis {
+  const classification = resourceClassificationOfDescriptor(descriptor);
+  descriptor = { ...descriptor, ...classification };
   const base = {
     fingerprint: fingerprintContent(content),
     descriptor,
@@ -317,7 +320,7 @@ export function analyzeResource(
     metrics: { participants: 0, messages: 0, words: 0 },
   };
 
-  if (descriptor.type === "sequence-diagram") {
+  if (classification.representation === "sequence") {
     const { ast } = analyze(content);
     const declaredTitle = diagramTitle(content);
     return {
@@ -342,7 +345,7 @@ export function analyzeResource(
     };
   }
 
-  if (descriptor.type === "event-flow") {
+  if (classification.representation === "event-flow") {
     const { flow, diagnostics } = analyzeEventFlow(content);
     const publications = publicationsOf(flow);
     const subscriptions = subscriptionsOf(flow);

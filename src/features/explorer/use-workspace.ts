@@ -236,7 +236,8 @@ interface ProjectSetters {
 function metadataFileOf(file: DiagramFile | NoteFile): MetadataFile {
   // The stored kind cannot separate the two diagram languages — both live in the
   // diagram store — so the file name decides, exactly as it does on disk.
-  const type = resourceTypeOfName(file.name);
+  const type =
+    "markdown" in file ? "markdown-document" : resourceTypeOfName(file.name);
   return {
     path: file.name,
     type,

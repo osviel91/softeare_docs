@@ -20,6 +20,7 @@ import {
   type ProjectMetadata,
 } from "../domain/workspace/metadata";
 import {
+  resourceClassificationOf,
   resourceKindOf,
   resourceTypeOfName,
 } from "../domain/workspace/resource-id";
@@ -158,13 +159,15 @@ export function descriptorFor(
   const isNote = "markdown" in file;
   const record = metadata.resources.find((entry) => entry.path === file.name);
   if (!record) return null;
+  const type = record.type ?? resourceTypeOfName(file.name);
   return {
     id: record.id,
     projectId,
     path: file.name,
+    ...resourceClassificationOf(type),
     // The record knows the type; a file the record has not seen yet still gets
     // one from its name, so a newly created event flow is never mistyped.
-    type: record.type ?? resourceTypeOfName(file.name),
+    type,
     title: isNote
       ? noteDisplayName(file.name, file.markdown)
       : diagramDisplayName(file.name, file.source),

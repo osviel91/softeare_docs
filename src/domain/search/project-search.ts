@@ -18,6 +18,7 @@
  * both show where the hit is and put the caret on it.
  */
 import type { ResourceKind } from "../workspace/resource";
+import type { ResourceRepresentation } from "../workspace/resource-id";
 import type { ResourceMetadata } from "../workspace/resource-metadata";
 
 /**
@@ -29,6 +30,8 @@ import type { ResourceMetadata } from "../workspace/resource-metadata";
 export interface SearchDocument {
   /** Which kind of resource this document is. */
   kind: ResourceKind;
+  /** How the document content is interpreted, when known. */
+  representation?: ResourceRepresentation;
   /** Stable id of the backing file. */
   id: string;
   /** The project the file belongs to. */

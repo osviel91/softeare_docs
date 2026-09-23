@@ -4,6 +4,8 @@ import {
   isResourceId,
   resourceIdPrefix,
   resourceKindOf,
+  resourceClassificationOf,
+  resourceRepresentationOfName,
   resourceTypeOf,
   slugify,
   uniqueResourceId,
@@ -30,6 +32,21 @@ describe("resource ids", () => {
     expect(resourceTypeOf("note")).toBe("markdown-document");
     expect(resourceKindOf("sequence-diagram")).toBe("diagram");
     expect(resourceKindOf("markdown-document")).toBe("note");
+    expect(resourceClassificationOf("sequence-diagram")).toEqual({
+      kind: "diagram",
+      representation: "sequence",
+    });
+    expect(resourceClassificationOf("event-flow")).toEqual({
+      kind: "diagram",
+      representation: "event-flow",
+    });
+    expect(resourceClassificationOf("markdown-document")).toEqual({
+      kind: "note",
+      representation: "markdown",
+    });
+    expect(resourceRepresentationOfName("orders.eventseq")).toBe("event-flow");
+    expect(resourceRepresentationOfName("checkout.seq")).toBe("sequence");
+    expect(resourceRepresentationOfName("notes.md")).toBe("markdown");
     expect(resourceIdPrefix("sequence-diagram")).toBe("diagram");
     expect(resourceIdPrefix("markdown-document")).toBe("doc");
   });

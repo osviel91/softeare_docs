@@ -11,6 +11,7 @@
  * currently holds, so there is no index to keep in sync.
  */
 import type { SearchDocument } from "../../domain/search/project-search";
+import { resourceRepresentationOfName } from "../../domain/workspace/resource-id";
 import type {
   DiagramFile,
   NoteFile,
@@ -53,6 +54,7 @@ export function buildSearchDocuments(
 
   const diagramDocuments: SearchDocument[] = diagrams.map((diagram) => ({
     kind: "diagram",
+    representation: resourceRepresentationOfName(diagram.name),
     id: diagram.id,
     projectId: diagram.projectId,
     projectName: projectNames.get(diagram.projectId) ?? diagram.projectId,
@@ -65,6 +67,7 @@ export function buildSearchDocuments(
 
   const noteDocuments: SearchDocument[] = notes.map((note) => ({
     kind: "note",
+    representation: "markdown",
     id: note.id,
     projectId: note.projectId,
     projectName: projectNames.get(note.projectId) ?? note.projectId,

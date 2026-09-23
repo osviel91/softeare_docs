@@ -127,6 +127,8 @@ describe("analyzeResource", () => {
     ]);
     expect(analysis.symbols[0].kind).toBe("participant");
     expect(analysis.symbols[0].sourceRange?.start.line).toBe(1);
+    expect(analysis.descriptor.kind).toBe("diagram");
+    expect(analysis.descriptor.representation).toBe("sequence");
   });
 
   it("infers an architectural role from a lifeline's name", () => {
@@ -159,6 +161,8 @@ describe("analyzeResource", () => {
       "resource-link",
     ]);
     expect(analysis.metrics.words).toBeGreaterThan(5);
+    expect(analysis.descriptor.kind).toBe("note");
+    expect(analysis.descriptor.representation).toBe("markdown");
   });
 
   it("marks a declared lifeline nothing refers to", () => {
@@ -257,6 +261,10 @@ describe("project index", () => {
         },
       ]).metadata,
     );
+    expect(built.resources[0]).toMatchObject({
+      kind: "diagram",
+      representation: "event-flow",
+    });
 
     // The resource is a symbol of its own kind, with no declaration site.
     const resource = built.participants.find(

@@ -174,7 +174,12 @@ export default function LoginScreen({ auth }: LoginScreenProps) {
         )}
 
         <div className="login-divider"><span>or</span></div>
-        <button type="button" className="button login-google" onClick={auth.signIn}>
+        <button
+          type="button"
+          className="button login-google"
+          data-testid="login-google"
+          onClick={auth.signIn}
+        >
           Continue with Google
         </button>
 

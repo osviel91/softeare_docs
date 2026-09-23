@@ -559,7 +559,9 @@ async function setNextIdentity(idp, subject) {
  */
 async function signIn(page, idp, subject) {
   await setNextIdentity(idp, subject);
-  const button = page.locator('[data-testid="toolbar-sign-in"]');
+  const button = page
+    .locator('[data-testid="login-google"], [data-testid="toolbar-sign-in"]')
+    .first();
   await button.waitFor({ state: "visible", timeout: UI_TIMEOUT_MS });
   await button.click();
   await page.locator('[data-testid="toolbar-account"]').waitFor({
@@ -568,8 +570,17 @@ async function signIn(page, idp, subject) {
   });
 }
 
+/** Wait for either the login gate or the authenticated application shell. */
+async function waitForAuthEntry(page) {
+  await page
+    .locator('[data-testid="login-page"], [data-testid="app-shell"]')
+    .first()
+    .waitFor({ state: "visible", timeout: UI_TIMEOUT_MS });
+}
+
 /** Create a server project from the switcher and wait until it is open. */
 async function createServerProject(page, name) {
+  await expandServerPanel(page);
   await page
     .locator('[data-testid="workspace-new-server-project-input"]')
     .fill(name);
@@ -579,8 +590,18 @@ async function createServerProject(page, name) {
   await openServerProject(page, name);
 }
 
+/** Open the server workspace section, which is collapsed by default. */
+async function expandServerPanel(page) {
+  const toggle = page.locator('[data-testid="workspace-server-toggle"]');
+  await toggle.waitFor({ state: "visible", timeout: UI_TIMEOUT_MS });
+  if ((await toggle.getAttribute("aria-expanded")) !== "true") {
+    await toggle.click();
+  }
+}
+
 /** Open a server project from the switcher and wait for its explorer row. */
 async function openServerProject(page, name) {
+  await expandServerPanel(page);
   const entry = page
     .locator('[data-testid="workspace-server-project"]')
     .filter({ hasText: name });
@@ -699,11 +720,17 @@ async function startPreviewServer() {
  *   enough to show the tree needs no scroll, which is why `main` opens the
  *   browser with one.
  */
-async function runChecks(page) {
+async function runChecks(page, idp) {
   const consoleErrors = [];
   page.on("pageerror", (error) => consoleErrors.push(String(error)));
 
   await page.goto(BASE_URL, { waitUntil: "domcontentloaded" });
+  await waitForAuthEntry(page);
+  await signIn(page, idp, {
+    sub: "e2e-smoke-editor",
+    name: "E2E Smoke Editor",
+    email: "smoke-editor@e2e.test",
+  });
 
   console.log("\nShell:");
   await page.locator('[data-testid="app-shell"]').waitFor({
@@ -1916,10 +1943,7 @@ async function runServerChecks(browser, idp, apiBase, mcpBase) {
       const page = await context.newPage();
       try {
         await page.goto(BASE_URL, { waitUntil: "domcontentloaded" });
-        await page.locator('[data-testid="app-shell"]').waitFor({
-          state: "visible",
-          timeout: UI_TIMEOUT_MS,
-        });
+        await waitForAuthEntry(page);
 
         await signIn(page, idp, owner);
         check(
@@ -1987,10 +2011,7 @@ async function runServerChecks(browser, idp, apiBase, mcpBase) {
       const page = await context.newPage();
       try {
         await page.goto(BASE_URL, { waitUntil: "domcontentloaded" });
-        await page.locator('[data-testid="app-shell"]').waitFor({
-          state: "visible",
-          timeout: UI_TIMEOUT_MS,
-        });
+        await waitForAuthEntry(page);
         await signIn(page, idp, owner);
 
         await createServerProject(page, "Docs Server");
@@ -2048,10 +2069,7 @@ async function runServerChecks(browser, idp, apiBase, mcpBase) {
       try {
         // The owner creates the shared document.
         await ownerPage.goto(BASE_URL, { waitUntil: "domcontentloaded" });
-        await ownerPage.locator('[data-testid="app-shell"]').waitFor({
-          state: "visible",
-          timeout: UI_TIMEOUT_MS,
-        });
+        await waitForAuthEntry(ownerPage);
         await signIn(ownerPage, idp, owner);
         await createServerProject(ownerPage, "Conflict Server");
         await createDocument(
@@ -2084,10 +2102,7 @@ async function runServerChecks(browser, idp, apiBase, mcpBase) {
         // The second context reads the same document, and so holds the revision
         // the first save produced.
         await otherPage.goto(BASE_URL, { waitUntil: "domcontentloaded" });
-        await otherPage.locator('[data-testid="app-shell"]').waitFor({
-          state: "visible",
-          timeout: UI_TIMEOUT_MS,
-        });
+        await waitForAuthEntry(otherPage);
         await signIn(otherPage, idp, owner);
         await openServerProject(otherPage, "Conflict Server");
         await otherPage.locator('[data-testid="dsl-textarea"]').waitFor({
@@ -2191,10 +2206,7 @@ async function runServerChecks(browser, idp, apiBase, mcpBase) {
       const viewerPage = await viewerContext.newPage();
       try {
         await ownerPage.goto(BASE_URL, { waitUntil: "domcontentloaded" });
-        await ownerPage.locator('[data-testid="app-shell"]').waitFor({
-          state: "visible",
-          timeout: UI_TIMEOUT_MS,
-        });
+        await waitForAuthEntry(ownerPage);
         await signIn(ownerPage, idp, owner);
         await createServerProject(ownerPage, "Viewer Server");
         await createDocument(
@@ -2226,10 +2238,7 @@ async function runServerChecks(browser, idp, apiBase, mcpBase) {
 
         // The second person signs in, and the owner adds them as a viewer.
         await viewerPage.goto(BASE_URL, { waitUntil: "domcontentloaded" });
-        await viewerPage.locator('[data-testid="app-shell"]').waitFor({
-          state: "visible",
-          timeout: UI_TIMEOUT_MS,
-        });
+        await waitForAuthEntry(viewerPage);
         await signIn(viewerPage, idp, viewer);
         const me = await apiRequest(viewerPage, "/api/me");
         const viewerId = me.json?.user?.id;
@@ -2360,72 +2369,25 @@ async function runServerChecks(browser, idp, apiBase, mcpBase) {
       const page = await context.newPage();
       try {
         await page.goto(BASE_URL, { waitUntil: "domcontentloaded" });
-        await page.locator('[data-testid="app-shell"]').waitFor({
-          state: "visible",
-          timeout: UI_TIMEOUT_MS,
-        });
-        await page.locator('[data-testid="toolbar-sign-in"]').waitFor({
+        await page.locator('[data-testid="login-page"]').waitFor({
           state: "visible",
           timeout: UI_TIMEOUT_MS,
         });
         check(
-          "an anonymous visitor is offered toolbar sign-in",
+          "an anonymous visitor is kept on the login screen",
           true,
         );
         check(
-          "the server panel stays hidden while signed out",
-          (await page.locator('[data-testid="workspace-server-toggle"]').count()) ===
-            0,
+          "the application shell is hidden while signed out",
+          (await page.locator('[data-testid="app-shell"]').count()) === 0,
         );
         check(
-          "no server projects are listed while signed out",
-          (await page
-            .locator('[data-testid="workspace-server-project"]')
-            .count()) === 0,
-        );
-
-        await page
-          .locator('[data-testid="project-name-input"]')
-          .fill("Anonymous Local");
-        await page.locator('[data-testid="create-project-button"]').click();
-        const row = page
-          .locator('[data-testid="explorer-project"]')
-          .filter({ hasText: "Anonymous Local" });
-        await row.waitFor({ state: "visible", timeout: UI_TIMEOUT_MS });
-        check("a local project can still be created while signed out", true);
-
-        await createDocument(
-          page,
-          "Anonymous Local",
-          "context-menu-new-diagram",
-        );
-        await page.locator('[data-testid="dsl-textarea"]').waitFor({
-          state: "visible",
-          timeout: UI_TIMEOUT_MS,
-        });
-        await page
-          .locator('[data-testid="dsl-textarea"]')
-          .fill(
-            [
-              "title Local Anonymous",
-              "participant One",
-              "participant Two",
-              `One ->> Two: ${LOCAL_MARKER}`,
-              "",
-            ].join("\n"),
-          );
-        await waitForText(
-          page.locator('[data-testid="preview-svg"]'),
-          (text) => text.includes(LOCAL_MARKER),
-          "the local diagram preview",
+          "Google sign-in is available on the login screen",
+          (await page.locator('[data-testid="login-google"]').count()) === 1,
         );
         check(
-          "a local diagram still edits and previews while signed out",
-          true,
-        );
-        check(
-          "the local diagram is in the explorer",
-          (await row.locator('[data-testid="explorer-diagram"]').count()) === 1,
+          "local workspace controls are hidden while signed out",
+          (await page.locator('[data-testid="project-name-input"]').count()) === 0,
         );
       } finally {
         await context.close();
@@ -2440,10 +2402,7 @@ async function runServerChecks(browser, idp, apiBase, mcpBase) {
       const page = await context.newPage();
       try {
         await page.goto(BASE_URL, { waitUntil: "domcontentloaded" });
-        await page.locator('[data-testid="app-shell"]').waitFor({
-          state: "visible",
-          timeout: UI_TIMEOUT_MS,
-        });
+        await waitForAuthEntry(page);
         await signIn(page, idp, owner);
 
         // The browser writes a document the agent will read.
@@ -2652,7 +2611,7 @@ async function main() {
       viewport: { width: 1440, height: 1600 },
     });
     const checksPage = await checksContext.newPage();
-    await runChecks(checksPage);
+    await runChecks(checksPage, idp);
     await checksContext.close();
     await runServerChecks(
       browser,

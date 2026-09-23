@@ -177,7 +177,7 @@ describe("App — event flows", () => {
     await newEventFlow();
     const catalogFlow = FLOW.replace(
       "event OrderCreated",
-      "event OrderCreated {\n  schema: orders.v1\n  custom: retained\n}",
+      "event OrderCreated {\n  description: Emitted after persistence.\n  schema: orders.v1\n  custom: retained\n}",
     );
     fireEvent.change(screen.getByTestId("dsl-textarea"), {
       target: { value: catalogFlow },
@@ -191,6 +191,9 @@ describe("App — event flows", () => {
       "OrderCreated",
     );
     expect(screen.getByTestId("event-catalog")).toHaveTextContent("orders.v1");
+    expect(screen.getByTestId("event-catalog")).toHaveTextContent(
+      "Emitted after persistence.",
+    );
     expect(screen.getByTestId("event-catalog")).toHaveTextContent(
       "OrderService",
     );

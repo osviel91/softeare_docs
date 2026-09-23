@@ -70,6 +70,8 @@ export enum EventFlowDiagnosticCode {
   DuplicateBroker = "eventflow.duplicate-broker",
   /** A metadata key was repeated inside one event's block. */
   DuplicateMetadataKey = "eventflow.duplicate-metadata-key",
+  /** A quoted description was not closed. */
+  MalformedDescription = "eventflow.malformed-description",
   /** More than one `title` line. */
   DuplicateTitle = "eventflow.duplicate-title",
   /** A `publishes` line names a service that was never declared. */
@@ -243,6 +245,19 @@ export function parseEventFlow(source: string): EventFlowParseResult {
       if (tokens.length >= 3 && tokens[1].type === "colon") {
         const key = first.value;
         const value = line.text.slice(tokens[2].range.start.column).trim();
+        const normalizedDescription =
+          key.toLowerCase() === "description"
+            ? parseDescription(value)
+            : { value, valid: true };
+        if (!normalizedDescription.valid) {
+          diagnostics.push({
+            severity: "error",
+            message:
+              "A quoted event description must end with its opening quote",
+            code: EventFlowDiagnosticCode.MalformedDescription,
+            range: lineRange(line),
+          });
+        }
         if (metadataKeys.has(key.toLowerCase())) {
           diagnostics.push({
             severity: "warning",
@@ -251,13 +266,21 @@ export function parseEventFlow(source: string): EventFlowParseResult {
             range: lineRange(line),
           });
         }
-        metadataKeys.add(key.toLowerCase());
         const entry: EventMetadataEntry = {
           key,
           value,
           range: lineRange(line),
         };
         metadataTarget.metadata.push(entry);
+        if (
+          key.toLowerCase() === "description" &&
+          !metadataKeys.has("description") &&
+          normalizedDescription.valid &&
+          normalizedDescription.value !== ""
+        ) {
+          metadataTarget.description = normalizedDescription.value;
+        }
+        metadataKeys.add(key.toLowerCase());
         metadataTarget.range = {
           start: metadataTarget.range.start,
           end: entry.range.end,
@@ -455,6 +478,23 @@ export function parseEventFlow(source: string): EventFlowParseResult {
   }
 
   return { flow: { title, statements }, diagnostics };
+}
+
+/** Normalize the one conventional metadata value with user-facing semantics. */
+function parseDescription(value: string): { value: string; valid: boolean } {
+  if (value === "") return { value: "", valid: true };
+  const quote = value[0];
+  if (quote !== '"' && quote !== "'") return { value, valid: true };
+  if (value.length < 2 || value[value.length - 1] !== quote)
+    return { value, valid: false };
+  return {
+    value: value
+      .slice(1, -1)
+      .replaceAll(`\\${quote}`, quote)
+      .replaceAll(`\\\\`, "\\")
+      .trim(),
+    valid: true,
+  };
 }
 
 /**

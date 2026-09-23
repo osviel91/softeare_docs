@@ -1323,6 +1323,12 @@ body {
   font-size: 12px;
 }
 
+.event-catalog__description,
+.event-topology__description {
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
 .event-catalog__metadata div {
   display: grid;
   grid-template-columns: minmax(70px, 0.4fr) 1fr;

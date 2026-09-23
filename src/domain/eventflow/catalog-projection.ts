@@ -31,6 +31,7 @@ export interface CatalogSubscription {
 export interface CatalogEvent {
   name: string;
   nodeId: AstNodeId;
+  description?: string;
   metadata: EventMetadataEntry[];
   publications: CatalogPublication[];
   subscriptions: CatalogSubscription[];
@@ -101,6 +102,7 @@ export function projectEventFlowToCatalog(flow: EventFlow): CatalogViewModel {
               firstRelationship?.type ?? "event",
               firstRelationship?.range ?? emptyRange(),
             ),
+        description: declaration?.type === "event" ? declaration.description : undefined,
         metadata: declaration?.type === "event" ? declaration.metadata : [],
         publications: (publications.get(name) ?? []).map((entry) =>
           relationshipForPublication(entry, declaredChannels),

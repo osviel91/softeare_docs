@@ -209,6 +209,41 @@ describe("event-flow parser", () => {
     ]);
   });
 
+  it("projects the first description entry as a normalized semantic field", () => {
+    const { flow, diagnostics } = parseEventFlow(
+      [
+        "event OrderCreated {",
+        '  description: " Emitted after persistence. "',
+        "  domain: Orders",
+        "  description: ignored",
+        "  custom: retained",
+        "}",
+      ].join("\n"),
+    );
+    const [event] = eventsOf(flow);
+    expect(event.description).toBe("Emitted after persistence.");
+    expect(event.metadata.map((entry) => entry.key)).toEqual([
+      "description",
+      "domain",
+      "description",
+      "custom",
+    ]);
+    expect(event.metadata[0].range.start.line).toBe(1);
+    expect(diagnostics.map((diagnostic) => diagnostic.code)).toContain(
+      EventFlowDiagnosticCode.DuplicateMetadataKey,
+    );
+  });
+
+  it("normalizes empty descriptions and reports unclosed quotes", () => {
+    const empty = eventsOf(parseEventFlow('event A {\n  description: ""\n}').flow)[0];
+    expect(empty.description).toBeUndefined();
+
+    const malformed = parseEventFlow('event A {\n  description: "unfinished\n}');
+    expect(malformed.diagnostics.map((diagnostic) => diagnostic.code)).toContain(
+      EventFlowDiagnosticCode.MalformedDescription,
+    );
+  });
+
   it("reports a malformed declaration instead of guessing", () => {
     const { diagnostics } = parseEventFlow("event");
     expect(diagnostics[0].code).toBe(

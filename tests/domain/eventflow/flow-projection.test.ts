@@ -36,7 +36,21 @@ BillingService publishes Second
     expect(view.rows[0].metadata).toEqual([
       expect.objectContaining({ key: "schema", value: "orders.v1" }),
     ]);
+    expect(view.rows[0].description).toBeUndefined();
     expect(view.rows.every((row) => !("eventBox" in row))).toBe(true);
+  });
+
+  it("carries annotations without affecting causal ordering", () => {
+    const view = project(`event First {
+  description: The first event.
+  custom: retained
+}
+event Second
+First publishes Second
+`);
+    expect(view.rows.map((row) => row.event)).toEqual(["First", "Second"]);
+    expect(view.rows[0].description).toBe("The first event.");
+    expect(view.rows[0].metadata).toHaveLength(2);
   });
 
   it("keeps the first producer and distinct consumers in source order", () => {

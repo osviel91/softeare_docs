@@ -34,6 +34,13 @@ export interface EventMetadataEntry {
   range: SourceRange;
 }
 
+/** Conventional keys get prominent Catalog treatment; all other keys remain valid. */
+export const CONVENTIONAL_EVENT_METADATA_KEYS = [
+  "domain",
+  "version",
+  "schema",
+] as const;
+
 /**
  * An `event <Name>` declaration.
  *
@@ -45,6 +52,8 @@ export interface EventMetadataEntry {
 export interface EventDeclaration {
   type: "event";
   name: string;
+  /** The first `description` metadata value, normalized for consumers. */
+  description?: string;
   metadata: EventMetadataEntry[];
   range: SourceRange;
 }

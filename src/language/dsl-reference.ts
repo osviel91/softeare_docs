@@ -180,8 +180,9 @@ export const EVENT_FLOW_CONSTRUCTS: DslConstruct[] = [
     name: "Event",
     syntax: "event <name> [{\n  <key>: <value>\n}]",
     summary:
-      "A fact other services react to. The optional block holds arbitrary `key: value` metadata — version, domain, schema, correlation key, partition key — so the model is not limited to a fixed set of fields.",
-    example: "event OrderCreated {\n  version: 2\n  domain: Orders\n}",
+      "A fact other services react to. The optional block holds an optional `description: <text>` plus arbitrary `key: value` metadata. `domain`, `version`, and `schema` are presented prominently, but unknown keys remain valid.",
+    example:
+      "event OrderCreated {\n  description: Emitted after an order is accepted and persisted.\n  domain: Orders\n  version: v2\n  schema: order-created-v2\n}",
   },
   {
     name: "Broker",

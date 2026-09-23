@@ -24,6 +24,7 @@ A publishes Later to orders
       "schema",
       "custom",
     ]);
+    expect(view.events[0].description).toBeUndefined();
     expect(view.events[1].publications.map((entry) => entry.producer)).toEqual([
       "A",
       "A",
@@ -32,6 +33,20 @@ A publishes Later to orders
       consumer: "B",
       channel: { name: "orders", kind: "topic" },
     });
+  });
+
+  it("exposes the description without dropping arbitrary metadata", () => {
+    const [event] = project(`event Created {
+  description: Emitted after persistence.
+  domain: Orders
+  custom: retained
+}`).events;
+    expect(event.description).toBe("Emitted after persistence.");
+    expect(event.metadata.map((entry) => entry.key)).toEqual([
+      "description",
+      "domain",
+      "custom",
+    ]);
   });
 
   it("handles empty and partial flows", () => {

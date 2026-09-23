@@ -70,6 +70,12 @@ export default function DslReference() {
         Channels and brokers remain available as transport context on those
         relationships rather than becoming a second graph language.
       </p>
+      <p className="docs__intro">
+        Resource metadata describes the Event Flow file as a whole. Event
+        annotations live inside an event declaration and describe that
+        individual event; `description`, `domain`, `version`, and `schema` are
+        conventional keys, while arbitrary metadata remains supported.
+      </p>
       <ConstructSection
         title="Sequence diagrams"
         constructs={DSL_CONSTRUCTS}

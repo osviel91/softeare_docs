@@ -4,6 +4,7 @@ import {
   servicesOf,
   type ChannelDeclaration,
   type EventFlow,
+  type EventMetadataEntry,
   type EventPublication,
   type EventSubscription,
   type ServiceRole,
@@ -25,6 +26,8 @@ export interface TopologyService {
 
 export interface TopologyEvent {
   name: string;
+  description?: string;
+  metadata: EventMetadataEntry[];
   /** All source relationships represented by this aggregate event. */
   publicationNodeIds: AstNodeId[];
   subscriptionNodeIds: AstNodeId[];
@@ -104,6 +107,8 @@ export function projectEventFlowToTopology(flow: EventFlow): TopologyViewModel {
         if (!topologyEvent) {
           topologyEvent = {
             name: event,
+            description: eventDeclaration(flow, event)?.description,
+            metadata: eventDeclaration(flow, event)?.metadata ?? [],
             publicationNodeIds: [],
             subscriptionNodeIds: [],
             channels: [],
@@ -142,6 +147,13 @@ export function projectEventFlowToTopology(flow: EventFlow): TopologyViewModel {
     services,
     connections: [...connections.values()],
   };
+}
+
+function eventDeclaration(flow: EventFlow, name: string) {
+  const declaration = flow.statements.find(
+    (statement) => statement.type === "event" && statement.name === name,
+  );
+  return declaration?.type === "event" ? declaration : undefined;
 }
 
 function serviceNodeId(

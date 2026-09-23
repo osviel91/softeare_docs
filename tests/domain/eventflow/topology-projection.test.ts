@@ -53,6 +53,27 @@ service C
     expect(topology.connections).toEqual([]);
   });
 
+  it("keeps event annotations in relationship details, not graph geometry", () => {
+    const topology = project(`event Created {
+  description: Emitted after persistence.
+  domain: Orders
+}
+service Orders
+service Billing
+Orders publishes Created
+Billing consumes Created
+`);
+    expect(topology.connections[0].events[0]).toMatchObject({
+      name: "Created",
+      description: "Emitted after persistence.",
+      metadata: [
+        { key: "description", value: "Emitted after persistence." },
+        { key: "domain", value: "Orders" },
+      ],
+    });
+    expect(layoutTopology(topology).nodes).toHaveLength(2);
+  });
+
   it("is deterministic for cycles and repeated relationships", () => {
     const source = `event Ping
 event Pong

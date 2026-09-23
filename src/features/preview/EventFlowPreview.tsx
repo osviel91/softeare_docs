@@ -14,7 +14,11 @@ import { renderEventFlowDocument } from "../../renderer/pipeline/eventflow-to-sv
 import { renderEventFlowTopologyDocument } from "../../renderer/pipeline/eventflow-to-topology-svg";
 import { projectEventFlowToCatalog } from "../../domain/eventflow/catalog-projection";
 import { projectEventFlowToTopology } from "../../domain/eventflow/topology-projection";
-import type { EventFlow } from "../../domain/eventflow/ast";
+import {
+  CONVENTIONAL_EVENT_METADATA_KEYS,
+  type EventFlow,
+  type EventMetadataEntry,
+} from "../../domain/eventflow/ast";
 import DiagramViewport from "./DiagramViewport";
 
 export type EventFlowView = "flow" | "catalog" | "topology";
@@ -116,9 +120,14 @@ export default function EventFlowPreview({
                   >
                     {event.name}
                   </button>
-                  {event.metadata.length > 0 && (
+                  {event.description && (
+                    <p className="event-catalog__description">
+                      {event.description}
+                    </p>
+                  )}
+                  {catalogMetadata(event.metadata).length > 0 && (
                     <dl className="event-catalog__metadata">
-                      {event.metadata.map((entry) => (
+                      {catalogMetadata(event.metadata).map((entry) => (
                         <div key={`${entry.key}-${entry.value}`}>
                           <dt>{entry.key}</dt>
                           <dd>{entry.value}</dd>
@@ -247,6 +256,21 @@ export default function EventFlowPreview({
                           >
                             {event.name}
                           </button>
+                          {event.description && (
+                            <p className="event-topology__description">
+                              {event.description}
+                            </p>
+                          )}
+                          {catalogMetadata(event.metadata).length > 0 && (
+                            <dl className="event-catalog__metadata">
+                              {catalogMetadata(event.metadata).map((entry) => (
+                                <div key={`${entry.key}-${entry.value}`}>
+                                  <dt>{entry.key}</dt>
+                                  <dd>{entry.value}</dd>
+                                </div>
+                              ))}
+                            </dl>
+                          )}
                           {event.channels.length > 0 && (
                             <span>
                               {" "}
@@ -295,4 +319,22 @@ export default function EventFlowPreview({
       />
     </div>
   );
+}
+
+function catalogMetadata(metadata: EventMetadataEntry[]): EventMetadataEntry[] {
+  return metadata
+    .filter((entry) => entry.key.toLowerCase() !== "description")
+    .sort(
+      (left, right) =>
+        Number(
+          !CONVENTIONAL_EVENT_METADATA_KEYS.includes(
+            left.key.toLowerCase() as (typeof CONVENTIONAL_EVENT_METADATA_KEYS)[number],
+          ),
+        ) -
+        Number(
+          !CONVENTIONAL_EVENT_METADATA_KEYS.includes(
+            right.key.toLowerCase() as (typeof CONVENTIONAL_EVENT_METADATA_KEYS)[number],
+          ),
+        ),
+    );
 }

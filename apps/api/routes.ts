@@ -292,6 +292,108 @@ export function createRouter(dependencies: AppDependencies): Router {
       }),
   );
 
+  // ---- Change proposals -----------------------------------------------------
+
+  router.get(
+    "/api/projects/:projectId/resources/:resourceId/proposals",
+    async (request, params) =>
+      guarded(correlationId(request), async () => {
+        const context = await contextOf(request);
+        const proposals = await dependencies.proposals.list(
+          context,
+          params.projectId,
+          params.resourceId,
+        );
+        return json(200, { proposals: proposals.map(proposalView) });
+      }),
+  );
+
+  router.post(
+    "/api/projects/:projectId/resources/:resourceId/proposals",
+    async (request, params) =>
+      guarded(correlationId(request), async () => {
+        const context = await contextOf(request);
+        const body = parseJsonBody(request.body);
+        const proposal = await dependencies.proposals.create(
+          context,
+          params.projectId,
+          params.resourceId,
+          {
+            title: requireBodyString(body, "title"),
+            ...(typeof body.description === "string"
+              ? { description: body.description }
+              : {}),
+            ...(typeof body.baseRevision === "number"
+              ? { baseRevision: body.baseRevision }
+              : {}),
+          },
+        );
+        return json(201, { proposal: proposalView(proposal) });
+      }),
+  );
+
+  router.get("/api/change-proposals/:proposalId", async (request, params) =>
+    guarded(correlationId(request), async () => {
+      const context = await contextOf(request);
+      return json(200, {
+        proposal: proposalView(
+          await dependencies.proposals.get(context, params.proposalId),
+        ),
+      });
+    }),
+  );
+
+  router.patch("/api/change-proposals/:proposalId", async (request, params) =>
+    guarded(correlationId(request), async () => {
+      const context = await contextOf(request);
+      const body = parseJsonBody(request.body);
+      const proposal = await dependencies.proposals.update(
+        context,
+        params.proposalId,
+        {
+          expectedVersion: requireExpectedRevision(body, "expectedVersion"),
+          ...(typeof body.proposedContent === "string"
+            ? { proposedContent: body.proposedContent }
+            : {}),
+          ...(body.proposedMetadata === undefined
+            ? {}
+            : { proposedMetadata: resourceMetadata(body.proposedMetadata) }),
+          ...(typeof body.title === "string" ? { title: body.title } : {}),
+          ...(typeof body.description === "string"
+            ? { description: body.description }
+            : {}),
+        },
+      );
+      return json(200, { proposal: proposalView(proposal) });
+    }),
+  );
+
+  router.post("/api/change-proposals/:proposalId/open", async (request, params) =>
+    guarded(correlationId(request), async () => {
+      const context = await contextOf(request);
+      const body = parseJsonBody(request.body);
+      const proposal = await dependencies.proposals.open(
+        context,
+        params.proposalId,
+        requireExpectedRevision(body, "expectedVersion"),
+      );
+      return json(200, { proposal: proposalView(proposal) });
+    }),
+  );
+
+  router.post("/api/change-proposals/:proposalId/close", async (request, params) =>
+    guarded(correlationId(request), async () => {
+      const context = await contextOf(request);
+      const body = parseJsonBody(request.body);
+      const proposal = await dependencies.proposals.close(
+        context,
+        params.proposalId,
+        requireExpectedRevision(body, "expectedVersion"),
+      );
+      return json(200, { proposal: proposalView(proposal) });
+    }),
+  );
+
   // ---- Projects -------------------------------------------------------------
 
   router.get("/api/projects", async (request) =>
@@ -656,6 +758,27 @@ function resourceView(resource: {
   };
 }
 
+function proposalView(proposal: {
+  id: string;
+  resourceId: string;
+  baseRevision: number;
+  proposedContent: string;
+  proposedMetadata?: { description?: string; tags?: string[] };
+  title: string;
+  description?: string;
+  author: unknown;
+  createdAt: Date;
+  updatedAt: Date;
+  status: string;
+  version: number;
+}): Record<string, unknown> {
+  return {
+    ...proposal,
+    createdAt: proposal.createdAt.toISOString(),
+    updatedAt: proposal.updatedAt.toISOString(),
+  };
+}
+
 /** Read a required string field of a JSON body. */
 function requireBodyString(
   body: Record<string, unknown>,
@@ -687,11 +810,11 @@ function requireQueryString(
  * Required, not optional: a write that does not name a revision is a request to
  * overwrite whatever is there, and an agent and a browser may both be editing.
  */
-function requireExpectedRevision(body: Record<string, unknown>): number {
-  const value = body.expectedRevision;
+function requireExpectedRevision(body: Record<string, unknown>, name = "expectedRevision"): number {
+  const value = body[name];
   if (typeof value !== "number" || !Number.isInteger(value)) {
     throw invalid(
-      "expectedRevision is required: send the revision you last read.",
+      `${name} is required: send the value you last read.`,
     );
   }
   return value;

@@ -39,6 +39,7 @@ import { z } from "zod";
 import type { ApplicationContext } from "../../../src/application/context";
 import type { Permission } from "../../../src/domain/access/permissions";
 import type { ProjectCatalog } from "../../../src/application/project-catalog";
+import type { ChangeProposalService } from "../../../src/application/change-proposal-service";
 import type { ResourceRecord } from "../../../src/application/ports/project-repository";
 import { invalid, notFound } from "../../../src/application/errors";
 import { analyze } from "../../../src/language/analyze";
@@ -77,6 +78,7 @@ export interface ToolOutcome {
 export interface ToolContext {
   context: ApplicationContext;
   catalog: ProjectCatalog;
+  proposals: ChangeProposalService;
   config: McpConfig;
   /** Aborted when the client disconnects or the tool deadline elapses. */
   signal?: AbortSignal;
@@ -282,6 +284,17 @@ function describeResource(resource: {
   revision: number;
 }): string {
   return `- ${resource.path} [${resource.type}] id=${resource.id} revision=${resource.revision}`;
+}
+
+function describeProposal(proposal: {
+  id: string;
+  resourceId: string;
+  baseRevision: number;
+  title: string;
+  status: string;
+  version: number;
+}): string {
+  return `- ${proposal.title} [${proposal.status}] id=${proposal.id} resource=${proposal.resourceId} baseRevision=${proposal.baseRevision} version=${proposal.version}`;
 }
 
 /**
@@ -575,6 +588,134 @@ export function createMcpTools(): McpTool[] {
             nextCursor,
           },
         };
+      },
+    },
+
+    {
+      name: "list_change_proposals",
+      title: "List change proposals",
+      description: "List isolated change proposals for a resource.",
+      inputSchema: { projectId: projectId(), resource: resourceReference() },
+      annotations: { ...READ_ONLY, title: "List change proposals" },
+      requiredPermissions: ["resource:read"],
+      async run(args, toolContext) {
+        const project = stringArg(args, "projectId");
+        const resource = await resolveResource(
+          toolContext,
+          project,
+          stringArg(args, "resource"),
+        );
+        const proposals = await toolContext.proposals.list(
+          toolContext.context,
+          project,
+          resource.id,
+        );
+        return {
+          text: proposals.map(describeProposal).join("\n") || "No change proposals.",
+          structured: { proposals },
+        };
+      },
+    },
+
+    {
+      name: "create_change_proposal",
+      title: "Create change proposal",
+      description: "Create a draft proposal initialized from an immutable resource revision.",
+      inputSchema: {
+        projectId: projectId(),
+        resource: resourceReference(),
+        title: z.string().min(1),
+        description: z.string().optional(),
+        baseRevision: z.number().int().min(1).optional(),
+      },
+      annotations: { ...WRITE, title: "Create change proposal" },
+      requiredPermissions: ["resource:update"],
+      async run(args, toolContext) {
+        const project = stringArg(args, "projectId");
+        const resource = await resolveResource(toolContext, project, stringArg(args, "resource"));
+        const proposal = await toolContext.proposals.create(
+          toolContext.context,
+          project,
+          resource.id,
+          {
+            title: stringArg(args, "title"),
+            ...(typeof args.description === "string" ? { description: args.description } : {}),
+            ...(typeof args.baseRevision === "number" ? { baseRevision: args.baseRevision } : {}),
+          },
+        );
+        return { text: describeProposal(proposal), structured: { proposal } };
+      },
+    },
+
+    {
+      name: "get_change_proposal",
+      title: "Get change proposal",
+      description: "Read a proposal's isolated content, metadata, status and provenance.",
+      inputSchema: { proposalId: z.string().uuid() },
+      annotations: { ...READ_ONLY, title: "Get change proposal" },
+      requiredPermissions: ["resource:read"],
+      async run(args, toolContext) {
+        const proposal = await toolContext.proposals.get(
+          toolContext.context,
+          stringArg(args, "proposalId"),
+        );
+        return { text: describeProposal(proposal), structured: { proposal } };
+      },
+    },
+
+    {
+      name: "update_change_proposal",
+      title: "Update change proposal",
+      description: "Edit a draft or open proposal using its proposal-local version.",
+      inputSchema: {
+        proposalId: z.string().uuid(),
+        expectedVersion: z.number().int().min(1),
+        proposedContent: z.string().optional(),
+        proposedMetadata: resourceMetadata().optional(),
+        title: z.string().min(1).optional(),
+        description: z.string().optional(),
+      },
+      annotations: { ...WRITE, title: "Update change proposal" },
+      requiredPermissions: ["resource:update"],
+      async run(args, toolContext) {
+        const proposal = await toolContext.proposals.update(
+          toolContext.context,
+          stringArg(args, "proposalId"),
+          {
+            expectedVersion: numberArg(args, "expectedVersion") ?? 0,
+            ...(typeof args.proposedContent === "string" ? { proposedContent: args.proposedContent } : {}),
+            ...(args.proposedMetadata === undefined ? {} : { proposedMetadata: normalizeResourceMetadata(args.proposedMetadata as { description?: string; tags?: string[] }) }),
+            ...(typeof args.title === "string" ? { title: args.title } : {}),
+            ...(typeof args.description === "string" ? { description: args.description } : {}),
+          },
+        );
+        return { text: describeProposal(proposal), structured: { proposal } };
+      },
+    },
+
+    {
+      name: "open_change_proposal",
+      title: "Open change proposal",
+      description: "Move a draft proposal to open using its proposal-local version.",
+      inputSchema: { proposalId: z.string().uuid(), expectedVersion: z.number().int().min(1) },
+      annotations: { ...WRITE, title: "Open change proposal" },
+      requiredPermissions: ["resource:update"],
+      async run(args, toolContext) {
+        const proposal = await toolContext.proposals.open(toolContext.context, stringArg(args, "proposalId"), numberArg(args, "expectedVersion") ?? 0);
+        return { text: describeProposal(proposal), structured: { proposal } };
+      },
+    },
+
+    {
+      name: "close_change_proposal",
+      title: "Close change proposal",
+      description: "Close a draft or open proposal using its proposal-local version.",
+      inputSchema: { proposalId: z.string().uuid(), expectedVersion: z.number().int().min(1) },
+      annotations: { ...WRITE, title: "Close change proposal" },
+      requiredPermissions: ["resource:update"],
+      async run(args, toolContext) {
+        const proposal = await toolContext.proposals.close(toolContext.context, stringArg(args, "proposalId"), numberArg(args, "expectedVersion") ?? 0);
+        return { text: describeProposal(proposal), structured: { proposal } };
       },
     },
 

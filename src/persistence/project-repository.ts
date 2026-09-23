@@ -307,6 +307,15 @@ export function createProjectRepository(
 
     findResource,
 
+    async findResourceById(resourceId) {
+      const result = await client.query(
+        "SELECT * FROM resources WHERE id = $1",
+        [resourceId],
+      );
+      const row = result.rows[0];
+      return row ? toResourceRecord(row) : null;
+    },
+
     async findResourceByPath(projectId, path) {
       const normalized = normalizeResourcePath(path);
       const result = await client.query(

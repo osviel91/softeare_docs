@@ -111,6 +111,9 @@ export interface ProjectRepository {
     resourceId: string,
   ): Promise<ResourceRecord | null>;
 
+  /** One resource by its globally unique id. */
+  findResourceById(resourceId: string): Promise<ResourceRecord | null>;
+
   /** One resource by validated path, scoped to its project. */
   findResourceByPath(
     projectId: string,

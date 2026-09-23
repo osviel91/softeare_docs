@@ -15,6 +15,7 @@ import {
   type ServerRuntime,
 } from "../../src/persistence/server-runtime";
 import { createProjectCatalog } from "../../src/application/project-catalog";
+import { createChangeProposalService } from "../../src/application/change-proposal-service";
 import type { McpConfig } from "./config";
 import { createMcpAuthenticator, type McpAuthenticator } from "./auth/bearer";
 import { ProcessRateLimiter, type RateLimiter } from "./rate-limit";
@@ -47,6 +48,7 @@ export interface McpService {
   ownsRuntime: boolean;
   runtime: ServerRuntime;
   catalog: ReturnType<typeof createProjectCatalog>;
+  proposals: ReturnType<typeof createChangeProposalService>;
   authenticator: McpAuthenticator;
   limiter: RateLimiter;
   observability: Observability;
@@ -96,10 +98,15 @@ export async function createMcpService(
     storage: runtime.storageFor,
     mutations: runtime.mutations,
   });
+  const proposals = createChangeProposalService({
+    proposals: runtime.proposals,
+    projects: runtime.projects,
+  });
 
   const deps: McpHandlerDeps = {
     config,
     catalog,
+    proposals,
     authenticator: createMcpAuthenticator({
       credentials: runtime.credentials,
       pepper: runtime.tokenPepper,
@@ -133,6 +140,7 @@ export async function createMcpService(
     runtime,
     ownsRuntime,
     catalog,
+    proposals,
     authenticator: deps.authenticator,
     limiter: deps.limiter,
     observability,

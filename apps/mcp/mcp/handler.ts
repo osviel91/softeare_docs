@@ -30,6 +30,7 @@
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import type { ApplicationContext } from "../../../src/application/context";
 import type { ProjectCatalog } from "../../../src/application/project-catalog";
+import type { ChangeProposalService } from "../../../src/application/change-proposal-service";
 import { classForTool, type McpConfig, type RateLimitClass } from "../config";
 import type { McpAuthenticator } from "../auth/bearer";
 import { bearerChallenge } from "../auth/challenge";
@@ -44,6 +45,7 @@ import { createMcpServerForPrincipal } from "./server";
 export interface McpHandlerDeps {
   config: McpConfig;
   catalog: ProjectCatalog;
+  proposals: ChangeProposalService;
   authenticator: McpAuthenticator;
   limiter: RateLimiter;
   observability: Observability;
@@ -474,6 +476,7 @@ export async function handleMcpRequest(
   const { server } = createMcpServerForPrincipal({
     context,
     catalog: deps.catalog,
+    proposals: deps.proposals,
     config: deps.config,
     observability: deps.observability,
   });

@@ -35,6 +35,7 @@ import {
 } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ApplicationContext } from "../../../src/application/context";
 import type { ProjectCatalog } from "../../../src/application/project-catalog";
+import type { ChangeProposalService } from "../../../src/application/change-proposal-service";
 import { credentialGrants } from "../../../src/application/authorization";
 import { forbidden, invalid } from "../../../src/application/errors";
 import packageJson from "../../../package.json";
@@ -75,6 +76,7 @@ A token carries scopes. A read-only token cannot write; project membership alway
 export interface McpServerForPrincipalOptions {
   context: ApplicationContext;
   catalog: ProjectCatalog;
+  proposals: ChangeProposalService;
   config: McpConfig;
   observability: Observability;
 }
@@ -151,7 +153,7 @@ function withDeadline(
 export function createMcpServerForPrincipal(
   options: McpServerForPrincipalOptions,
 ): McpServerForPrincipal {
-  const { context, catalog, config, observability } = options;
+  const { context, catalog, proposals, config, observability } = options;
   const server = new McpServer(
     {
       name: MCP_SERVER_NAME,
@@ -204,7 +206,8 @@ export function createMcpServerForPrincipal(
           );
           const toolContext: ToolContext = {
             context,
-            catalog,
+             catalog,
+             proposals,
             config,
             signal,
           };

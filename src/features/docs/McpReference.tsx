@@ -67,7 +67,7 @@ npm run mcp         # build, then run it on the current directory`}</CodeBlock>
         </p>
         <CodeBlock>{`{
   "mcp": {
-    "sequencediagrams": {
+    "software-docs": {
       "type": "local",
       "command": ["node", "/path/to/dist-mcp/server.mjs",
                   "--workspace", "/path/to/docs"],
@@ -79,7 +79,7 @@ npm run mcp         # build, then run it on the current directory`}</CodeBlock>
           Hermes — add to <code>~/.hermes/config.yaml</code>:
         </p>
         <CodeBlock>{`mcp_servers:
-  sequencediagrams:
+  software-docs:
     command: "node"
     args: ["/path/to/dist-mcp/server.mjs", "--workspace", "/path/to/docs"]
     tools:
@@ -91,7 +91,7 @@ npm run mcp         # build, then run it on the current directory`}</CodeBlock>
         </p>
         <CodeBlock>{`{
   "mcpServers": {
-    "sequencediagrams": {
+    "software-docs": {
       "command": "node",
       "args": ["/path/to/dist-mcp/server.mjs", "--workspace", "/path/to/docs"]
     }
@@ -111,7 +111,7 @@ npm run mcp         # build, then run it on the current directory`}</CodeBlock>
         </p>
         <CodeBlock>{`{
   "mcpServers": {
-    "sequencediagrams": {
+    "software-docs": {
       "type": "http",
       "url": "<your-server>/mcp",
       "headers": {

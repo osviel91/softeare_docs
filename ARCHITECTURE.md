@@ -1,6 +1,6 @@
 # Architecture
 
-Architectural notes for **SequenceDiagrams Manager**. This document is kept lean
+Architectural notes for **Software Docs Manager**. This document is kept lean
 and is updated as the system grows. It records _why_ decisions were made so the
 project stays maintainable and evolvable by its owner.
 

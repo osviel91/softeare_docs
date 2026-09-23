@@ -97,7 +97,7 @@ function serverInfo(): { name: string; version: string; title: string } {
   return {
     name: SERVER_NAME,
     version: SERVER_VERSION,
-    title: "SequenceDiagrams documentation",
+    title: "Software Docs Manager documentation",
   };
 }
 

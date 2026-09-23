@@ -284,7 +284,7 @@ async function main() {
         "--rm",
         "--entrypoint",
         "sh",
-        "sequencediagrams-mcp:phase6",
+        "software-docs-mcp:phase6",
         "-c",
         "ls -1 /app && (which nginx || echo no-nginx) && (ls /app/dist 2>/dev/null || echo no-dist)",
       ],

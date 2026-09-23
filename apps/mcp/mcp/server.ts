@@ -56,7 +56,7 @@ export const MCP_SERVER_VERSION = packageJson.version;
  * contract in the terms a tool result uses. It deliberately does not reproduce
  * the DSL grammar — that is what resources and the documentation tools are for.
  */
-export const MCP_INSTRUCTIONS = `This server exposes SequenceDiagrams projects to an external agent. Every request is authenticated with a personal access token as \`Authorization: Bearer sdm_pat_…\`; there are no anonymous tools.
+export const MCP_INSTRUCTIONS = `This server exposes Software Docs Manager projects to an external agent. Every request is authenticated with a personal access token as \`Authorization: Bearer sdm_pat_…\`; there are no anonymous tools.
 
 A project contains sequence diagrams (\`.seq\`), event flows (\`.eventseq\`) and markdown documents (\`.md\`).
 
@@ -155,7 +155,7 @@ export function createMcpServerForPrincipal(
     {
       name: MCP_SERVER_NAME,
       version: MCP_SERVER_VERSION,
-      title: "SequenceDiagrams projects",
+      title: "Software Docs Manager projects",
     },
     {
       capabilities: { tools: {}, resources: {} },
@@ -330,7 +330,7 @@ function registerResources(
             uri: `seqdocs://projects/${entry.project.id}`,
             name: entry.project.name,
             title: entry.project.name,
-            description: `A SequenceDiagrams project with ${entry.resourceCount} resources.`,
+            description: `A Software Docs Manager project with ${entry.resourceCount} resources.`,
             mimeType: "application/json",
             _meta: cacheMeta,
           })),

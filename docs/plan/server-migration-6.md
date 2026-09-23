@@ -54,9 +54,9 @@ apps/
 
 | Image                  | Contains                                      | Does not contain                   |
 | ---------------------- | --------------------------------------------- | ---------------------------------- |
-| `sequencediagrams-web` | nginx + the static bundle                     | Node, MCP runtime, database driver |
-| `sequencediagrams-api` | the API bundle + `pg`                         | frontend, MCP runtime              |
-| `sequencediagrams-mcp` | the MCP bundle + `pg`, non-root, read-only FS | frontend, nginx, PGlite            |
+| `software-docs-web` | nginx + the static bundle                     | Node, MCP runtime, database driver |
+| `software-docs-api` | the API bundle + `pg`                         | frontend, MCP runtime              |
+| `software-docs-mcp` | the MCP bundle + `pg`, non-root, read-only FS | frontend, nginx, PGlite            |
 
 Both Node images run as `node`, mount the project volume only, and ship no
 Docker socket and no host path. The MCP image's healthcheck is a `/health` probe

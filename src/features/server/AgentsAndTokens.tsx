@@ -721,7 +721,7 @@ function McpConnectionGuide() {
   const endpoint = `${origin}/mcp`;
   const example = `{
   "mcpServers": {
-    "sequencediagrams": {
+    "software-docs": {
       "type": "http",
       "url": "${endpoint}",
       "headers": {

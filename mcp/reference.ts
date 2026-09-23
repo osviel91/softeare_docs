@@ -45,7 +45,7 @@ export const PROJECT_RESOURCE_TEMPLATE =
  * trust) rather than describing the transport.
  */
 export const SERVER_INSTRUCTIONS = [
-  "This server turns an application's behaviour into durable documentation: sequence diagrams for interactions, event flows for event-driven architectures, and markdown for the prose that ties them together. It is the same engine the SequenceDiagrams editor uses, so anything written here opens in the app unchanged.",
+  "This server turns an application's behaviour into durable documentation: sequence diagrams for interactions, event flows for event-driven architectures, and markdown for the prose that ties them together. It is the same engine Software Docs Manager uses, so anything written here opens in the app unchanged.",
   "",
   "Work like this:",
   "1. Call get_project_overview (or list_projects) before writing anything. It reports what already exists, which symbols are in play, and what is currently wrong.",

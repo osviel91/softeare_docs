@@ -33,7 +33,7 @@ export const USAGE = `Usage: ${SERVER_NAME}-mcp [workspace] [options]
 An MCP server (stdio) that lets an agent document an application: sequence
 diagrams, event flows, and the markdown that ties them together. The workspace
 is a directory whose subdirectories are projects, exactly like a folder opened
-in the SequenceDiagrams app.
+in Software Docs Manager.
 
 Arguments:
   [workspace]              Workspace directory (default: the current directory)

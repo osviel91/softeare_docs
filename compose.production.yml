@@ -45,7 +45,7 @@ services:
   reverse-proxy:
     build:
       context: ./deploy/reverse-proxy
-    image: "${PROXY_IMAGE:-sequencediagrams-proxy:phase6}"
+    image: "${PROXY_IMAGE:-software-docs-proxy:phase6}"
     restart: unless-stopped
     depends_on:
       - web
@@ -68,7 +68,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: "${WEB_IMAGE:-sequencediagrams-web:phase6}"
+    image: "${WEB_IMAGE:-software-docs-web:phase6}"
     restart: unless-stopped
     # No ports: only the proxy reaches it, over the compose network.
     expose:
@@ -84,7 +84,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.api
-    image: "${API_IMAGE:-sequencediagrams-api:phase6}"
+    image: "${API_IMAGE:-software-docs-api:phase6}"
     restart: unless-stopped
     depends_on:
       postgres:
@@ -116,7 +116,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.mcp
-    image: "${MCP_IMAGE:-sequencediagrams-mcp:phase6}"
+    image: "${MCP_IMAGE:-software-docs-mcp:phase6}"
     restart: unless-stopped
     depends_on:
       postgres:

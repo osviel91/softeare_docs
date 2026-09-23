@@ -1,9 +1,10 @@
-# SequenceDiagrams Manager
+# Software Docs Manager
 
-A browser-based, **local-first** tool for creating, editing, organizing,
-visualizing, and exporting sequence diagrams. It ships its own small DSL with a
-dedicated lexer/parser, a layout engine, and an SVG renderer — the diagram
-domain is owned by this project, not delegated to an external library.
+A browser-based, **local-first** workspace for authoring, organizing,
+visualizing, and exporting software documentation, sequence diagrams, event
+flows, and Markdown. It ships its own small DSL with a dedicated lexer/parser,
+a layout engine, and an SVG renderer — the diagram domain is owned by this
+project, not delegated to an external library.
 
 The vision is a focused, IDE-like editing experience (project explorer + DSL
 editor + live preview) that works entirely offline in the browser.
@@ -304,7 +305,7 @@ project, or `--project` was given, it may be omitted.
 {
   "$schema": "https://opencode.ai/config.json",
   "mcp": {
-    "sequencediagrams": {
+    "software-docs": {
       "type": "local",
       "command": [
         "node",
@@ -322,7 +323,7 @@ project, or `--project` was given, it may be omitted.
 
 ```yaml
 mcp_servers:
-  sequencediagrams:
+  software-docs:
     command: "node"
     args:
       - "/absolute/path/to/SecuenceDiagrams/dist-mcp/server.mjs"
@@ -340,7 +341,7 @@ and arguments under the `mcpServers` key:
 ```json
 {
   "mcpServers": {
-    "sequencediagrams": {
+    "software-docs": {
       "command": "node",
       "args": [
         "/absolute/path/to/SecuenceDiagrams/dist-mcp/server.mjs",
@@ -352,8 +353,8 @@ and arguments under the `mcpServers` key:
 }
 ```
 
-`npm link` puts `sequencediagrams-mcp` on the `PATH` (the package's `bin`), so
-`"command": "sequencediagrams-mcp"` also works.
+`npm link` puts `software-docs-mcp` on the `PATH` (the package's `bin`), so
+`"command": "software-docs-mcp"` also works.
 
 The server implements both protocol eras: the legacy `initialize` handshake and
 the stateless `2026-07-28` revision (`server/discover`, per-request `_meta`,
@@ -465,9 +466,9 @@ node dist-mcp-service/server.mjs
 
 | Image                  | Contains                                      | Does not contain        |
 | ---------------------- | --------------------------------------------- | ----------------------- |
-| `sequencediagrams-web` | nginx + the static bundle                     | Node, MCP runtime       |
-| `sequencediagrams-api` | the API bundle + `pg`                         | frontend, MCP runtime   |
-| `sequencediagrams-mcp` | the MCP bundle + `pg`, non-root, read-only FS | frontend, nginx, PGlite |
+| `software-docs-web` | nginx + the static bundle                     | Node, MCP runtime       |
+| `software-docs-api` | the API bundle + `pg`                         | frontend, MCP runtime   |
+| `software-docs-mcp` | the MCP bundle + `pg`, non-root, read-only FS | frontend, nginx, PGlite |
 
 ### Transport and protocol
 
@@ -569,12 +570,12 @@ builds the production bundle, and an `nginx` stage serves it over HTTP with
 client-side-routing fallback.
 
 ```bash
-docker build -t sequencediagrams:latest .
-docker run -d --name sequencediagrams -p 8080:8080 sequencediagrams:latest
+docker build -t software-docs:latest .
+docker run -d --name software-docs -p 8080:8080 software-docs:latest
 # open http://localhost:8080/
 ```
 
-Stop and remove it with `docker rm -f sequencediagrams`. The image is
+Stop and remove it with `docker rm -f software-docs`. The image is
 reproducible — `node_modules`, `dist`, and the npm cache are excluded via
 `.dockerignore`, and the build installs fresh from `package-lock.json`.
 

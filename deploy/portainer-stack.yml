@@ -1,5 +1,5 @@
 # ---------------------------------------------------------------------------
-# Portainer stack: SequenceDiagrams Manager
+# Portainer stack: Software Docs Manager
 #
 # Deploy with Portainer -> Stacks -> Add stack -> Web editor, paste this file,
 # then set the variables below under "Environment variables" and deploy.

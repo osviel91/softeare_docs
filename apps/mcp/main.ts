@@ -61,7 +61,7 @@ export async function main(): Promise<void> {
   });
 
   process.stdout.write(
-    `sequencediagrams-mcp listening on ${config.publicUrl}${config.mcpPath} (${config.environment}), projects at ${config.projectVolume}\n`,
+    `software-docs-mcp listening on ${config.publicUrl}${config.mcpPath} (${config.environment}), projects at ${config.projectVolume}\n`,
   );
 
   const shutdown = (signal: string) => {

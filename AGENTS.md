@@ -2,7 +2,7 @@
 
 ## Product
 
-- SequenceDiagrams Manager is a local-first browser IDE for authoring, validating, rendering, and exporting sequence-diagram and event-flow DSLs, plus Markdown documentation.
+- Software Docs Manager is a local-first browser IDE for authoring, validating, rendering, and exporting sequence-diagram and event-flow DSLs, plus Markdown documentation.
 - Its owned core is the two language parsers/validators, framework-free domain and layout models, deterministic SVG renderer, project index, and local workspace repositories. The React UI, stdio MCP server, HTTP API, and remote MCP service all consume those shared layers.
 
 ## Commands

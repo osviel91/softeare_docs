@@ -1,6 +1,6 @@
 # Server Migration — Phases 0–3 (Authentication, Projects, Authorization)
 
-SequenceDiagrams Manager is a local-first browser application with a stdio MCP
+Software Docs Manager is a local-first browser application with a stdio MCP
 server. This mission turns it into a **secure multi-user system**: authenticated
 browser users, server-managed projects, an HTTPS API, a remote MCP server, and
 project-level authorization — without removing local-first mode and without a

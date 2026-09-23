@@ -740,7 +740,7 @@ async function runChecks(page, idp) {
   check("app shell mounts", true);
   check(
     "document title is the product name",
-    (await page.title()) === "SequenceDiagrams Manager",
+    (await page.title()) === "Software Docs Manager",
     await page.title(),
   );
 

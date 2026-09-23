@@ -46,7 +46,7 @@ export default function LoginScreen({ auth }: LoginScreenProps) {
           <span className="app__brand-mark" aria-hidden="true">
             {"</>"}
           </span>
-          <span>SequenceDiagrams Manager</span>
+          <span>Software Docs Manager</span>
         </div>
         <p className="login-card__eyebrow">Workspace platform</p>
         <h1 id="login-title">Sign in to continue</h1>

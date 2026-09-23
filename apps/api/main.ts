@@ -67,7 +67,7 @@ export async function main(): Promise<void> {
   });
 
   process.stdout.write(
-    `sequencediagrams-api listening on ${config.publicUrl} (${config.environment}), database connected, projects at ${config.projectVolume}\n`,
+    `software-docs-api listening on ${config.publicUrl} (${config.environment}), database connected, projects at ${config.projectVolume}\n`,
   );
 
   const shutdown = (signal: string) => {

@@ -1,11 +1,11 @@
 {
-  "name": "sequencediagrams-manager",
+  "name": "software-docs-manager",
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "A browser-based, local-first tool for creating, editing, and exporting sequence diagrams with its own DSL.",
+  "description": "A browser-based, local-first tool for authoring and managing software documentation, diagrams, and event flows.",
   "bin": {
-    "sequencediagrams-mcp": "dist-mcp/server.mjs"
+    "software-docs-mcp": "dist-mcp/server.mjs"
   },
   "scripts": {
     "dev": "vite",

@@ -206,6 +206,42 @@ export function createRouter(dependencies: AppDependencies): Router {
     }),
   );
 
+  router.post("/api/workspaces", async (request) =>
+    guarded(correlationId(request), async () => {
+      const context = await contextOf(request);
+      const body = parseJsonBody(request.body);
+      const workspace = await dependencies.workspaceService.createWorkspace(
+        context,
+        requireBodyString(body, "name"),
+      );
+      return json(201, { workspace: workspaceView(workspace) });
+    }),
+  );
+
+  router.patch("/api/workspaces/:workspaceId", async (request, params) =>
+    guarded(correlationId(request), async () => {
+      const context = await contextOf(request);
+      const body = parseJsonBody(request.body);
+      const workspace = await dependencies.workspaceService.renameWorkspace(
+        context,
+        params.workspaceId,
+        requireBodyString(body, "name"),
+      );
+      return json(200, { workspace: workspaceView(workspace) });
+    }),
+  );
+
+  router.delete("/api/workspaces/:workspaceId", async (request, params) =>
+    guarded(correlationId(request), async () => {
+      const context = await contextOf(request);
+      await dependencies.workspaceService.deleteWorkspace(
+        context,
+        params.workspaceId,
+      );
+      return json(204, null);
+    }),
+  );
+
   router.get("/api/workspaces/:workspaceId/members", async (request, params) =>
     guarded(correlationId(request), async () => {
       const context = await contextOf(request);
@@ -502,14 +538,18 @@ function projectView(listing: {
 
 function workspaceView(workspace: {
   id: string;
+  ownerId: string;
   name: string;
+  isDefault: boolean;
   role: WorkspaceRole;
   createdAt: Date;
   updatedAt: Date;
 }): Record<string, unknown> {
   return {
     id: workspace.id,
+    ownerId: workspace.ownerId,
     name: workspace.name,
+    isDefault: workspace.isDefault,
     role: workspace.role,
     createdAt: workspace.createdAt.toISOString(),
     updatedAt: workspace.updatedAt.toISOString(),

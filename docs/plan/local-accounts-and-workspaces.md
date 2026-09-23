@@ -57,18 +57,18 @@ Acceptance workflow status: local registration creates a pending account, pendin
 accounts cannot log in, and an activated account can log in through an HttpOnly
 session.
 
-### Phase 3 — Workspace foundation (foundation delivered)
+### Phase 3 — Workspace foundation (delivered)
 
 - [x] Add `workspaces` and `workspace_members`.
 - [x] Create one default workspace per existing and newly created user.
-- [ ] Add workspace listing, creation, rename, and deletion rules.
+- [x] Add workspace listing, creation, rename, and deletion rules.
 - [x] Add `projects.workspace_id`.
 - [x] Migrate existing projects into owner default workspaces.
-- [x] List workspaces and manage member roles (`ADMIN`, `EDITOR`, `VIEWER`).
+- [x] List workspaces, select one, and manage member roles (`ADMIN`, `EDITOR`, `VIEWER`).
 
-Acceptance workflow status: the foundation and membership management are
-deployed, but workspace creation, rename, deletion and selection are still
-pending.
+Acceptance workflow status: users can create, rename, select, and delete their
+own non-default workspaces. Workspace selection is retained by the browser;
+project filtering and workspace-targeted creation begin in Phase 4.
 
 ### Phase 4 — Workspace-aware projects (not started)
 
@@ -124,7 +124,6 @@ The phase checkpoint also runs `npm test`, `npm run typecheck`, `npm run lint`,
 ## Current checkpoint
 
 `bf0411b` is the deployed workspace-foundation checkpoint. The current working tree
-also delivers local credentials and passes the full Vitest suite, typecheck, web/API
-builds, and container verification. Project authorization still uses project
-membership; invitations and workspace-aware project listing remain intentionally
-undelivered.
+also completes the workspace lifecycle and selection foundation. Project authorization
+still uses project membership; invitations and workspace-aware project listing remain
+intentionally undelivered.

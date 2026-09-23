@@ -19,6 +19,7 @@ import { up as accountApproval } from "./migrations/0004-account-approval";
 import { up as workspaces } from "./migrations/0005-workspaces";
 import { up as localCredentials } from "./migrations/0006-local-credentials";
 import { up as userIdentities } from "./migrations/0007-user-identities";
+import { up as workspaceLifecycle } from "./migrations/0008-workspace-lifecycle";
 
 /** One migration: a stable name and the SQL that applies it. */
 export interface Migration {
@@ -39,6 +40,7 @@ export const MIGRATIONS: readonly Migration[] = [
   { version: 5, name: "workspaces", sql: workspaces },
   { version: 6, name: "local-credentials", sql: localCredentials },
   { version: 7, name: "user-identities", sql: userIdentities },
+  { version: 8, name: "workspace-lifecycle", sql: workspaceLifecycle },
 ];
 
 /**

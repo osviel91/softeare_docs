@@ -8,7 +8,9 @@ export function isWorkspaceRole(value: unknown): value is WorkspaceRole {
 
 export interface ServerWorkspace {
   id: string;
+  ownerId: string;
   name: string;
+  isDefault: boolean;
   createdAt: Date;
   updatedAt: Date;
   role: WorkspaceRole;

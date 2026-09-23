@@ -107,7 +107,9 @@ export function toWorkspaceRole(value: unknown): WorkspaceRole {
 export function toServerWorkspace(row: SqlRow): ServerWorkspace {
   return {
     id: text(row, "id"),
+    ownerId: text(row, "owner_id"),
     name: text(row, "name"),
+    isDefault: row.is_default === true || row.is_default === "true",
     createdAt: timestamp(row, "created_at"),
     updatedAt: timestamp(row, "updated_at"),
     role: toWorkspaceRole(row.role),

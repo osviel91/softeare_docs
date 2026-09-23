@@ -129,10 +129,10 @@ export function createUserRepository(
            RETURNING *`,
           [id, input.displayName, input.email],
         );
-        await tx.query(`INSERT INTO workspaces (id, name) VALUES ($1, $2)`, [
-          id,
-          `${input.displayName} Workspace`,
-        ]);
+        await tx.query(
+          `INSERT INTO workspaces (id, owner_id, name, is_default) VALUES ($1, $1, $2, true)`,
+          [id, `${input.displayName} Workspace`],
+        );
         await tx.query(
           `INSERT INTO workspace_members (workspace_id, user_id, role)
            VALUES ($1, $1, 'ADMIN')`,
@@ -178,8 +178,8 @@ export function createUserRepository(
             [id, identity.issuer, identity.subject],
           );
           await tx.query(
-            `INSERT INTO workspaces (id, name)
-             VALUES ($1, $2)`,
+            `INSERT INTO workspaces (id, owner_id, name, is_default)
+              VALUES ($1, $1, $2, true)`,
             [id, `${identity.displayName || "Personal"} Workspace`],
           );
           await tx.query(

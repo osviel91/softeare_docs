@@ -59,7 +59,9 @@ export type ServerWorkspaceRole = "ADMIN" | "EDITOR" | "VIEWER";
 
 export interface ServerWorkspace {
   id: string;
+  ownerId: string;
   name: string;
+  isDefault: boolean;
   role: ServerWorkspaceRole;
   createdAt: string;
   updatedAt: string;
@@ -250,6 +252,34 @@ export class ServerApiClient {
       "/api/workspaces",
     );
     return body.workspaces ?? [];
+  }
+
+  async createWorkspace(name: string): Promise<ServerWorkspace> {
+    const body = await this.request<{ workspace: ServerWorkspace }>(
+      "POST",
+      "/api/workspaces",
+      { name },
+    );
+    return body.workspace;
+  }
+
+  async renameWorkspace(
+    workspaceId: string,
+    name: string,
+  ): Promise<ServerWorkspace> {
+    const body = await this.request<{ workspace: ServerWorkspace }>(
+      "PATCH",
+      `/api/workspaces/${encodeURIComponent(workspaceId)}`,
+      { name },
+    );
+    return body.workspace;
+  }
+
+  async deleteWorkspace(workspaceId: string): Promise<void> {
+    await this.request<unknown>(
+      "DELETE",
+      `/api/workspaces/${encodeURIComponent(workspaceId)}`,
+    );
   }
 
   async listWorkspaceMembers(

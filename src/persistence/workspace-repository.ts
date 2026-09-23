@@ -2,9 +2,53 @@ import type { WorkspaceRepository } from "../application/ports/workspace-reposit
 import type { WorkspaceRole } from "../domain/workspace/server-workspace";
 import type { SqlClient } from "./sql-client";
 import { toServerWorkspace, toWorkspaceMember, toWorkspaceRole } from "./rows";
+import { createIdGenerator, type IdGenerator } from "../shared/ids/uuid";
 
-export function createWorkspaceRepository(client: SqlClient): WorkspaceRepository {
+export interface WorkspaceRepositoryOptions {
+  newId?: IdGenerator;
+}
+
+export function createWorkspaceRepository(
+  client: SqlClient,
+  options: WorkspaceRepositoryOptions = {},
+): WorkspaceRepository {
+  const newId = options.newId ?? createIdGenerator();
   return {
+    async create(input) {
+      const id = newId();
+      return client.transaction(async (tx) => {
+        const result = await tx.query(
+          `INSERT INTO workspaces (id, owner_id, name)
+           VALUES ($1, $2, $3)
+           RETURNING *, 'ADMIN'::text AS role`,
+          [id, input.ownerId, input.name],
+        );
+        await tx.query(
+          `INSERT INTO workspace_members (workspace_id, user_id, role)
+           VALUES ($1, $2, 'ADMIN')`,
+          [id, input.ownerId],
+        );
+        return toServerWorkspace(result.rows[0]);
+      });
+    },
+
+    async rename(workspaceId, name, userId) {
+      const result = await client.query(
+        `UPDATE workspaces SET name = $2, updated_at = now()
+          WHERE id = $1
+      RETURNING *, (SELECT role FROM workspace_members
+                     WHERE workspace_id = $1 AND user_id = $3) AS role`,
+        [workspaceId, name, userId],
+      );
+      if (!result.rows[0])
+        throw new Error(`No workspace with id ${workspaceId}.`);
+      return toServerWorkspace(result.rows[0]);
+    },
+
+    async delete(workspaceId) {
+      await client.query("DELETE FROM workspaces WHERE id = $1", [workspaceId]);
+    },
+
     async listForUser(userId) {
       const result = await client.query(
         `SELECT w.*, m.role

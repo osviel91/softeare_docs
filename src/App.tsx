@@ -253,6 +253,42 @@ export default function App() {
   );
   const [workspaceMembersByWorkspaceId, setWorkspaceMembersByWorkspaceId] =
     useState<Record<string, ServerWorkspaceMember[]>>({});
+  const [selectedServerWorkspaceId, setSelectedServerWorkspaceId] = useState<
+    string | null
+  >(null);
+  const refreshServerWorkspaces = useCallback(() => {
+    void apiClient
+      .listWorkspaces()
+      .then((workspaces) => {
+        setServerWorkspaces(workspaces);
+        setSelectedServerWorkspaceId((selected) =>
+          workspaces.some((workspace) => workspace.id === selected)
+            ? selected
+            : (workspaces[0]?.id ?? null),
+        );
+        return Promise.all(
+          workspaces.map(async (workspace) => {
+            try {
+              return [
+                workspace.id,
+                await apiClient.listWorkspaceMembers(workspace.id),
+              ] as const;
+            } catch {
+              return [workspace.id, []] as const;
+            }
+          }),
+        );
+      })
+      .then((entries) => {
+        if (entries)
+          setWorkspaceMembersByWorkspaceId(Object.fromEntries(entries));
+      })
+      .catch(() => {
+        setServerWorkspaces([]);
+        setWorkspaceMembersByWorkspaceId({});
+        setSelectedServerWorkspaceId(null);
+      });
+  }, [apiClient]);
   useEffect(() => {
     if (auth.user?.platformAdmin !== true) {
       setAdminUsers([]);
@@ -267,40 +303,11 @@ export default function App() {
     if (auth.status !== "authenticated") {
       setServerWorkspaces([]);
       setWorkspaceMembersByWorkspaceId({});
+      setSelectedServerWorkspaceId(null);
       return;
     }
-    let cancelled = false;
-    void apiClient
-      .listWorkspaces()
-      .then((workspaces) => {
-        if (cancelled) return;
-        setServerWorkspaces(workspaces);
-        void Promise.all(
-          workspaces.map(async (workspace) => {
-            try {
-              return [
-                workspace.id,
-                await apiClient.listWorkspaceMembers(workspace.id),
-              ] as const;
-            } catch {
-              return [workspace.id, []] as const;
-            }
-          }),
-        ).then((entries) => {
-          if (!cancelled)
-            setWorkspaceMembersByWorkspaceId(Object.fromEntries(entries));
-        });
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setServerWorkspaces([]);
-          setWorkspaceMembersByWorkspaceId({});
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [apiClient, auth.status]);
+    refreshServerWorkspaces();
+  }, [auth.status, refreshServerWorkspaces]);
   const setAdminUserStatus = useCallback(
     (userId: string, status: ServerAdminUser["status"]) => {
       void apiClient.setUserStatus(userId, status).then((updated) => {
@@ -342,6 +349,26 @@ export default function App() {
       });
     },
     [apiClient],
+  );
+  const createServerWorkspace = useCallback(
+    (name: string) => {
+      void apiClient.createWorkspace(name).then(refreshServerWorkspaces);
+    },
+    [apiClient, refreshServerWorkspaces],
+  );
+  const renameServerWorkspace = useCallback(
+    (workspaceId: string, name: string) => {
+      void apiClient
+        .renameWorkspace(workspaceId, name)
+        .then(refreshServerWorkspaces);
+    },
+    [apiClient, refreshServerWorkspaces],
+  );
+  const deleteServerWorkspace = useCallback(
+    (workspaceId: string) => {
+      void apiClient.deleteWorkspace(workspaceId).then(refreshServerWorkspaces);
+    },
+    [apiClient, refreshServerWorkspaces],
   );
   const [page, setPage] = useState<AppPage>("workspace");
   const [view, setView] = useState<EditorView>("code");
@@ -2354,6 +2381,9 @@ export default function App() {
           workspaceMembersByWorkspaceId={workspaceMembersByWorkspaceId}
           onSetWorkspaceMemberRole={setWorkspaceMemberRole}
           onRemoveWorkspaceMember={removeWorkspaceMember}
+          onCreateWorkspace={createServerWorkspace}
+          onRenameWorkspace={renameServerWorkspace}
+          onDeleteWorkspace={deleteServerWorkspace}
           onBack={() => setPage("workspace")}
         />
       ) : (
@@ -2395,6 +2425,8 @@ export default function App() {
                       folderName={openedFolder?.folderName ?? null}
                       folderSupported={supportsFileSystemAccess()}
                       serverProjects={server.projects}
+                      serverWorkspaces={serverWorkspaces}
+                      selectedServerWorkspaceId={selectedServerWorkspaceId}
                       serverProjectsLoading={server.projectsLoading}
                       serverProjectsError={server.projectsError}
                       activeServerProjectId={server.active?.project.id ?? null}
@@ -2407,6 +2439,7 @@ export default function App() {
                       onCreateServerProject={(name) => {
                         void server.createProject(name);
                       }}
+                      onSelectServerWorkspace={setSelectedServerWorkspaceId}
                       onReloadServerProjects={() => {
                         void server.refresh();
                       }}

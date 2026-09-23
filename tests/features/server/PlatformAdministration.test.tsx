@@ -30,25 +30,34 @@ describe("PlatformAdministration", () => {
           },
         ]}
         onSetUserStatus={onSetUserStatus}
-        workspaces={[{
-          id: "workspace-1",
-          name: "Ada Workspace",
-          role: "ADMIN",
-          createdAt: new Date(0).toISOString(),
-          updatedAt: new Date(0).toISOString(),
-        }]}
-        workspaceMembersByWorkspaceId={{
-          "workspace-1": [{
-            workspaceId: "workspace-1",
-            userId: "pending",
-            displayName: "Grace",
-            email: "grace@example.test",
-            role: "EDITOR",
+        workspaces={[
+          {
+            id: "workspace-1",
+            ownerId: "admin",
+            name: "Ada Workspace",
+            isDefault: true,
+            role: "ADMIN",
             createdAt: new Date(0).toISOString(),
-          }],
+            updatedAt: new Date(0).toISOString(),
+          },
+        ]}
+        workspaceMembersByWorkspaceId={{
+          "workspace-1": [
+            {
+              workspaceId: "workspace-1",
+              userId: "pending",
+              displayName: "Grace",
+              email: "grace@example.test",
+              role: "EDITOR",
+              createdAt: new Date(0).toISOString(),
+            },
+          ],
         }}
         onSetWorkspaceMemberRole={onSetWorkspaceMemberRole}
         onRemoveWorkspaceMember={vi.fn()}
+        onCreateWorkspace={vi.fn()}
+        onRenameWorkspace={vi.fn()}
+        onDeleteWorkspace={vi.fn()}
         onBack={vi.fn()}
       />,
     );
@@ -60,9 +69,16 @@ describe("PlatformAdministration", () => {
     });
 
     expect(onSetUserStatus).toHaveBeenCalledWith("pending", "ACTIVE");
-    fireEvent.change(screen.getByLabelText("Workspace role for grace@example.test"), {
-      target: { value: "VIEWER" },
-    });
-    expect(onSetWorkspaceMemberRole).toHaveBeenCalledWith("workspace-1", "pending", "VIEWER");
+    fireEvent.change(
+      screen.getByLabelText("Workspace role for grace@example.test"),
+      {
+        target: { value: "VIEWER" },
+      },
+    );
+    expect(onSetWorkspaceMemberRole).toHaveBeenCalledWith(
+      "workspace-1",
+      "pending",
+      "VIEWER",
+    );
   });
 });

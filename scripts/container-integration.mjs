@@ -119,11 +119,16 @@ function seedCredential() {
     .digest("hex");
 
   sql(
-    `INSERT INTO users (id, identity_issuer, identity_subject, display_name, email)
-     VALUES ('${userId}', 'https://idp.invalid/realms/it', 'integration', 'Integration', NULL);`,
+    `INSERT INTO users (id, display_name, email)
+     VALUES ('${userId}', 'Integration', NULL);`,
   );
   sql(
-    `INSERT INTO workspaces (id, name) VALUES ('${userId}', 'Integration Workspace');`,
+    `INSERT INTO user_identities (user_id, issuer, subject)
+     VALUES ('${userId}', 'https://idp.invalid/realms/it', 'integration');`,
+  );
+  sql(
+    `INSERT INTO workspaces (id, owner_id, name, is_default)
+     VALUES ('${userId}', '${userId}', 'Integration Workspace', true);`,
   );
   sql(
     `INSERT INTO workspace_members (workspace_id, user_id, role)

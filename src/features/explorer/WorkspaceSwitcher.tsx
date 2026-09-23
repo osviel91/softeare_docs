@@ -1,6 +1,9 @@
 /** Choose the local or authenticated server workspace that feeds the editor. */
 import { useEffect, useState } from "react";
-import type { ServerProject } from "../../workspace/server/api-client";
+import type {
+  ServerProject,
+  ServerWorkspace,
+} from "../../workspace/server/api-client";
 
 export type WorkspaceMode = "local" | "folder" | "server";
 
@@ -9,6 +12,8 @@ export interface WorkspaceSwitcherProps {
   folderName?: string | null;
   folderSupported?: boolean;
   serverProjects?: ServerProject[];
+  serverWorkspaces?: ServerWorkspace[];
+  selectedServerWorkspaceId?: string | null;
   serverProjectsLoading?: boolean;
   serverProjectsError?: string | null;
   activeServerProjectId?: string | null;
@@ -17,6 +22,7 @@ export interface WorkspaceSwitcherProps {
   onOpenFolder: () => void;
   onOpenServerProject: (project: ServerProject) => void;
   onCreateServerProject: (name: string) => void;
+  onSelectServerWorkspace?: (workspaceId: string) => void;
   onReloadServerProjects?: () => void;
   onDownloadLocalCopy?: () => void;
 }
@@ -26,6 +32,8 @@ export default function WorkspaceSwitcher({
   folderName = null,
   folderSupported = false,
   serverProjects = [],
+  serverWorkspaces = [],
+  selectedServerWorkspaceId = null,
   serverProjectsLoading = false,
   serverProjectsError = null,
   activeServerProjectId = null,
@@ -34,6 +42,7 @@ export default function WorkspaceSwitcher({
   onOpenFolder,
   onOpenServerProject,
   onCreateServerProject,
+  onSelectServerWorkspace,
   onReloadServerProjects,
   onDownloadLocalCopy,
 }: WorkspaceSwitcherProps) {
@@ -129,6 +138,27 @@ export default function WorkspaceSwitcher({
 
         {serverExpanded && (
           <>
+            {serverWorkspaces.length > 0 && onSelectServerWorkspace && (
+              <label className="workspaces__create">
+                <span className="visually-hidden">
+                  Selected server workspace
+                </span>
+                <select
+                  className="explorer__input"
+                  data-testid="workspace-server-workspace-select"
+                  value={selectedServerWorkspaceId ?? ""}
+                  onChange={(event) =>
+                    onSelectServerWorkspace(event.target.value)
+                  }
+                >
+                  {serverWorkspaces.map((workspace) => (
+                    <option key={workspace.id} value={workspace.id}>
+                      {workspace.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             <form
               className="workspaces__create"
               onSubmit={(event) => {

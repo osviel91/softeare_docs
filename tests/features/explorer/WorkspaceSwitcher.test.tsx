@@ -23,6 +23,18 @@ function project(id: string, name: string): ServerProject {
   };
 }
 
+function workspace(id: string, name: string) {
+  return {
+    id,
+    ownerId: "u1",
+    name,
+    isDefault: id === "w1",
+    role: "ADMIN" as const,
+    createdAt: new Date(0).toISOString(),
+    updatedAt: new Date(0).toISOString(),
+  };
+}
+
 /** Render the switcher with sensible defaults for the case under test. */
 function renderSwitcher(
   overrides: Partial<React.ComponentProps<typeof WorkspaceSwitcher>> = {},
@@ -94,6 +106,24 @@ describe("WorkspaceSwitcher", () => {
 
     expect(handlers.onCreateServerProject).toHaveBeenCalledWith("Payments");
     expect(input.value).toBe("");
+  });
+
+  it("marks the selected server workspace", () => {
+    const onSelectServerWorkspace = vi.fn();
+    renderSwitcher({
+      mode: "server",
+      serverWorkspaces: [
+        workspace("w1", "Personal"),
+        workspace("w2", "Engineering"),
+      ],
+      selectedServerWorkspaceId: "w1",
+      onSelectServerWorkspace,
+    });
+
+    fireEvent.change(screen.getByTestId("workspace-server-workspace-select"), {
+      target: { value: "w2" },
+    });
+    expect(onSelectServerWorkspace).toHaveBeenCalledWith("w2");
   });
 
   it("shows a load failure with a way to retry", () => {

@@ -59,5 +59,6 @@ _Avoid_: Personal project, home project
 - Projects have a workspace association, but project authorization still uses
   project membership until the workspace-aware project phase is delivered.
 - Local password credentials use scrypt hashes and approval-controlled sessions.
-- Invitations, workspace creation and workspace selection are not yet part of the
-  delivered model.
+- Invitations are not yet part of the delivered model. Users can create, rename,
+  select, and delete their non-default workspaces; selection does not filter
+  projects until the workspace-aware project phase.

@@ -50,7 +50,7 @@ describe("migrate", () => {
     const client = await createPgliteClient();
     try {
       const report = await migrate(client);
-      expect(report.applied).toEqual([1, 2, 3, 4, 5, 6, 7]);
+      expect(report.applied).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
       expect(report.present).toEqual([]);
       const tables = await client.query(
         `SELECT table_name FROM information_schema.tables
@@ -81,6 +81,30 @@ describe("migrate", () => {
       expect(names).not.toContain("personal_access_tokens");
     } finally {
       await client.close();
+    }
+  });
+
+  it("protects one default workspace for each owner", async () => {
+    const client = await openTestDatabase();
+    try {
+      const id = testUuid(701);
+      await insertTestUser(client, { id });
+      const workspace = await client.query(
+        "SELECT owner_id, is_default FROM workspaces WHERE id = $1",
+        [id],
+      );
+      expect(workspace.rows[0]).toMatchObject({
+        owner_id: id,
+        is_default: true,
+      });
+      await expect(
+        client.query(
+          "INSERT INTO workspaces (id, owner_id, name, is_default) VALUES ($1, $2, $3, true)",
+          [testUuid(702), id, "Another default"],
+        ),
+      ).rejects.toThrow();
+    } finally {
+      await closeTestDatabase(client);
     }
   });
 
@@ -146,7 +170,7 @@ describe("migrate", () => {
       await migrate(client);
       const second = await migrate(client);
       expect(second.applied).toEqual([]);
-      expect(second.present).toEqual([1, 2, 3, 4, 5, 6, 7]);
+      expect(second.present).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
     } finally {
       await client.close();
     }

@@ -10,7 +10,9 @@ import type { WorkspaceRepository } from "../../src/application/ports/workspace-
 
 const workspace: ServerWorkspace = {
   id: "w1",
+  ownerId: "admin",
   name: "Personal Workspace",
+  isDefault: true,
   role: "ADMIN",
   createdAt: new Date(0),
   updatedAt: new Date(0),
@@ -48,9 +50,23 @@ function repository(): WorkspaceRepository {
     },
   ];
   return {
-    listForUser: async (userId) => userId === "admin" || userId === "editor" ? [{ ...workspace, role: userId === "admin" ? "ADMIN" : "EDITOR" }] : [],
+    create: async ({ ownerId, name }) => ({
+      ...workspace,
+      id: "w2",
+      ownerId,
+      name,
+      isDefault: false,
+      role: "ADMIN",
+    }),
+    rename: async (_workspaceId, name) => ({ ...workspace, name }),
+    delete: async () => {},
+    listForUser: async (userId) =>
+      userId === "admin" || userId === "editor"
+        ? [{ ...workspace, role: userId === "admin" ? "ADMIN" : "EDITOR" }]
+        : [],
     listMembers: async () => members,
-    roleOf: async (_workspaceId, userId) => members.find((member) => member.userId === userId)?.role ?? null,
+    roleOf: async (_workspaceId, userId) =>
+      members.find((member) => member.userId === userId)?.role ?? null,
     setMember: async (_workspaceId, userId, role: WorkspaceRole) => {
       const member = members.find((entry) => entry.userId === userId);
       if (!member) throw new Error("missing member");
@@ -67,16 +83,42 @@ function repository(): WorkspaceRepository {
 describe("workspace service", () => {
   it("allows members to list and only admins to manage membership", async () => {
     const service = createWorkspaceService(repository());
-    await expect(service.listMembers(context("editor"), "w1")).resolves.toHaveLength(2);
-    await expect(service.setMember(context("editor"), "w1", "editor", "VIEWER"))
-      .rejects.toMatchObject({ code: "forbidden" });
-    await expect(service.setMember(context("admin"), "w1", "editor", "VIEWER"))
-      .resolves.toMatchObject({ role: "VIEWER" });
+    await expect(
+      service.listMembers(context("editor"), "w1"),
+    ).resolves.toHaveLength(2);
+    await expect(
+      service.setMember(context("editor"), "w1", "editor", "VIEWER"),
+    ).rejects.toMatchObject({ code: "forbidden" });
+    await expect(
+      service.setMember(context("admin"), "w1", "editor", "VIEWER"),
+    ).resolves.toMatchObject({ role: "VIEWER" });
   });
 
   it("prevents an admin from removing themselves", async () => {
     const service = createWorkspaceService(repository());
-    await expect(service.removeMember(context("admin"), "w1", "admin"))
-      .rejects.toMatchObject({ code: "invalid" });
+    await expect(
+      service.removeMember(context("admin"), "w1", "admin"),
+    ).rejects.toMatchObject({ code: "invalid" });
+  });
+
+  it("creates a workspace and protects the default one from deletion", async () => {
+    const service = createWorkspaceService(repository());
+    await expect(
+      service.createWorkspace(context("admin"), " Engineering "),
+    ).resolves.toMatchObject({
+      ownerId: "admin",
+      name: "Engineering",
+      isDefault: false,
+    });
+    await expect(
+      service.deleteWorkspace(context("admin"), "w1"),
+    ).rejects.toMatchObject({ code: "invalid" });
+  });
+
+  it("prevents the last administrator from being demoted", async () => {
+    const service = createWorkspaceService(repository());
+    await expect(
+      service.setMember(context("admin"), "w1", "admin", "VIEWER"),
+    ).rejects.toMatchObject({ code: "invalid" });
   });
 });

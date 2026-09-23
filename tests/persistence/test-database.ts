@@ -35,14 +35,16 @@ export async function insertTestUser(
   },
 ): Promise<string> {
   await client.query(
-    `INSERT INTO users (id, identity_issuer, identity_subject, display_name, email)
-     VALUES ($1, $2, $3, $4, $5)`,
+    `INSERT INTO users (id, display_name, email)
+     VALUES ($1, $2, $3)`,
+    [values.id, values.displayName ?? "Test User", values.email ?? null],
+  );
+  await client.query(
+    `INSERT INTO user_identities (user_id, issuer, subject) VALUES ($1, $2, $3)`,
     [
       values.id,
       values.issuer ?? "https://idp.test",
       values.subject ?? `subject-${values.id}`,
-      values.displayName ?? "Test User",
-      values.email ?? null,
     ],
   );
   await client.query(

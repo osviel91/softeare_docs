@@ -8,7 +8,7 @@
  * a provider, so matching on it would let one person's login resolve to
  * another's account.
  *
- * The unique constraint on `(identity_issuer, identity_subject)` is the real
+ * The unique constraint on `user_identities.(issuer, subject)` is the real
  * arbiter: two concurrent first logins for the same identity race, and the
  * loser's insert fails, which is why `findOrCreateByExternalIdentity` retries
  * with a lookup instead of trusting its own read.
@@ -53,7 +53,11 @@ export interface UserRepository {
   ): Promise<User>;
 
   list(): Promise<User[]>;
-  setStatus(id: string, status: AccountStatus): Promise<User>;
+  setStatus(
+    id: string,
+    status: AccountStatus,
+    activatedBy?: string | null,
+  ): Promise<User>;
 }
 
 export interface LocalLoginRecord {
@@ -79,7 +83,9 @@ export function createUserRepository(
     subject: string,
   ): Promise<User | null> => {
     const result = await client.query(
-      "SELECT * FROM users WHERE identity_issuer = $1 AND identity_subject = $2",
+      `SELECT u.* FROM users u
+         JOIN user_identities i ON i.user_id = u.id
+        WHERE i.issuer = $1 AND i.subject = $2`,
       [issuer, subject],
     );
     const row = result.rows[0];
@@ -118,11 +124,10 @@ export function createUserRepository(
       const id = newId();
       const result = await client.transaction(async (tx) => {
         const inserted = await tx.query(
-          `INSERT INTO users
-             (id, identity_issuer, identity_subject, display_name, email, status)
-           VALUES ($1, 'local', $2, $3, $2, 'PENDING')
+          `INSERT INTO users (id, display_name, email, status)
+           VALUES ($1, $2, $3, 'PENDING')
            RETURNING *`,
-          [id, input.email, input.displayName],
+          [id, input.displayName, input.email],
         );
         await tx.query(`INSERT INTO workspaces (id, name) VALUES ($1, $2)`, [
           id,
@@ -162,16 +167,15 @@ export function createUserRepository(
         const id = newId();
         const result = await client.transaction(async (tx) => {
           const inserted = await tx.query(
-            `INSERT INTO users (id, identity_issuer, identity_subject, display_name, email)
-             VALUES ($1, $2, $3, $4, $5)
+            `INSERT INTO users (id, display_name, email)
+             VALUES ($1, $2, $3)
              RETURNING *`,
-            [
-              id,
-              identity.issuer,
-              identity.subject,
-              identity.displayName,
-              identity.email,
-            ],
+            [id, identity.displayName, identity.email],
+          );
+          await tx.query(
+            `INSERT INTO user_identities (user_id, issuer, subject)
+             VALUES ($1, $2, $3)`,
+            [id, identity.issuer, identity.subject],
           );
           await tx.query(
             `INSERT INTO workspaces (id, name)
@@ -215,10 +219,16 @@ export function createUserRepository(
       return result.rows.map(toUser);
     },
 
-    async setStatus(id, status) {
+    async setStatus(id, status, activatedBy = null) {
       const result = await client.query(
-        "UPDATE users SET status = $2, updated_at = now() WHERE id = $1 RETURNING *",
-        [id, status],
+        `UPDATE users
+            SET status = $2,
+                activated_at = CASE WHEN $2 = 'ACTIVE' THEN now() ELSE activated_at END,
+                activated_by = CASE WHEN $2 = 'ACTIVE' THEN $3 ELSE activated_by END,
+                updated_at = now()
+          WHERE id = $1
+      RETURNING *`,
+        [id, status, activatedBy],
       );
       const row = result.rows[0];
       if (!row) throw new Error(`No user with id ${id}.`);

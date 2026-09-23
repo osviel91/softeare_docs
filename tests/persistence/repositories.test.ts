@@ -56,7 +56,11 @@ describe("user repository", () => {
     };
     const created = await users.findOrCreateByExternalIdentity(identity);
     expect(created.id).toMatch(/^[0-9a-f-]{36}$/);
-    expect(created.identitySubject).toBe("stable-subject");
+    expect(
+      await users.findByIdentity("https://idp.test", "stable-subject"),
+    ).toMatchObject({
+      id: created.id,
+    });
 
     const again = await users.findOrCreateByExternalIdentity(identity);
     expect(again.id).toBe(created.id);
@@ -118,6 +122,45 @@ describe("user repository", () => {
   it("answers null for an unknown id or identity", async () => {
     expect(await users.findById(testUuid(999999))).toBeNull();
     expect(await users.findByIdentity("https://idp.test", "nobody")).toBeNull();
+  });
+
+  it("creates and finds a local credential without an external identity", async () => {
+    const created = await users.createLocalAccount({
+      email: "ada@example.test",
+      displayName: "Ada",
+      passwordSalt: "salt",
+      passwordHash: "hash",
+    });
+    const login = await users.findLocalByEmail("ada@example.test");
+
+    expect(login).toMatchObject({
+      user: { id: created.id, status: "PENDING" },
+      passwordSalt: "salt",
+      passwordHash: "hash",
+    });
+    expect(await users.findByIdentity("local", "ada@example.test")).toBeNull();
+    await expect(
+      users.createLocalAccount({
+        email: "ada@example.test",
+        displayName: "Ada Again",
+        passwordSalt: "salt",
+        passwordHash: "hash",
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("records activation metadata", async () => {
+    const admin = await aUser("Admin");
+    const user = await users.createLocalAccount({
+      email: `pending-${Math.random()}@example.test`,
+      displayName: "Pending",
+      passwordSalt: "salt",
+      passwordHash: "hash",
+    });
+
+    const activated = await users.setStatus(user.id, "ACTIVE", admin.id);
+    expect(activated.activatedAt).toBeInstanceOf(Date);
+    expect(activated.activatedBy).toBe(admin.id);
   });
 });
 

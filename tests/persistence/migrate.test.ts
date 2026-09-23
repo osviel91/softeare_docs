@@ -50,7 +50,7 @@ describe("migrate", () => {
     const client = await createPgliteClient();
     try {
       const report = await migrate(client);
-      expect(report.applied).toEqual([1, 2, 3, 4, 5, 6]);
+      expect(report.applied).toEqual([1, 2, 3, 4, 5, 6, 7]);
       expect(report.present).toEqual([]);
       const tables = await client.query(
         `SELECT table_name FROM information_schema.tables
@@ -73,6 +73,7 @@ describe("migrate", () => {
         "local_credentials",
         "workspace_operations",
         "idempotency_records",
+        "user_identities",
       ]) {
         expect(names).toContain(expected);
       }
@@ -104,13 +105,48 @@ describe("migrate", () => {
     }
   });
 
+  it("backfills existing provider identities without changing user ids", async () => {
+    const client = await createPgliteClient();
+    try {
+      await migrate(client, MIGRATIONS.slice(0, 6));
+      const id = testUuid(700);
+      await client.query(
+        `INSERT INTO users
+           (id, identity_issuer, identity_subject, display_name, email)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [
+          id,
+          "https://accounts.google.com",
+          "google-subject",
+          "Ada",
+          "ada@example.test",
+        ],
+      );
+
+      await migrate(client);
+
+      const identity = await client.query(
+        "SELECT user_id FROM user_identities WHERE issuer = $1 AND subject = $2",
+        ["https://accounts.google.com", "google-subject"],
+      );
+      expect(identity.rows[0]?.user_id).toBe(id);
+      const columns = await client.query(
+        `SELECT column_name FROM information_schema.columns
+         WHERE table_name = 'users' AND column_name IN ('identity_issuer', 'identity_subject')`,
+      );
+      expect(columns.rows).toHaveLength(0);
+    } finally {
+      await client.close();
+    }
+  });
+
   it("is idempotent: running it twice changes nothing", async () => {
     const client = await createPgliteClient();
     try {
       await migrate(client);
       const second = await migrate(client);
       expect(second.applied).toEqual([]);
-      expect(second.present).toEqual([1, 2, 3, 4, 5, 6]);
+      expect(second.present).toEqual([1, 2, 3, 4, 5, 6, 7]);
     } finally {
       await client.close();
     }

@@ -162,7 +162,11 @@ export function createRouter(dependencies: AppDependencies): Router {
           "Status must be PENDING, ACTIVE or SUSPENDED.",
         );
       }
-      const user = await dependencies.users.setStatus(params.userId, status);
+      const user = await dependencies.users.setStatus(
+        params.userId,
+        status,
+        context.principal.subjectUserId,
+      );
       const action =
         status === "ACTIVE"
           ? "account.activated"

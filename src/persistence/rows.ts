@@ -13,7 +13,11 @@ import type { ProjectRole } from "../domain/access/permissions";
 import type { ResourceType } from "../domain/workspace/resource-id";
 import type { SqlRow } from "./sql-client";
 import { isProjectRole } from "../domain/access/permissions";
-import type { ServerWorkspace, WorkspaceMember, WorkspaceRole } from "../domain/workspace/server-workspace";
+import type {
+  ServerWorkspace,
+  WorkspaceMember,
+  WorkspaceRole,
+} from "../domain/workspace/server-workspace";
 import { isWorkspaceRole } from "../domain/workspace/server-workspace";
 
 /** Read a required string column. */
@@ -62,12 +66,12 @@ function integer(row: SqlRow, column: string): number {
 export function toUser(row: SqlRow): User {
   return {
     id: text(row, "id"),
-    identityIssuer: text(row, "identity_issuer"),
-    identitySubject: text(row, "identity_subject"),
     displayName: text(row, "display_name"),
     email: textOrNull(row, "email"),
     status: text(row, "status") as User["status"],
     platformAdmin: row.platform_admin === true || row.platform_admin === "true",
+    activatedAt: timestampOrNull(row, "activated_at"),
+    activatedBy: textOrNull(row, "activated_by"),
     createdAt: timestamp(row, "created_at"),
     updatedAt: timestamp(row, "updated_at"),
   };

@@ -20,6 +20,8 @@ import {
   type EventMetadataEntry,
 } from "../../domain/eventflow/ast";
 import DiagramViewport from "./DiagramViewport";
+import type { SemanticChange } from "../../domain/diff/resource-diff";
+import { decorateReviewSvg } from "../proposals/review-decorations";
 
 export type EventFlowView = "flow" | "catalog" | "topology";
 
@@ -37,6 +39,7 @@ export interface EventFlowPreviewProps {
   flow?: EventFlow | null;
   view?: EventFlowView;
   onViewChange?: (view: EventFlowView) => void;
+  reviewChanges?: SemanticChange[];
 }
 
 export default function EventFlowPreview({
@@ -48,6 +51,7 @@ export default function EventFlowPreview({
   flow: providedFlow,
   view = "flow",
   onViewChange,
+  reviewChanges = [],
 }: EventFlowPreviewProps) {
   const document = useMemo(() => {
     // Parsing here rather than taking an AST keeps this component's contract the
@@ -55,6 +59,10 @@ export default function EventFlowPreview({
     const { flow } = analyzeEventFlow(source);
     return renderEventFlowDocument(flow);
   }, [source]);
+  const reviewSvg = useMemo(
+    () => decorateReviewSvg(document.svg, "event-flow", reviewChanges),
+    [document.svg, reviewChanges],
+  );
   const flow = providedFlow ?? analyzeEventFlow(source).flow;
   const catalog = useMemo(() => projectEventFlowToCatalog(flow), [flow]);
   const topology = useMemo(() => projectEventFlowToTopology(flow), [flow]);
@@ -308,7 +316,7 @@ export default function EventFlowPreview({
     <div className="preview" data-testid="event-flow-preview">
       {selector}
       <DiagramViewport
-        svg={document.svg}
+        svg={reviewSvg}
         size={{ width: document.width, height: document.height }}
         svgTestId="preview-svg"
         resetKey={source}

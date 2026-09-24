@@ -11,9 +11,26 @@ function age(value: string): string {
 }
 
 function author(author: ProjectProposalEntry["proposal"]["author"]): string {
-  if (author.kind === "agent") return `Agent ${author.agentId.slice(0, 8)}`;
+  if (author.kind === "agent") return `Agent ${author.agentId.slice(0, 8)}…`;
   if (author.kind === "user") return "User";
   return "System";
+}
+
+function actor(author: ProjectProposalEntry["proposal"]["author"]): string {
+  if (author.kind === "agent") return `Agent ${author.agentId.slice(0, 8)}…`;
+  if (author.kind === "user") return "User";
+  return "System";
+}
+
+function mergeStatus(entry: ProjectProposalEntry): string {
+  if (entry.proposal.status === "merged") return "Merged";
+  if (entry.proposal.status === "closed") return "Closed";
+  if (entry.analysis === null) return "Analysis unavailable";
+  if (entry.analysis.status !== undefined && entry.analysis.status !== "ok")
+    return "Invalid proposal";
+  if (entry.analysis.autoMergeable)
+    return entry.analysis.stale ? "Stale but compatible" : "Ready to merge";
+  return "Conflicts require attention";
 }
 
 function summary(entry: ProjectProposalEntry): string {
@@ -56,7 +73,16 @@ export default function ChangesInbox({
       <header className="changes-inbox__header">
         <div>
           <p className="proposal-review__eyebrow">Project collaboration</p>
-          <h1>Changes</h1>
+          <h1>
+            Changes{" "}
+            <span className="changes-inbox__count">
+              {
+                entries.filter(({ proposal }) => proposal.status === "open")
+                  .length
+              }{" "}
+              open
+            </span>
+          </h1>
           <p>
             Review proposed documentation changes across every resource in this
             project.
@@ -65,9 +91,10 @@ export default function ChangesInbox({
         <button
           type="button"
           className="button button--ghost"
+          aria-label={showHistory ? "Open changes" : "View history"}
           onClick={() => setShowHistory((value) => !value)}
         >
-          {showHistory ? "Open changes" : "View history"}
+          {showHistory ? "Open" : "History"}
         </button>
       </header>
       {error && <p role="alert">{error}</p>}
@@ -89,7 +116,7 @@ export default function ChangesInbox({
                 <span className="changes-inbox__title">
                   <strong>{entry.proposal.title}</strong>
                   <span className="changes-inbox__status">
-                    {entry.proposal.status}
+                    {mergeStatus(entry)}
                   </span>
                 </span>
                 <span>
@@ -105,13 +132,21 @@ export default function ChangesInbox({
                   current r
                   {entry.diff?.currentRevision ?? entry.resource.revision}
                 </span>
-                <span>
-                  {entry.analysis
-                    ? entry.analysis.autoMergeable
-                      ? "No merge conflicts detected"
-                      : `${entry.analysis.conflicts.length} merge conflict${entry.analysis.conflicts.length === 1 ? "" : "s"}`
-                    : "Merge analysis unavailable"}
-                </span>
+                <span>{mergeStatus(entry)}</span>
+                {showHistory && entry.proposal.status === "merged" && (
+                  <span>
+                    Merged
+                    {entry.proposal.mergeActor
+                      ? ` by ${actor(entry.proposal.mergeActor)}`
+                      : ""}
+                    {entry.proposal.mergedRevision !== undefined
+                      ? ` into r${entry.proposal.mergedRevision}`
+                      : ""}
+                    {entry.proposal.mergedAt
+                      ? ` · ${age(entry.proposal.mergedAt)}`
+                      : ""}
+                  </span>
+                )}
               </button>
             </li>
           ))}

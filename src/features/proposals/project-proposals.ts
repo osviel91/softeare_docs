@@ -97,7 +97,8 @@ export function useResourceProposalCount(
     void client
       .listChangeProposals(projectId, resourceId)
       .then((items) => {
-        if (active) setCount(items.length);
+        if (active)
+          setCount(items.filter((item) => item.status === "open").length);
       })
       .catch(() => {
         if (active) setCount(0);

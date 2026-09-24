@@ -18,6 +18,8 @@ import { isValid } from "../../language/validator/validator";
 import { useDiagram } from "./use-diagram";
 import { renderDiagramDocument } from "../../renderer/pipeline/diagram-to-svg";
 import DiagramViewport from "./DiagramViewport";
+import type { SemanticChange } from "../../domain/diff/resource-diff";
+import { decorateReviewSvg } from "../proposals/review-decorations";
 
 export interface PreviewProps {
   /** The DSL source to render. */
@@ -40,6 +42,7 @@ export interface PreviewProps {
   maximized?: boolean;
   /** Toggles the preview-only app layout. */
   onToggleMaximize?: () => void;
+  reviewChanges?: SemanticChange[];
 }
 
 export default function Preview({
@@ -51,6 +54,7 @@ export default function Preview({
   activeNodeId = null,
   maximized = false,
   onToggleMaximize,
+  reviewChanges = [],
 }: PreviewProps) {
   const { ast, diagnostics } = useDiagram(source);
   // Which note bullets are expanded. The set resets whenever the source changes
@@ -66,6 +70,10 @@ export default function Preview({
   const document = useMemo(
     () => renderDiagramDocument(ast, { expandedNotes }),
     [ast, expandedNotes],
+  );
+  const reviewSvg = useMemo(
+    () => decorateReviewSvg(document.svg, "sequence", reviewChanges),
+    [document.svg, reviewChanges],
   );
   // `isValid` requires a non-null AST, so guard before calling.
   const valid = ast != null && isValid(ast);
@@ -119,7 +127,7 @@ export default function Preview({
             </div>
           )}
           <DiagramViewport
-            svg={document.svg}
+            svg={reviewSvg}
             size={{ width: document.width, height: document.height }}
             svgTestId="preview-svg"
             onNoteToggle={toggleNote}

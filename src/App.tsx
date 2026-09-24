@@ -2637,7 +2637,15 @@ export default function App() {
                 <ProposalReviewPanel
                   client={apiClient}
                   projectId={selectedProjectId}
-                  resourceId={canReviewProposals ? activeResourceId : undefined}
+                  // A project-level proposal selection is authoritative. Do not
+                  // let the editor's last resource filter an inbox selection.
+                  resourceId={
+                    reviewProposalId
+                      ? undefined
+                      : canReviewProposals
+                        ? activeResourceId
+                        : undefined
+                  }
                   initialProposalId={reviewProposalId}
                   onBack={() => {
                     setProposalReviewOpen(false);
@@ -2756,7 +2764,7 @@ export default function App() {
                           setProposalReviewOpen(true);
                         }}
                       >
-                        Proposals
+                        Changes
                         {resourceProposalCount > 0
                           ? ` ${resourceProposalCount}`
                           : ""}
@@ -2807,7 +2815,7 @@ export default function App() {
                           setProposalReviewOpen(true);
                         }}
                       >
-                        Proposals
+                        Changes
                         {resourceProposalCount > 0
                           ? ` ${resourceProposalCount}`
                           : ""}

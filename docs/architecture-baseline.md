@@ -129,3 +129,17 @@ SVG`.
 
 H01 adds no public API, MCP, persistence, or domain-model redesign. It adds
 only characterization of the server event-flow path and this baseline record.
+
+## Proposal Review Presentation
+
+- The project `Changes` view is the primary proposal inbox. It discovers open
+  proposals across resources and keeps merged/closed entries in an explicit
+  history view; resource headers expose a contextual Changes affordance.
+- Project review resolves `proposal → target resource → review context` and does
+  not depend on the editor's selected resource. Review presents `Changes`,
+  `Compare`, and `Source` modes; stale reviews retain explicit BASE, CURRENT,
+  and PROPOSED labels.
+- ResourceDiff and MergeAnalysis remain domain contracts. Human-readable change
+  grouping and review-only SVG decoration are presentation projections. Visual
+  decoration marks only entities that the semantic diff can identify and does
+  not alter layout geometry or normal rendering.

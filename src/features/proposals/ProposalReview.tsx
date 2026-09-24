@@ -22,6 +22,7 @@ export interface ProposalReviewProps {
   proposal: ServerChangeProposal;
   diff: ServerChangeProposalDiff;
   current: ServerResource;
+  currentContent?: string;
   onBack: () => void;
   canMerge: boolean;
   onMerge: () => void;
@@ -46,6 +47,7 @@ export function ProposalReviewPanel({
   const [selected, setSelected] = useState<ServerChangeProposal | null>(null);
   const [diff, setDiff] = useState<ServerChangeProposalDiff | null>(null);
   const [current, setCurrent] = useState<ServerResource | null>(null);
+  const [currentContent, setCurrentContent] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<MergeAnalysis | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -72,6 +74,17 @@ export function ProposalReviewPanel({
   };
 
   useEffect(() => {
+    setError(null);
+    if (initialProposalId && !resourceId) {
+      void client
+        .getChangeProposal(initialProposalId)
+        .then((proposal) => {
+          setProposals([proposal]);
+          setSelected(proposal);
+        })
+        .catch(() => setError("Proposal not found or unavailable."));
+      return;
+    }
     void loadProjectProposals(client, projectId)
       .then((entries) => {
         const items = entries
@@ -100,6 +113,7 @@ export function ProposalReviewPanel({
         setDiff(nextDiff);
         setAnalysis(nextAnalysis);
         setCurrent(read.resource);
+        setCurrentContent(read.content);
       })
       .catch(() => setError("Could not load this proposal review."));
   }, [client, projectId, selected]);
@@ -137,12 +151,16 @@ export function ProposalReviewPanel({
             diff={diff}
             analysis={analysis}
             current={current}
+            currentContent={currentContent ?? undefined}
             onBack={onBack}
             canMerge={canMerge}
             onMerge={() => void merge()}
           />
         ) : (
-          <p>Loading proposal review…</p>
+          <p className="proposal-review__loading" role="status">
+            {error ??
+              (initialProposalId ? "Loading proposal…" : "Loading changes…")}
+          </p>
         )}
       </main>
     </div>
@@ -156,7 +174,7 @@ const KIND_LABEL: Record<ChangeKind, string> = {
 };
 
 function authorLabel(author: ServerChangeProposal["author"]): string {
-  if (author.kind === "agent") return `Agent ${author.agentId.slice(0, 8)}`;
+  if (author.kind === "agent") return `Agent\n${author.agentId.slice(0, 8)}…`;
   if (author.kind === "user") return "User";
   return "System";
 }
@@ -212,6 +230,42 @@ function ChangeList({ changes }: { changes: SemanticChange[] }) {
   );
 }
 
+function groupedChanges(changes: SemanticChange[]): SemanticChange[] {
+  const grouped = new Map<string, SemanticChange>();
+  for (const change of changes) {
+    const event =
+      typeof change.details?.event === "string"
+        ? change.details.event
+        : change.entity === "event"
+          ? change.identity
+          : null;
+    const related =
+      event &&
+      [
+        "event",
+        "event-metadata",
+        "publication",
+        "subscription",
+        "channel",
+      ].includes(change.entity);
+    const key = related
+      ? `event:${event}`
+      : `${change.entity}:${change.identity}`;
+    const previous = grouped.get(key);
+    if (!previous) {
+      grouped.set(key, { ...change });
+      continue;
+    }
+    grouped.set(key, {
+      ...previous,
+      entity: "event",
+      identity: event ?? previous.identity,
+      details: { ...previous.details, related: true },
+    });
+  }
+  return [...grouped.values()];
+}
+
 function SourceDiff({ diff }: { diff: ServerChangeProposalDiff }) {
   if (!diff.source.changed)
     return <p className="proposal-review__empty">No source changes.</p>;
@@ -263,13 +317,13 @@ export default function ProposalReview({
   diff,
   analysis,
   current,
+  currentContent,
   onBack,
   canMerge,
   onMerge,
 }: ProposalReviewProps & { analysis: MergeAnalysis }) {
-  const [view, setView] = useState<"changes" | "side-by-side" | "source">(
-    "changes",
-  );
+  const [view, setView] = useState<"changes" | "compare" | "source">("changes");
+  const [changeIndex, setChangeIndex] = useState(0);
   const [eventFlowView, setEventFlowView] = useState<EventFlowView>("flow");
   const representation = resourceRepresentationOfType(diff.type);
 
@@ -288,9 +342,10 @@ export default function ProposalReview({
           source={content}
           view={eventFlowView}
           onViewChange={setEventFlowView}
+          reviewChanges={diff.content.changes}
         />
       ) : (
-        <Preview source={content} />
+        <Preview source={content} reviewChanges={diff.content.changes} />
       )}
     </section>
   );
@@ -299,19 +354,24 @@ export default function ProposalReview({
     <div className="proposal-review" data-testid="proposal-review">
       <header className="proposal-review__header">
         <button type="button" className="button button--ghost" onClick={onBack}>
-          Back to resource
+          ← Changes
         </button>
         <p className="proposal-review__eyebrow">Change proposal</p>
         <h1>{proposal.title}</h1>
+        <p className="proposal-review__resource">
+          {current.path} · {resourceRepresentationOfType(diff.type)}
+        </p>
         {proposal.description && <p>{proposal.description}</p>}
         <dl className="proposal-review__facts">
           <div>
             <dt>Status</dt>
-            <dd>{proposal.status}</dd>
+            <dd>{proposal.status.toUpperCase()}</dd>
           </div>
           <div>
             <dt>Proposed by</dt>
-            <dd>{authorLabel(proposal.author)}</dd>
+            <dd className="proposal-review__author">
+              {authorLabel(proposal.author)}
+            </dd>
           </div>
           <div>
             <dt>Base revision</dt>
@@ -332,13 +392,13 @@ export default function ProposalReview({
           </p>
         )}
         <p className="proposal-review__merge-status" role="status">
-          {analysis.status !== "ok"
-            ? `Merge analysis unavailable: ${analysis.status}.`
+          {analysis.status !== undefined && analysis.status !== "ok"
+            ? "Invalid proposal"
             : analysis.autoMergeable
               ? analysis.stale
-                ? "Canonical changed since this proposal was created. No semantic conflicts detected."
-                : "Ready for merge analysis. No concurrent canonical changes."
-              : `${analysis.conflicts.length} conflict${analysis.conflicts.length === 1 ? "" : "s"} require resolution.`}
+                ? "Stale but compatible"
+                : "Ready to merge"
+              : "Conflicts require attention"}
         </p>
         {proposal.status === "merged" &&
           proposal.mergedRevision !== undefined && (
@@ -351,7 +411,7 @@ export default function ProposalReview({
         {(
           [
             ["changes", "Changes"],
-            ["side-by-side", "Side by side"],
+            ["compare", "Compare"],
             ["source", "Source"],
           ] as const
         ).map(([key, label]) => (
@@ -370,20 +430,26 @@ export default function ProposalReview({
         <div className="proposal-review__changes-view">
           <section>
             <h2>Resource metadata</h2>
-            <ChangeList
-              changes={diff.metadata.changes.map((change) => ({
-                ...change,
-                entity: change.field,
-                details: {
-                  ...(change.oldValue === undefined
-                    ? {}
-                    : { before: change.oldValue }),
-                  ...(change.newValue === undefined
-                    ? {}
-                    : { after: change.newValue }),
-                },
-              }))}
-            />
+            {diff.metadata.changes.length === 0 ? (
+              <p className="proposal-review__empty">No metadata changes.</p>
+            ) : (
+              <ul className="proposal-review__changes">
+                {diff.metadata.changes.map((change) => (
+                  <li
+                    className={`proposal-review__change proposal-review__change--${change.kind}`}
+                    key={`${change.field}-${change.identity}`}
+                  >
+                    <strong>
+                      {change.field === "tag" ? "Tags" : "Description"}
+                    </strong>
+                    <span>
+                      {change.kind === "removed" ? "−" : "+"}{" "}
+                      {change.newValue ?? change.oldValue}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </section>
           <section>
             <h2>
@@ -394,7 +460,7 @@ export default function ProposalReview({
                   : "Sequence"}
             </h2>
             {diff.content.available ? (
-              <ChangeList changes={diff.content.changes} />
+              <ChangeList changes={groupedChanges(diff.content.changes)} />
             ) : (
               <>
                 <p>Semantic comparison unavailable.</p>
@@ -411,11 +477,54 @@ export default function ProposalReview({
               Semantic changes are truncated. More changes exist.
             </p>
           )}
+          {(diff.metadata.changes.length > 0 ||
+            diff.content.changes.length > 0) && (
+            <div
+              className="proposal-review__change-nav"
+              aria-label="Change navigation"
+            >
+              <button
+                type="button"
+                onClick={() =>
+                  setChangeIndex((index) => Math.max(0, index - 1))
+                }
+                disabled={changeIndex === 0}
+              >
+                ‹ Previous change
+              </button>
+              <span>
+                {changeIndex + 1} of{" "}
+                {diff.metadata.changes.length + diff.content.changes.length}
+              </span>
+              <button
+                type="button"
+                onClick={() =>
+                  setChangeIndex((index) =>
+                    Math.min(
+                      diff.metadata.changes.length +
+                        diff.content.changes.length -
+                        1,
+                      index + 1,
+                    ),
+                  )
+                }
+                disabled={
+                  changeIndex >=
+                  diff.metadata.changes.length + diff.content.changes.length - 1
+                }
+              >
+                Next change ›
+              </button>
+            </div>
+          )}
         </div>
       )}
-      {view === "side-by-side" && (
+      {view === "compare" && (
         <div className="proposal-review__artifacts">
           {artifact("BASE", diff.baseContent)}
+          {diff.stale &&
+            currentContent !== undefined &&
+            artifact("CURRENT", currentContent)}
           {artifact("PROPOSED", diff.proposedContent)}
         </div>
       )}

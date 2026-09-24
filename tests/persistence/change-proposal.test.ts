@@ -16,6 +16,7 @@ import { createWorkspaceOperationRepository } from "../../src/persistence/worksp
 import { createWorkspaceMutationService } from "../../src/application/workspace-mutations";
 import { createFsProjectStorage } from "../../src/persistence/fs-project-storage";
 import { hashWorkspaceContent } from "../../src/persistence/server-runtime";
+import { migrate } from "../../src/persistence/migrate";
 
 let client: SqlClient;
 let projects: ReturnType<typeof createProjectRepository>;
@@ -119,14 +120,43 @@ describe("change proposals", () => {
       expectedVersion: open.version,
       proposedContent: "merged content",
     });
+    await client.query(
+      "ALTER TABLE change_proposals DROP CONSTRAINT IF EXISTS change_proposals_status_known",
+    );
+    await client.query(
+      "ALTER TABLE change_proposals ADD CONSTRAINT change_proposals_status_known CHECK (status IN ('draft', 'open', 'closed'))",
+    );
+    await client.query("DELETE FROM schema_migrations WHERE version = 14");
+    expect((await migrate(client)).applied).toEqual([14]);
     const result = await service.merge(context, proposal.id);
 
     expect(result.resource.revision).toBe(2);
     expect(result.proposal.status).toBe("merged");
     expect(result.proposal.mergedRevision).toBe(2);
+    expect(result.proposal.mergedAt).toBeTruthy();
+    expect(result.proposal.mergeActor).toEqual({
+      kind: "user",
+      userId: context.principal.subjectUserId,
+      subjectUserId: context.principal.subjectUserId,
+    });
     expect(
       (await projects.listRevisions(resourceId)).map((r) => r.revision),
     ).toEqual([1, 2]);
+    const revisions = await client.query(
+      "SELECT revision FROM resource_revisions WHERE resource_id = $1 AND revision = 2",
+      [resourceId],
+    );
+    expect(revisions.rows).toHaveLength(1);
+    const operations = await client.query(
+      "SELECT resource_id FROM workspace_operations WHERE resource_id = $1",
+      [resourceId],
+    );
+    expect(operations.rows).toHaveLength(1);
+    const audits = await client.query(
+      "SELECT resource_id FROM audit_events WHERE resource_id = $1",
+      [resourceId],
+    );
+    expect(audits.rows.length).toBeGreaterThan(0);
     expect((await proposals.get(proposal.id))?.author).toEqual(proposal.author);
   });
 

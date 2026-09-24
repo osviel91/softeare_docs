@@ -50,7 +50,7 @@ describe("migrate", () => {
     const client = await createPgliteClient();
     try {
       const report = await migrate(client);
-       expect(report.applied).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
+       expect(report.applied).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
       expect(report.present).toEqual([]);
       const tables = await client.query(
         `SELECT table_name FROM information_schema.tables
@@ -176,7 +176,7 @@ describe("migrate", () => {
       await migrate(client);
       const second = await migrate(client);
       expect(second.applied).toEqual([]);
-       expect(second.present).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
+       expect(second.present).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
     } finally {
       await client.close();
     }
@@ -215,6 +215,27 @@ describe("migrate", () => {
       ]);
     } finally {
       await closeTestDatabase(client);
+    }
+  });
+
+  it("applies migration 0014 to the historical constraint", async () => {
+    const client = await createPgliteClient();
+    try {
+      await migrate(client, MIGRATIONS.slice(0, 13));
+      await client.query(
+        "ALTER TABLE change_proposals DROP CONSTRAINT IF EXISTS change_proposals_status_known",
+      );
+      await client.query(
+        "ALTER TABLE change_proposals ADD CONSTRAINT change_proposals_status_known CHECK (status IN ('draft', 'open', 'closed'))",
+      );
+      const report = await migrate(client);
+      expect(report.applied).toEqual([14]);
+      const constraint = await client.query(
+        "SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint WHERE conname = 'change_proposals_status_known'",
+      );
+      expect(String(constraint.rows[0]?.definition)).toContain("'merged'");
+    } finally {
+      await client.close();
     }
   });
 

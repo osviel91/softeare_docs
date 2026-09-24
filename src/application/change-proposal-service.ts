@@ -1,11 +1,12 @@
 import type { ApplicationContext } from "./context";
 import { agentIdOf, credentialIdOf, isAgentActor } from "./context";
-import { conflict, invalid, notFound } from "./errors";
+import { conflict, invalid, notFound, unavailable } from "./errors";
 import {
   createAuthorizationPolicy,
   type AuthorizationPolicy,
 } from "./authorization";
 import type { ProjectRepository } from "./ports/project-repository";
+import type { WorkspaceMutationService } from "./workspace-mutations";
 import type {
   ChangeProposalChanges,
   ChangeProposalRepository,
@@ -72,6 +73,13 @@ export interface ChangeProposalService {
   ): Promise<ChangeProposal>;
   diff(context: ApplicationContext, id: string): Promise<ChangeProposalDiff>;
   analyzeMerge(context: ApplicationContext, id: string): Promise<MergeAnalysis>;
+  merge(
+    context: ApplicationContext,
+    id: string,
+  ): Promise<{
+    proposal: ChangeProposal;
+    resource: import("./workspace-mutations").ResourceView;
+  }>;
 }
 
 function authorOf(context: ApplicationContext): ResourceAuthorship {
@@ -94,6 +102,7 @@ function authorOf(context: ApplicationContext): ResourceAuthorship {
 export function createChangeProposalService(options: {
   proposals: ChangeProposalRepository;
   projects: ProjectRepository;
+  mutations?: WorkspaceMutationService;
   policy?: AuthorizationPolicy;
 }): ChangeProposalService {
   const policy = options.policy ?? createAuthorizationPolicy(options.projects);
@@ -124,8 +133,11 @@ export function createChangeProposalService(options: {
       result.resource.projectId,
       "resource:update",
     );
-    if (result.proposal.status === "closed")
-      throw invalid("Closed proposals cannot be changed.");
+    if (
+      result.proposal.status === "closed" ||
+      result.proposal.status === "merged"
+    )
+      throw invalid("Terminal proposals cannot be changed.");
     return result;
   };
   const finish = (
@@ -306,6 +318,89 @@ export function createChangeProposalService(options: {
         currentRevision: resource.revision,
         proposalVersion: proposal.version,
       });
+    },
+    async merge(context, id) {
+      const { proposal, resource } = await projectFor(context, id);
+      await policy.requirePermission(
+        context,
+        resource.projectId,
+        "resource:update",
+      );
+      if (proposal.status !== "open") {
+        throw invalid(
+          proposal.status === "closed"
+            ? "Closed proposals cannot be merged."
+            : proposal.status === "merged"
+              ? "Merged proposals cannot be merged again."
+              : "Only open proposals can be merged.",
+          { reason: "lifecycle", status: proposal.status },
+        );
+      }
+      if (!options.mutations) {
+        throw unavailable("The canonical mutation service is not configured.");
+      }
+      const [base, current] = await Promise.all([
+        options.projects.getRevision(
+          proposal.resourceId,
+          proposal.baseRevision,
+        ),
+        options.projects.getRevision(proposal.resourceId, resource.revision),
+      ]);
+      if (!base)
+        throw notFound(
+          `No revision ${proposal.baseRevision} exists for resource ${proposal.resourceId}.`,
+        );
+      if (!current)
+        throw notFound(
+          `No revision ${resource.revision} exists for resource ${proposal.resourceId}.`,
+        );
+      const analysis = analyzeResourceMerge({
+        base: resourceStateFromRevision(base),
+        current: resourceStateFromRevision(current),
+        proposed: resourceStateFromProposal(proposal, base.type),
+        baseRevision: proposal.baseRevision,
+        currentRevision: resource.revision,
+        proposalVersion: proposal.version,
+      });
+      if (!analysis.autoMergeable || analysis.candidateState === undefined) {
+        throw conflict("Change proposal is not safely mergeable.", {
+          reason: "merge_analysis",
+          analysis,
+        });
+      }
+      const candidate = analysis.candidateState;
+      const currentMetadata = JSON.stringify(current.metadata ?? {});
+      const candidateMetadata = JSON.stringify(candidate.metadata ?? {});
+      if (
+        candidate.content === current.content &&
+        candidateMetadata === currentMetadata
+      ) {
+        throw invalid(
+          "The proposal has no changes relative to the current canonical resource.",
+          { reason: "no_op", currentRevision: resource.revision },
+        );
+      }
+      const merged = await options.mutations.updateResource(
+        context,
+        resource.projectId,
+        resource.id,
+        {
+          content: candidate.content,
+          expectedRevision: resource.revision,
+          ...(candidate.metadata === undefined
+            ? {}
+            : { metadata: candidate.metadata }),
+          proposalMerge: {
+            proposalId: proposal.id,
+            expectedVersion: proposal.version,
+            actor: authorOf(context),
+            resultingRevision: resource.revision + 1,
+          },
+        },
+      );
+      const result = await options.proposals.get(proposal.id);
+      if (!result) throw notFound(`No change proposal with id ${proposal.id}.`);
+      return { proposal: result, resource: merged };
     },
   };
 }

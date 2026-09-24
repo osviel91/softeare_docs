@@ -2602,6 +2602,7 @@ export default function App() {
                   projectId={selectedProjectId}
                   resourceId={activeResourceId}
                   onBack={() => setProposalReviewOpen(false)}
+                  canMerge={metadataWritable}
                 />
               ) : view === "outline" ? (
                 <OutlinePanel

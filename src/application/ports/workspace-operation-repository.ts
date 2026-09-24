@@ -100,6 +100,13 @@ export interface WorkspaceMutationIntent {
    * the effect.
    */
   idempotencyKey?: string | null;
+  /** An open proposal transition committed with the canonical update. */
+  proposalMerge?: {
+    proposalId: string;
+    expectedVersion: number;
+    actor: ResourceAuthorship;
+    resultingRevision: number;
+  };
 }
 
 /** What a claim produced. */

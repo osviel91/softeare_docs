@@ -414,6 +414,34 @@ export function createWorkspaceOperationRepository(
           );
         }
 
+        if (intent.proposalMerge !== undefined) {
+          const merged = await tx.query(
+            `UPDATE change_proposals
+                SET status = 'merged',
+                    proposal_version = proposal_version + 1,
+                    merge_authorship = $4::jsonb,
+                    merged_at = now(),
+                    merged_revision = $5,
+                    updated_at = now()
+              WHERE id = $1 AND resource_id = $2 AND proposal_version = $3
+                AND status = 'open'
+            RETURNING id`,
+            [
+              intent.proposalMerge.proposalId,
+              intent.resourceId,
+              intent.proposalMerge.expectedVersion,
+              JSON.stringify(intent.proposalMerge.actor),
+              intent.proposalMerge.resultingRevision,
+            ],
+          );
+          if (merged.rows.length === 0) {
+            throw conflict(
+              "The change proposal changed before it could be merged. Re-read it and retry.",
+              { reason: "proposal_changed", retryable: true },
+            );
+          }
+        }
+
         const operation = await insertOperation(tx, intent, resultingRevision);
         // The audit row commits with the change it describes, so a successful
         // mutation can no longer be missing from the trail.

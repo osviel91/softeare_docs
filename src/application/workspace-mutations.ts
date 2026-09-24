@@ -143,6 +143,7 @@ export interface WorkspaceMutationService {
       expectedRevision: number;
       metadata?: ResourceMetadata;
       idempotencyKey?: string;
+      proposalMerge?: WorkspaceMutationIntent["proposalMerge"];
     },
   ): Promise<ResourceView>;
 
@@ -268,6 +269,7 @@ export function createWorkspaceMutationService(
     action: AuditAction,
     projectId: string,
     resourceId: string | null,
+    detail: Record<string, JsonValue> = {},
   ): WorkspaceMutationIntent["audit"] => ({
     action,
     subjectUserId: context.principal.subjectUserId,
@@ -278,7 +280,7 @@ export function createWorkspaceMutationService(
     projectId,
     resourceId,
     requestId: context.requestId,
-    detail: {},
+    detail,
   });
 
   const authorshipFor = (context: ApplicationContext): ResourceAuthorship =>
@@ -432,8 +434,10 @@ export function createWorkspaceMutationService(
     resourceType?: ResourceType;
     metadata?: ResourceMetadata;
     expectedRevision: number | null;
+    proposalMerge?: WorkspaceMutationIntent["proposalMerge"];
     idempotencyKey?: string;
     auditAction: AuditAction;
+    auditDetail?: Record<string, JsonValue>;
     /** The success result a retry replays. */
     resultFor: (view: ResourceView) => JsonValue;
     /** Build the view returned to the caller. */
@@ -474,8 +478,12 @@ export function createWorkspaceMutationService(
           params.auditAction,
           params.projectId,
           params.resourceId,
+          params.auditDetail,
         ),
         idempotencyKey: params.idempotencyKey ?? null,
+        ...(params.proposalMerge === undefined
+          ? {}
+          : { proposalMerge: params.proposalMerge }),
       });
     } catch (error) {
       // Nothing was committed, so the staged bytes are garbage.
@@ -617,6 +625,17 @@ export function createWorkspaceMutationService(
         ...(input.metadata === undefined ? {} : { metadata: input.metadata }),
         expectedRevision: input.expectedRevision,
         auditAction: "resource.updated",
+        ...(input.proposalMerge === undefined
+          ? {}
+          : {
+              auditDetail: {
+                changeProposalId: input.proposalMerge.proposalId,
+                resultingRevision: input.proposalMerge.resultingRevision,
+              },
+            }),
+        ...(input.proposalMerge === undefined
+          ? {}
+          : { proposalMerge: input.proposalMerge }),
         ...(input.idempotencyKey === undefined
           ? {}
           : { idempotencyKey: input.idempotencyKey }),

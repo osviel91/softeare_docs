@@ -19,7 +19,7 @@ CREATE TABLE change_proposals (
     REFERENCES resource_revisions (resource_id, revision)
     ON DELETE CASCADE,
   CONSTRAINT change_proposals_title_not_blank CHECK (length(btrim(title)) > 0),
-  CONSTRAINT change_proposals_status_known CHECK (status IN ('draft', 'open', 'closed')),
+  CONSTRAINT change_proposals_status_known CHECK (status IN ('draft', 'open', 'closed', 'merged')),
   CONSTRAINT change_proposals_version_positive CHECK (proposal_version > 0)
 );
 

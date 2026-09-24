@@ -23,6 +23,7 @@ import { up as workspaceLifecycle } from "./migrations/0008-workspace-lifecycle"
 import { up as resourceMetadata } from "./migrations/0009-resource-metadata";
 import { up as resourceRevisions } from "./migrations/0010-resource-revisions";
 import { up as changeProposals } from "./migrations/0011-change-proposals";
+import { up as mergedProposals } from "./migrations/0012-merged-proposals";
 
 /** One migration: a stable name and the SQL that applies it. */
 export interface Migration {
@@ -47,6 +48,7 @@ export const MIGRATIONS: readonly Migration[] = [
   { version: 9, name: "resource-metadata", sql: resourceMetadata },
   { version: 10, name: "resource-revisions", sql: resourceRevisions },
   { version: 11, name: "change-proposals", sql: changeProposals },
+  { version: 12, name: "merged-proposals", sql: mergedProposals },
 ];
 
 /**

@@ -800,6 +800,9 @@ function proposalView(proposal: {
   updatedAt: Date;
   status: string;
   version: number;
+  mergeActor?: unknown;
+  mergedAt?: Date;
+  mergedRevision?: number;
 }): Record<string, unknown> {
   return {
     ...proposal,

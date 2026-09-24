@@ -1,7 +1,7 @@
 import type { ResourceAuthorship } from "./resource-revision";
 import type { ResourceMetadata } from "./resource-metadata";
 
-export type ChangeProposalStatus = "draft" | "open" | "closed";
+export type ChangeProposalStatus = "draft" | "open" | "closed" | "merged";
 
 /** An isolated candidate resource state based on one immutable revision. */
 export interface ChangeProposal {
@@ -17,4 +17,7 @@ export interface ChangeProposal {
   updatedAt: Date;
   status: ChangeProposalStatus;
   version: number;
+  mergeActor?: ResourceAuthorship;
+  mergedAt?: Date;
+  mergedRevision?: number;
 }

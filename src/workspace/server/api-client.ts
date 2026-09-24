@@ -185,8 +185,11 @@ export interface ServerChangeProposal {
   author: ResourceAuthorship;
   createdAt: string;
   updatedAt: string;
-  status: "draft" | "open" | "closed";
+  status: "draft" | "open" | "closed" | "merged";
   version: number;
+  mergeActor?: ResourceAuthorship;
+  mergedAt?: string;
+  mergedRevision?: number;
 }
 
 export interface ServerChangeProposalDiff extends ResourceDiff {
@@ -453,6 +456,15 @@ export class ServerApiClient {
       `/api/change-proposals/${encodeURIComponent(id)}/merge-analysis`,
     );
     return body.analysis;
+  }
+
+  async mergeChangeProposal(
+    id: string,
+  ): Promise<{ proposal: ServerChangeProposal; resource: ServerResource }> {
+    return this.request<{
+      proposal: ServerChangeProposal;
+      resource: ServerResource;
+    }>("POST", `/api/change-proposals/${encodeURIComponent(id)}/merge`);
   }
 
   /** Create a resource at a path, refusing one that is already taken. */

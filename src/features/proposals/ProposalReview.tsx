@@ -22,6 +22,8 @@ export interface ProposalReviewProps {
   diff: ServerChangeProposalDiff;
   current: ServerResource;
   onBack: () => void;
+  canMerge: boolean;
+  onMerge: () => void;
 }
 
 export function ProposalReviewPanel({
@@ -29,11 +31,13 @@ export function ProposalReviewPanel({
   projectId,
   resourceId,
   onBack,
+  canMerge,
 }: {
   client: ServerApiClient;
   projectId: string;
   resourceId: string;
   onBack: () => void;
+  canMerge: boolean;
 }) {
   const [proposals, setProposals] = useState<ServerChangeProposal[]>([]);
   const [selected, setSelected] = useState<ServerChangeProposal | null>(null);
@@ -41,6 +45,28 @@ export function ProposalReviewPanel({
   const [current, setCurrent] = useState<ServerResource | null>(null);
   const [analysis, setAnalysis] = useState<MergeAnalysis | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const merge = async () => {
+    if (!selected || !current || !analysis?.autoMergeable) return;
+    const suffix = analysis.stale
+      ? " Canonical has advanced; compatible canonical changes will be preserved."
+      : "";
+    if (!window.confirm(`Merge proposal ${selected.title}?${suffix}`)) return;
+    try {
+      const result = await client.mergeChangeProposal(selected.id);
+      setSelected(result.proposal);
+      setProposals((items) =>
+        items.map((item) =>
+          item.id === result.proposal.id ? result.proposal : item,
+        ),
+      );
+      setCurrent(result.resource);
+    } catch {
+      setError(
+        "Could not merge this proposal. Refresh the analysis and try again.",
+      );
+    }
+  };
 
   useEffect(() => {
     void client
@@ -103,6 +129,8 @@ export function ProposalReviewPanel({
             analysis={analysis}
             current={current}
             onBack={onBack}
+            canMerge={canMerge}
+            onMerge={() => void merge()}
           />
         ) : (
           <p>Loading proposal review…</p>
@@ -198,6 +226,8 @@ export default function ProposalReview({
   analysis,
   current,
   onBack,
+  canMerge,
+  onMerge,
 }: ProposalReviewProps & { analysis: MergeAnalysis }) {
   const [view, setView] = useState<"changes" | "side-by-side" | "source">(
     "changes",
@@ -272,6 +302,17 @@ export default function ProposalReview({
                 : "Ready for merge analysis. No concurrent canonical changes."
               : `${analysis.conflicts.length} conflict${analysis.conflicts.length === 1 ? "" : "s"} require resolution.`}
         </p>
+        {canMerge && proposal.status === "open" && analysis.autoMergeable && (
+          <button type="button" className="button" onClick={onMerge}>
+            Merge proposal
+          </button>
+        )}
+        {proposal.status === "merged" &&
+          proposal.mergedRevision !== undefined && (
+            <p role="status">
+              Merged into canonical revision r{proposal.mergedRevision}.
+            </p>
+          )}
       </header>
       <nav className="proposal-review__tabs" aria-label="Proposal review views">
         {(

@@ -2,7 +2,10 @@ import type {
   ChangeProposal,
   ChangeProposalStatus,
 } from "../domain/workspace/change-proposal";
-import { normalizeResourceMetadata, parseResourceMetadata } from "../domain/workspace/resource-metadata";
+import {
+  normalizeResourceMetadata,
+  parseResourceMetadata,
+} from "../domain/workspace/resource-metadata";
 import type { ResourceAuthorship } from "../domain/workspace/resource-revision";
 import type {
   ChangeProposalChanges,
@@ -15,7 +18,14 @@ import { integer, text } from "./rows";
 
 function proposalOf(row: Record<string, unknown>): ChangeProposal {
   const metadata = parseResourceMetadata(row.proposed_metadata);
-  const author = typeof row.authorship === "string" ? JSON.parse(row.authorship) : row.authorship;
+  const author =
+    typeof row.authorship === "string"
+      ? JSON.parse(row.authorship)
+      : row.authorship;
+  const mergeActor =
+    typeof row.merge_authorship === "string"
+      ? JSON.parse(row.merge_authorship)
+      : row.merge_authorship;
   return {
     id: text(row, "id"),
     resourceId: text(row, "resource_id"),
@@ -29,8 +39,28 @@ function proposalOf(row: Record<string, unknown>): ChangeProposal {
     author: author as ResourceAuthorship,
     status: text(row, "status") as ChangeProposalStatus,
     version: integer(row, "proposal_version"),
-    createdAt: row.created_at instanceof Date ? row.created_at : new Date(String(row.created_at)),
-    updatedAt: row.updated_at instanceof Date ? row.updated_at : new Date(String(row.updated_at)),
+    createdAt:
+      row.created_at instanceof Date
+        ? row.created_at
+        : new Date(String(row.created_at)),
+    updatedAt:
+      row.updated_at instanceof Date
+        ? row.updated_at
+        : new Date(String(row.updated_at)),
+    ...(mergeActor === null || mergeActor === undefined
+      ? {}
+      : { mergeActor: mergeActor as ResourceAuthorship }),
+    ...(row.merged_at === null || row.merged_at === undefined
+      ? {}
+      : {
+          mergedAt:
+            row.merged_at instanceof Date
+              ? row.merged_at
+              : new Date(String(row.merged_at)),
+        }),
+    ...(row.merged_revision === null || row.merged_revision === undefined
+      ? {}
+      : { mergedRevision: integer(row, "merged_revision") }),
   };
 }
 
@@ -61,7 +91,10 @@ export function createChangeProposalRepository(
       return proposalOf(result.rows[0]);
     },
     async get(id) {
-      const result = await client.query("SELECT * FROM change_proposals WHERE id = $1", [id]);
+      const result = await client.query(
+        "SELECT * FROM change_proposals WHERE id = $1",
+        [id],
+      );
       return result.rows[0] ? proposalOf(result.rows[0]) : null;
     },
     async list(resourceId) {
@@ -79,7 +112,9 @@ export function createChangeProposalRepository(
         assignments.push(`proposed_content = $${params.length}`);
       }
       if (changes.proposedMetadata !== undefined) {
-        params.push(JSON.stringify(normalizeResourceMetadata(changes.proposedMetadata)));
+        params.push(
+          JSON.stringify(normalizeResourceMetadata(changes.proposedMetadata)),
+        );
         assignments.push(`proposed_metadata = $${params.length}::jsonb`);
       }
       if (changes.title !== undefined) {
@@ -91,10 +126,13 @@ export function createChangeProposalRepository(
         assignments.push(`description = $${params.length}`);
       }
       if (assignments.length === 0) return this.get(id);
-      assignments.push("proposal_version = proposal_version + 1", "updated_at = now()");
+      assignments.push(
+        "proposal_version = proposal_version + 1",
+        "updated_at = now()",
+      );
       const result = await client.query(
         `UPDATE change_proposals SET ${assignments.join(", ")}
-         WHERE id = $1 AND proposal_version = $2 AND status <> 'closed'
+          WHERE id = $1 AND proposal_version = $2 AND status NOT IN ('closed', 'merged')
          RETURNING *`,
         params,
       );

@@ -101,6 +101,7 @@ export async function createMcpService(
   const proposals = createChangeProposalService({
     proposals: runtime.proposals,
     projects: runtime.projects,
+    mutations: runtime.mutations,
   });
 
   const deps: McpHandlerDeps = {

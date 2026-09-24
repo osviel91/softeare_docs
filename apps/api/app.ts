@@ -163,6 +163,7 @@ export async function createApp(
     proposals: createChangeProposalService({
       proposals: runtime.proposals,
       projects: runtime.projects,
+      mutations: runtime.mutations,
     }),
     storageFor: runtime.storageFor,
     locationFor: runtime.locationFor,

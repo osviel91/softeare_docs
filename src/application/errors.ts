@@ -109,6 +109,11 @@ export function conflict(message: string, details?: Record<string, unknown>) {
   return new ApplicationError("conflict", message, details);
 }
 
+/** A required backing service is temporarily unavailable. */
+export function unavailable(message: string) {
+  return new ApplicationError("unavailable", message);
+}
+
 /** Narrow an unknown thrown value into an {@link ApplicationError}. */
 export function asApplicationError(
   error: unknown,

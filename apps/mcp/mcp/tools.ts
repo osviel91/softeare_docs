@@ -719,6 +719,26 @@ export function createMcpTools(): McpTool[] {
     },
 
     {
+      name: "merge_change_proposal",
+      title: "Merge change proposal",
+      description:
+        "Modify canonical project state by safely merging an open change proposal. Recomputes H17 merge analysis during execution, creates one canonical revision when state changes, and rejects conflicts or invalid candidates.",
+      inputSchema: { proposalId: z.string().uuid() },
+      annotations: { ...WRITE, title: "Merge change proposal" },
+      requiredPermissions: ["resource:update"],
+      async run(args, toolContext) {
+        const result = await toolContext.proposals.merge(
+          toolContext.context,
+          stringArg(args, "proposalId"),
+        );
+        return {
+          text: `Merged proposal ${result.proposal.id} into revision r${result.resource.revision}.`,
+          structured: result,
+        };
+      },
+    },
+
+    {
       name: "update_change_proposal",
       title: "Update change proposal",
       description:

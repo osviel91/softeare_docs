@@ -354,6 +354,20 @@ export function createRouter(dependencies: AppDependencies): Router {
       }),
   );
 
+  router.get(
+    "/api/change-proposals/:proposalId/merge-analysis",
+    async (request, params) =>
+      guarded(correlationId(request), async () => {
+        const context = await contextOf(request);
+        return json(200, {
+          analysis: await dependencies.proposals.analyzeMerge(
+            context,
+            params.proposalId,
+          ),
+        });
+      }),
+  );
+
   router.patch("/api/change-proposals/:proposalId", async (request, params) =>
     guarded(correlationId(request), async () => {
       const context = await contextOf(request);

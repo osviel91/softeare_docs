@@ -696,6 +696,29 @@ export function createMcpTools(): McpTool[] {
     },
 
     {
+      name: "analyze_change_proposal_merge",
+      title: "Analyze change proposal merge",
+      description:
+        "Read-only three-way analysis of a proposal against its immutable base and current canonical revision. Reports staleness, semantic conflicts, diagnostics, and an in-memory candidate when safe; never merges or mutates state.",
+      inputSchema: { proposalId: z.string().uuid() },
+      annotations: { ...READ_ONLY, title: "Analyze change proposal merge" },
+      requiredPermissions: ["resource:read"],
+      async run(args, toolContext) {
+        const analysis = await toolContext.proposals.analyzeMerge(
+          toolContext.context,
+          stringArg(args, "proposalId"),
+        );
+        return {
+          text:
+            analysis.status !== "ok"
+              ? `Merge analysis ${analysis.status}.`
+              : `${analysis.stale ? "Stale" : "Fresh"}; ${analysis.autoMergeable ? "auto-mergeable" : `${analysis.conflicts.length} conflict(s)`}.`,
+          structured: { ...analysis },
+        };
+      },
+    },
+
+    {
       name: "update_change_proposal",
       title: "Update change proposal",
       description:

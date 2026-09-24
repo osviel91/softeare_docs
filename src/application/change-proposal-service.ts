@@ -16,6 +16,10 @@ import type { ResourceAuthorship } from "../domain/workspace/resource-revision";
 import { normalizeResourceMetadata } from "../domain/workspace/resource-metadata";
 import { diffResources, type ResourceDiff } from "../domain/diff/resource-diff";
 import {
+  analyzeResourceMerge,
+  type MergeAnalysis,
+} from "../domain/diff/merge-analysis";
+import {
   resourceStateFromProposal,
   resourceStateFromRevision,
   type ResourceState,
@@ -67,6 +71,7 @@ export interface ChangeProposalService {
     expectedVersion: number,
   ): Promise<ChangeProposal>;
   diff(context: ApplicationContext, id: string): Promise<ChangeProposalDiff>;
+  analyzeMerge(context: ApplicationContext, id: string): Promise<MergeAnalysis>;
 }
 
 function authorOf(context: ApplicationContext): ResourceAuthorship {
@@ -274,6 +279,33 @@ export function createChangeProposalService(options: {
           ? {}
           : { proposedMetadata: proposal.proposedMetadata }),
       };
+    },
+    async analyzeMerge(context, id) {
+      const { proposal, resource } = await projectFor(context, id);
+      const base = await options.projects.getRevision(
+        proposal.resourceId,
+        proposal.baseRevision,
+      );
+      const current = await options.projects.getRevision(
+        proposal.resourceId,
+        resource.revision,
+      );
+      if (!base)
+        throw notFound(
+          `No revision ${proposal.baseRevision} exists for resource ${proposal.resourceId}.`,
+        );
+      if (!current)
+        throw notFound(
+          `No revision ${resource.revision} exists for resource ${proposal.resourceId}.`,
+        );
+      return analyzeResourceMerge({
+        base: resourceStateFromRevision(base),
+        current: resourceStateFromRevision(current),
+        proposed: resourceStateFromProposal(proposal, base.type),
+        baseRevision: proposal.baseRevision,
+        currentRevision: resource.revision,
+        proposalVersion: proposal.version,
+      });
     },
   };
 }

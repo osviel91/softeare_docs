@@ -176,5 +176,20 @@ describe("change proposals", () => {
         )
       ).rows[0].count,
     ).toBe(beforeRevisionCount.rows[0].count);
+
+    const beforeProposalAfterDiff = await proposals.get(proposal.id);
+    const analysis = await service.analyzeMerge(context, proposal.id);
+    expect(analysis.stale).toBe(true);
+    expect((await proposals.get(proposal.id))?.version).toBe(
+      beforeProposalAfterDiff?.version,
+    );
+    expect(
+      (
+        await client.query(
+          "SELECT count(*) AS count FROM resource_revisions WHERE resource_id = $1",
+          [resourceId],
+        )
+      ).rows[0].count,
+    ).toBe(beforeRevisionCount.rows[0].count);
   });
 });

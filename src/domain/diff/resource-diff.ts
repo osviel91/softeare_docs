@@ -244,7 +244,10 @@ function eventMetadata(event: {
   return values;
 }
 
-function eventFlowDiff(before: EventFlow, after: EventFlow): SemanticChange[] {
+export function eventFlowDiff(
+  before: EventFlow,
+  after: EventFlow,
+): SemanticChange[] {
   const changes: SemanticChange[] = [];
   const oldEvents = new Map(
     eventsOf(before).map((event) => [event.name, event]),

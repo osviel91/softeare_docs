@@ -23,6 +23,7 @@
  */
 import { apiErrorFromResponse, NetworkError } from "./api-errors";
 import type { ResourceMetadata } from "../../domain/workspace/resource-metadata";
+import type { MergeAnalysis } from "../../domain/diff/merge-analysis";
 import type { ResourceAuthorship } from "../../domain/workspace/resource-revision";
 import type { ResourceDiff } from "../../domain/diff/resource-diff";
 
@@ -446,10 +447,23 @@ export class ServerApiClient {
     return body.diff;
   }
 
+  async getChangeProposalMergeAnalysis(id: string): Promise<MergeAnalysis> {
+    const body = await this.request<{ analysis: MergeAnalysis }>(
+      "GET",
+      `/api/change-proposals/${encodeURIComponent(id)}/merge-analysis`,
+    );
+    return body.analysis;
+  }
+
   /** Create a resource at a path, refusing one that is already taken. */
   async createResource(
     projectId: string,
-    input: { path: string; type: ServerResourceType; content: string; metadata?: ResourceMetadata },
+    input: {
+      path: string;
+      type: ServerResourceType;
+      content: string;
+      metadata?: ResourceMetadata;
+    },
   ): Promise<ServerResource> {
     const body = await this.request<{ resource: ServerResource }>(
       "POST",
@@ -468,7 +482,11 @@ export class ServerApiClient {
   async updateResource(
     projectId: string,
     resourceId: string,
-    input: { content: string; expectedRevision: number; metadata?: ResourceMetadata },
+    input: {
+      content: string;
+      expectedRevision: number;
+      metadata?: ResourceMetadata;
+    },
   ): Promise<ServerResource> {
     const body = await this.request<{ resource: ServerResource }>(
       "PUT",

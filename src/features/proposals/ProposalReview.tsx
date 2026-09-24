@@ -16,6 +16,7 @@ import type {
 } from "../../domain/diff/resource-diff";
 import { resourceRepresentationOfType } from "../../domain/workspace/resource-id";
 import type { MergeAnalysis } from "../../domain/diff/merge-analysis";
+import { loadProjectProposals } from "./project-proposals";
 
 export interface ProposalReviewProps {
   proposal: ServerChangeProposal;
@@ -30,12 +31,14 @@ export function ProposalReviewPanel({
   client,
   projectId,
   resourceId,
+  initialProposalId,
   onBack,
   canMerge,
 }: {
   client: ServerApiClient;
   projectId: string;
-  resourceId: string;
+  resourceId?: string;
+  initialProposalId?: string | null;
   onBack: () => void;
   canMerge: boolean;
 }) {
@@ -69,14 +72,20 @@ export function ProposalReviewPanel({
   };
 
   useEffect(() => {
-    void client
-      .listChangeProposals(projectId, resourceId)
-      .then((items) => {
+    void loadProjectProposals(client, projectId)
+      .then((entries) => {
+        const items = entries
+          .filter(({ resource }) => !resourceId || resource.id === resourceId)
+          .map(({ proposal }) => proposal);
         setProposals(items);
-        setSelected(items[0] ?? null);
+        setSelected(
+          items.find((item) => item.id === initialProposalId) ??
+            items[0] ??
+            null,
+        );
       })
       .catch(() => setError("Could not load change proposals."));
-  }, [client, projectId, resourceId]);
+  }, [client, projectId, resourceId, initialProposalId]);
 
   useEffect(() => {
     if (!selected) return;
@@ -85,7 +94,7 @@ export function ProposalReviewPanel({
     void Promise.all([
       client.getChangeProposalDiff(selected.id),
       client.getChangeProposalMergeAnalysis(selected.id),
-      client.readResource(projectId, resourceId),
+      client.readResource(projectId, selected.resourceId),
     ])
       .then(([nextDiff, nextAnalysis, read]) => {
         setDiff(nextDiff);
@@ -93,7 +102,7 @@ export function ProposalReviewPanel({
         setCurrent(read.resource);
       })
       .catch(() => setError("Could not load this proposal review."));
-  }, [client, projectId, resourceId, selected]);
+  }, [client, projectId, selected]);
 
   return (
     <div className="proposal-review-panel">
@@ -102,9 +111,9 @@ export function ProposalReviewPanel({
         aria-label="Change proposals"
       >
         <button type="button" className="button button--ghost" onClick={onBack}>
-          Back to resource
+          Back to changes
         </button>
-        <h1>Change proposals</h1>
+        <h1>{resourceId ? "Change proposals" : "Project changes"}</h1>
         {proposals.length === 0 && !error && (
           <p>No proposals for this resource.</p>
         )}
@@ -147,9 +156,34 @@ const KIND_LABEL: Record<ChangeKind, string> = {
 };
 
 function authorLabel(author: ServerChangeProposal["author"]): string {
-  if (author.kind === "agent") return `Agent ${author.agentId}`;
-  if (author.kind === "user") return "Human author";
+  if (author.kind === "agent") return `Agent ${author.agentId.slice(0, 8)}`;
+  if (author.kind === "user") return "User";
   return "System";
+}
+
+function semanticLabel(change: SemanticChange): string {
+  const labels: Record<string, string> = {
+    event: "Event",
+    "event-metadata": "Event metadata",
+    channel: "Channel",
+    publication: "Publication",
+    subscription: "Subscription",
+    participant: "Participant",
+    interaction: "Interaction",
+    "markdown-block": "Markdown section",
+  };
+  return labels[change.entity] ?? change.entity.replace(/-/g, " ");
+}
+
+function readableDetails(details?: Record<string, unknown>): string | null {
+  if (!details) return null;
+  const values = Object.entries(details)
+    .filter(([key]) => key !== "event" && key !== "key")
+    .map(
+      ([key, value]) =>
+        `${key.replace(/([A-Z])/g, " $1").toLowerCase()}: ${typeof value === "object" ? JSON.stringify(value) : String(value)}`,
+    );
+  return values.length > 0 ? values.join("; ") : null;
 }
 
 function ChangeList({ changes }: { changes: SemanticChange[] }) {
@@ -165,9 +199,13 @@ function ChangeList({ changes }: { changes: SemanticChange[] }) {
           <span className="proposal-review__kind">
             {KIND_LABEL[change.kind]}
           </span>
-          <strong>{change.entity}</strong>
-          <span>{change.identity}</span>
-          {change.details && <code>{JSON.stringify(change.details)}</code>}
+          <strong>{semanticLabel(change)}</strong>
+          <span>
+            {change.identity.replace(/\|/g, " → ").replace(/:/g, " / ")}
+          </span>
+          {readableDetails(change.details) && (
+            <span>{readableDetails(change.details)}</span>
+          )}
         </li>
       ))}
     </ul>
@@ -302,11 +340,6 @@ export default function ProposalReview({
                 : "Ready for merge analysis. No concurrent canonical changes."
               : `${analysis.conflicts.length} conflict${analysis.conflicts.length === 1 ? "" : "s"} require resolution.`}
         </p>
-        {canMerge && proposal.status === "open" && analysis.autoMergeable && (
-          <button type="button" className="button" onClick={onMerge}>
-            Merge proposal
-          </button>
-        )}
         {proposal.status === "merged" &&
           proposal.mergedRevision !== undefined && (
             <p role="status">
@@ -341,6 +374,14 @@ export default function ProposalReview({
               changes={diff.metadata.changes.map((change) => ({
                 ...change,
                 entity: change.field,
+                details: {
+                  ...(change.oldValue === undefined
+                    ? {}
+                    : { before: change.oldValue }),
+                  ...(change.newValue === undefined
+                    ? {}
+                    : { after: change.newValue }),
+                },
               }))}
             />
           </section>
@@ -374,8 +415,8 @@ export default function ProposalReview({
       )}
       {view === "side-by-side" && (
         <div className="proposal-review__artifacts">
-          {artifact("Base", diff.baseContent)}
-          {artifact("Proposed", diff.proposedContent)}
+          {artifact("BASE", diff.baseContent)}
+          {artifact("PROPOSED", diff.proposedContent)}
         </div>
       )}
       {view === "source" && <SourceDiff diff={diff} />}
@@ -400,6 +441,30 @@ export default function ProposalReview({
             Current canonical revision changed while this review was open.
           </p>
         )}
+      {diff.stale && (
+        <p className="proposal-review__notice" role="status">
+          CURRENT canonical context is r{diff.currentRevision}; BASE remains r
+          {diff.baseRevision} for this review.
+        </p>
+      )}
+      <section
+        className="proposal-review__decision"
+        aria-labelledby="proposal-decision"
+      >
+        <h2 id="proposal-decision">Decision</h2>
+        {canMerge && proposal.status === "open" && analysis.autoMergeable ? (
+          <button type="button" className="button" onClick={onMerge}>
+            Merge proposal
+          </button>
+        ) : proposal.status === "open" ? (
+          <p>
+            This proposal is not ready to merge. The server will recompute
+            safety at decision time.
+          </p>
+        ) : (
+          <p>This proposal is {proposal.status}.</p>
+        )}
+      </section>
     </div>
   );
 }

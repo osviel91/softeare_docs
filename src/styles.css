@@ -115,12 +115,29 @@ body {
 .proposal-review__hunk { margin-bottom: 18px; }.proposal-review__hunk-heading { color: var(--text-muted); padding: 5px 8px; background: var(--bg-panel); }
 .proposal-review__line { padding: 2px 8px; white-space: pre-wrap; }.proposal-review__line span { display: inline-block; width: 18px; font-weight: 700; }.proposal-review__line--added { background: rgba(74, 222, 128, .12); }.proposal-review__line--removed { background: rgba(248, 113, 113, .12); }
 .proposal-review__empty { color: var(--text-muted); }
+.proposal-review__decision { margin-top: 32px; padding: 18px; border: 1px solid var(--border); background: var(--bg-panel); }
+.proposal-review__decision h2 { margin-top: 0; }
+.changes-inbox { height: 100%; overflow: auto; padding: 28px; }
+.changes-inbox__header { display: flex; justify-content: space-between; gap: 24px; align-items: flex-start; margin-bottom: 24px; }
+.changes-inbox__header h1 { margin: 4px 0 8px; }
+.changes-inbox__list { display: grid; gap: 10px; padding: 0; list-style: none; max-width: 980px; }
+.changes-inbox__item { display: grid; gap: 6px; width: 100%; padding: 16px; color: inherit; text-align: left; background: var(--bg-panel); border: 1px solid var(--border); cursor: pointer; }
+.changes-inbox__item:hover, .changes-inbox__item:focus-visible { border-color: var(--accent); background: var(--accent-soft); }
+.changes-inbox__title { display: flex; justify-content: space-between; gap: 12px; font-size: 16px; }
+.changes-inbox__status { color: var(--accent); font-size: 12px; text-transform: uppercase; }
+.changes-inbox__item > span:not(.changes-inbox__title) { color: var(--text-muted); font-size: 13px; }
+.changes-inbox__empty { padding: 28px 0; color: var(--text-muted); }
 
 @media (max-width: 760px) {
   .proposal-review-panel { display: block; overflow: auto; }
   .proposal-review-panel__list { width: auto; border-right: 0; border-bottom: 1px solid var(--border); }
   .proposal-review__artifacts { grid-template-columns: 1fr; }
   .proposal-review { padding: 16px; }
+  .changes-inbox { padding: 16px; }
+  .changes-inbox__header { display: block; }
+  .changes-inbox__header .button { margin-top: 12px; }
+  .changes-inbox__title { display: block; }
+  .changes-inbox__status { display: block; margin-top: 4px; }
 }
 
 .visually-hidden {

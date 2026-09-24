@@ -180,12 +180,18 @@ import { RevisionConflictError } from "./workspace/server/api-errors";
 import { supportsForcedWrite } from "./workspace/server/server-workspace-repository";
 import ResourceMetadataEditor from "./features/resource/ResourceMetadataEditor";
 import { ProposalReviewPanel } from "./features/proposals/ProposalReview";
+import ChangesInbox from "./features/proposals/ChangesInbox";
+import {
+  useProjectProposalCount,
+  useResourceProposalCount,
+} from "./features/proposals/project-proposals";
 import type { ResourceMetadata } from "./domain/workspace/resource-metadata";
 
 const PRODUCT_NAME = "Software Docs Manager";
 
 /** Which panel the editor pane shows. */
-type EditorView = "code" | "outline" | "problems" | "overview" | "history";
+type EditorView =
+  "code" | "outline" | "problems" | "overview" | "history" | "changes";
 
 /**
  * Which page the shell shows. The editor, explorer and preview make up the
@@ -436,6 +442,7 @@ export default function App() {
     source: string;
   } | null>(null);
   const [proposalReviewOpen, setProposalReviewOpen] = useState(false);
+  const [reviewProposalId, setReviewProposalId] = useState<string | null>(null);
 
   const resizePane = useCallback(
     (pane: "explorer" | "editor", clientX: number): void => {
@@ -1218,7 +1225,21 @@ export default function App() {
     : selectedNote
       ? resourceIdForFile(selectedNote)
       : null;
-  const canReviewProposals = workspaceMode === "server" && activeResourceId !== null && selectedProjectId !== null;
+  const canReviewProposals =
+    workspaceMode === "server" &&
+    activeResourceId !== null &&
+    selectedProjectId !== null;
+  const canReviewProjectProposals =
+    workspaceMode === "server" && selectedProjectId !== null;
+  const openProposalCount = useProjectProposalCount(
+    apiClient,
+    canReviewProjectProposals ? selectedProjectId : null,
+  );
+  const resourceProposalCount = useResourceProposalCount(
+    apiClient,
+    canReviewProposals ? selectedProjectId : null,
+    canReviewProposals ? activeResourceId : null,
+  );
 
   // Which language the active document is written in. A project holds three, and
   // the extension is what says so — the same rule a folder project uses.
@@ -2348,6 +2369,22 @@ export default function App() {
               >
                 <span aria-hidden="true">⟲</span> History
               </button>
+              {canReviewProjectProposals && (
+                <button
+                  type="button"
+                  role="tab"
+                  className={`segmented__option${view === "changes" ? " segmented__option--active" : ""}`}
+                  data-testid="view-changes"
+                  aria-selected={view === "changes"}
+                  onClick={() => {
+                    setView("changes");
+                    setProposalReviewOpen(false);
+                  }}
+                >
+                  <span aria-hidden="true">⇢</span> Changes
+                  {openProposalCount > 0 ? ` (${openProposalCount})` : ""}
+                </button>
+              )}
             </div>
 
             <button
@@ -2596,13 +2633,26 @@ export default function App() {
                 editorWidth === null ? undefined : { flexBasis: editorWidth }
               }
             >
-              {proposalReviewOpen && canReviewProposals ? (
+              {proposalReviewOpen && canReviewProjectProposals ? (
                 <ProposalReviewPanel
                   client={apiClient}
                   projectId={selectedProjectId}
-                  resourceId={activeResourceId}
-                  onBack={() => setProposalReviewOpen(false)}
+                  resourceId={canReviewProposals ? activeResourceId : undefined}
+                  initialProposalId={reviewProposalId}
+                  onBack={() => {
+                    setProposalReviewOpen(false);
+                    setReviewProposalId(null);
+                  }}
                   canMerge={metadataWritable}
+                />
+              ) : view === "changes" && canReviewProjectProposals ? (
+                <ChangesInbox
+                  client={apiClient}
+                  projectId={selectedProjectId}
+                  onOpen={(proposalId) => {
+                    setReviewProposalId(proposalId);
+                    setProposalReviewOpen(true);
+                  }}
                 />
               ) : view === "outline" ? (
                 <OutlinePanel
@@ -2698,8 +2748,18 @@ export default function App() {
                       onSave={saveResourceMetadata}
                     />
                     {canReviewProposals && (
-                      <button type="button" className="button button--ghost button--small" onClick={() => setProposalReviewOpen(true)}>
+                      <button
+                        type="button"
+                        className="button button--ghost button--small"
+                        onClick={() => {
+                          setReviewProposalId(null);
+                          setProposalReviewOpen(true);
+                        }}
+                      >
                         Proposals
+                        {resourceProposalCount > 0
+                          ? ` ${resourceProposalCount}`
+                          : ""}
                       </button>
                     )}
                   </div>
@@ -2739,8 +2799,18 @@ export default function App() {
                       onSave={saveResourceMetadata}
                     />
                     {canReviewProposals && (
-                      <button type="button" className="button button--ghost button--small" onClick={() => setProposalReviewOpen(true)}>
+                      <button
+                        type="button"
+                        className="button button--ghost button--small"
+                        onClick={() => {
+                          setReviewProposalId(null);
+                          setProposalReviewOpen(true);
+                        }}
+                      >
                         Proposals
+                        {resourceProposalCount > 0
+                          ? ` ${resourceProposalCount}`
+                          : ""}
                       </button>
                     )}
                   </div>
@@ -2762,66 +2832,70 @@ export default function App() {
               )}
             </section>
 
-            <div
-              className="app__splitter"
-              role="separator"
-              tabIndex={0}
-              aria-label="Resize editor"
-              aria-orientation="vertical"
-              onPointerDown={(event) => startResize("editor", event)}
-              onPointerMove={(event) => moveResize("editor", event)}
-              onPointerUp={endResize}
-              onPointerCancel={endResize}
-              onKeyDown={(event) => resizeWithKeyboard("editor", event)}
-            />
+            {!proposalReviewOpen && (
+              <>
+                <div
+                  className="app__splitter"
+                  role="separator"
+                  tabIndex={0}
+                  aria-label="Resize editor"
+                  aria-orientation="vertical"
+                  onPointerDown={(event) => startResize("editor", event)}
+                  onPointerMove={(event) => moveResize("editor", event)}
+                  onPointerUp={endResize}
+                  onPointerCancel={endResize}
+                  onKeyDown={(event) => resizeWithKeyboard("editor", event)}
+                />
 
-            <section
-              className="app__pane app__pane--preview"
-              aria-label={
-                noteMode
-                  ? "Note preview"
-                  : isEventFlow
-                    ? "Event flow preview"
-                    : "Diagram preview"
-              }
-            >
-              {noteMode ? (
-                <MarkdownView
-                  markdown={source}
-                  resolveWikiLink={resolveWikiLink}
-                  resolveResourceLink={resolveResourceLink}
-                  renderEmbed={renderEmbed}
-                  onOpenDiagramLink={openDiagramLink}
-                  onOpenResourceLink={openResourceLink}
-                />
-              ) : isEventFlow ? (
-                <EventFlowPreview
-                  source={source}
-                  flow={eventFlow}
-                  view={eventFlowView}
-                  onViewChange={setEventFlowView}
-                  onNodeSelect={onNodeSelect}
-                  activeNodeId={activeNodeId}
-                  maximized={previewMaximized}
-                  onToggleMaximize={() =>
-                    setPreviewMaximized((value) => !value)
+                <section
+                  className="app__pane app__pane--preview"
+                  aria-label={
+                    noteMode
+                      ? "Note preview"
+                      : isEventFlow
+                        ? "Event flow preview"
+                        : "Diagram preview"
                   }
-                />
-              ) : (
-                <Preview
-                  source={renderedSource || source}
-                  autoUpdate={autoUpdate}
-                  isStale={isStale}
-                  onRender={() => setRenderedSource(source)}
-                  onNodeSelect={onNodeSelect}
-                  activeNodeId={activeNodeId}
-                  maximized={previewMaximized}
-                  onToggleMaximize={() =>
-                    setPreviewMaximized((value) => !value)
-                  }
-                />
-              )}
-            </section>
+                >
+                  {noteMode ? (
+                    <MarkdownView
+                      markdown={source}
+                      resolveWikiLink={resolveWikiLink}
+                      resolveResourceLink={resolveResourceLink}
+                      renderEmbed={renderEmbed}
+                      onOpenDiagramLink={openDiagramLink}
+                      onOpenResourceLink={openResourceLink}
+                    />
+                  ) : isEventFlow ? (
+                    <EventFlowPreview
+                      source={source}
+                      flow={eventFlow}
+                      view={eventFlowView}
+                      onViewChange={setEventFlowView}
+                      onNodeSelect={onNodeSelect}
+                      activeNodeId={activeNodeId}
+                      maximized={previewMaximized}
+                      onToggleMaximize={() =>
+                        setPreviewMaximized((value) => !value)
+                      }
+                    />
+                  ) : (
+                    <Preview
+                      source={renderedSource || source}
+                      autoUpdate={autoUpdate}
+                      isStale={isStale}
+                      onRender={() => setRenderedSource(source)}
+                      onNodeSelect={onNodeSelect}
+                      activeNodeId={activeNodeId}
+                      maximized={previewMaximized}
+                      onToggleMaximize={() =>
+                        setPreviewMaximized((value) => !value)
+                      }
+                    />
+                  )}
+                </section>
+              </>
+            )}
           </main>
 
           <footer className="app__statusbar">

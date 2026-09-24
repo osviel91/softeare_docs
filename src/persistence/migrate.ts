@@ -24,6 +24,8 @@ import { up as resourceMetadata } from "./migrations/0009-resource-metadata";
 import { up as resourceRevisions } from "./migrations/0010-resource-revisions";
 import { up as changeProposals } from "./migrations/0011-change-proposals";
 import { up as mergedProposals } from "./migrations/0012-merged-proposals";
+import { up as mergeSchemaRepair } from "./migrations/0013-merge-schema-repair";
+import { repairMergeSchema } from "./migrations/0013-merge-schema-repair";
 
 /** One migration: a stable name and the SQL that applies it. */
 export interface Migration {
@@ -49,6 +51,7 @@ export const MIGRATIONS: readonly Migration[] = [
   { version: 10, name: "resource-revisions", sql: resourceRevisions },
   { version: 11, name: "change-proposals", sql: changeProposals },
   { version: 12, name: "merged-proposals", sql: mergedProposals },
+  { version: 13, name: "merge-schema-repair", sql: mergeSchemaRepair },
 ];
 
 /**
@@ -123,6 +126,10 @@ export async function migrate(
     });
     applied.push(migration.version);
   }
+
+  // H20.2.1: repair merge columns even when a drifted database falsely records
+  // the repair migration as applied.
+  await repairMergeSchema(client);
 
   return { applied, present };
 }

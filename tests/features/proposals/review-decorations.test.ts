@@ -18,8 +18,21 @@ describe("review SVG decoration", () => {
       'class="review-change--added"',
     );
     expect(decorateReviewSvg(svg, "sequence", [change])).toContain(
-      'data-review-change="message:1"',
+      'data-review-change="interaction:message:1"',
     );
+  });
+
+  it("marks a changed participant without changing canonical SVG structure", () => {
+    const svg =
+      '<g class="participant" data-participant-id="Stage" draggable="true"></g>';
+    const change = {
+      kind: "modified" as const,
+      entity: "participant",
+      identity: "Stage",
+    };
+    const decorated = decorateReviewSvg(svg, "sequence", [change], "proposed");
+    expect(decorated).toContain("review-change--added");
+    expect(decorated).toContain('data-review-change="participant:Stage"');
   });
 
   it("marks event-flow additions and removals without changing the SVG structure", () => {

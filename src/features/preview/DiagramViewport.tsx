@@ -138,11 +138,12 @@ export default function DiagramViewport({
   const [paneSize, setPaneSize] = useState<Size>(() => measure(null));
   const [transform, setTransform] =
     useState<ViewportTransform>(IDENTITY_TRANSFORM);
+  const applyingLinkedTransform = useRef(false);
   const updateTransform = useCallback(
     (next: ViewportTransform | ((current: ViewportTransform) => ViewportTransform)) => {
       setTransform((current) => {
         const value = typeof next === "function" ? next(current) : next;
-        onTransformChange?.(value);
+         if (!applyingLinkedTransform.current) onTransformChange?.(value);
         return value;
       });
     },
@@ -172,13 +173,17 @@ export default function DiagramViewport({
 
   useEffect(() => {
     if (!linkedTransform) return;
-    setTransform((current) =>
-      current.x === linkedTransform.x &&
-      current.y === linkedTransform.y &&
-      current.scale === linkedTransform.scale
-        ? current
-        : linkedTransform,
-    );
+    applyingLinkedTransform.current = true;
+    setTransform((current) => {
+      if (
+        current.x === linkedTransform.x &&
+        current.y === linkedTransform.y &&
+        current.scale === linkedTransform.scale
+      )
+        return current;
+      return linkedTransform;
+    });
+    applyingLinkedTransform.current = false;
   }, [linkedTransform]);
 
   const fit = useCallback(() => {
@@ -364,7 +369,9 @@ export default function DiagramViewport({
 
   // Minimap geometry: the whole diagram scaled into a fixed preview box.
   const minimap = useMemo(() => {
-    const box = { width: 168, height: 116 };
+    const box = reviewMode
+      ? { width: 132, height: 90 }
+      : { width: 168, height: 116 };
     const scale = Math.min(
       1,
       box.width / Math.max(1, size.width),
@@ -375,7 +382,7 @@ export default function DiagramViewport({
       width: size.width * scale,
       height: size.height * scale,
     };
-  }, [size]);
+  }, [reviewMode, size]);
 
   // The slice of the diagram currently visible, in minimap pixels.
   const view = {

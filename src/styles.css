@@ -351,12 +351,6 @@ body {
   bottom: 8px;
   padding: 3px;
 }
-.minimap--review .minimap__canvas {
-  transform: scale(0.72);
-  transform-origin: bottom left;
-  margin-right: -47px;
-  margin-bottom: -33px;
-}
 .proposal-review__decision {
   margin-top: 32px;
   padding: 18px;

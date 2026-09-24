@@ -50,7 +50,7 @@ describe("migrate", () => {
     const client = await createPgliteClient();
     try {
       const report = await migrate(client);
-      expect(report.applied).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+       expect(report.applied).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
       expect(report.present).toEqual([]);
       const tables = await client.query(
         `SELECT table_name FROM information_schema.tables
@@ -176,7 +176,7 @@ describe("migrate", () => {
       await migrate(client);
       const second = await migrate(client);
       expect(second.applied).toEqual([]);
-      expect(second.present).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+       expect(second.present).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
     } finally {
       await client.close();
     }
@@ -192,6 +192,29 @@ describe("migrate", () => {
       expect(report.applied).toEqual([10, 20]);
     } finally {
       await client.close();
+    }
+  });
+
+  it("repairs merge columns when history falsely says the repair ran", async () => {
+    const client = await openTestDatabase();
+    try {
+      await client.query(
+        "ALTER TABLE change_proposals DROP COLUMN merge_authorship, DROP COLUMN merged_at, DROP COLUMN merged_revision",
+      );
+      const report = await migrate(client);
+      expect(report.applied).toEqual([]);
+      const columns = await client.query(
+        `SELECT column_name FROM information_schema.columns
+         WHERE table_name = 'change_proposals'
+           AND column_name IN ('merge_authorship', 'merged_at', 'merged_revision')`,
+      );
+      expect(columns.rows.map((row) => String(row.column_name)).sort()).toEqual([
+        "merge_authorship",
+        "merged_at",
+        "merged_revision",
+      ]);
+    } finally {
+      await closeTestDatabase(client);
     }
   });
 

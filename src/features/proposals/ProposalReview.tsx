@@ -19,6 +19,10 @@ import type { MergeAnalysis } from "../../domain/diff/merge-analysis";
 import { loadProjectProposals } from "./project-proposals";
 import { ApiError, NetworkError } from "../../workspace/server/api-errors";
 import type { DiagramViewportTransform } from "../preview/DiagramViewport";
+import {
+  reviewChangeTargets,
+  type ReviewChangeTarget,
+} from "./review-targets";
 
 export interface ProposalReviewProps {
   proposal: ServerChangeProposal;
@@ -262,75 +266,36 @@ function readableDetails(details?: Record<string, unknown>): string | null {
   return values.length > 0 ? values.join("; ") : null;
 }
 
-function ChangeList({
-  changes,
-  startIndex,
-}: {
-  changes: SemanticChange[];
-  startIndex: number;
-}) {
-  return changes.length === 0 ? (
+function ChangeList({ targets }: { targets: ReviewChangeTarget[] }) {
+  return targets.length === 0 ? (
     <p className="proposal-review__empty">No semantic changes.</p>
   ) : (
     <ul className="proposal-review__changes">
-      {changes.map((change, index) => (
-        <li
-          className={`proposal-review__change proposal-review__change--${change.kind}`}
-          key={`${change.identity}-${index}`}
-          id={`review-change-${startIndex + index}`}
-          data-review-change={startIndex + index}
-          tabIndex={-1}
-        >
-          <span className="proposal-review__kind">
-            {KIND_LABEL[change.kind]}
-          </span>
-          <strong>{semanticLabel(change)}</strong>
-          <span>
-            {change.identity.replace(/\|/g, " → ").replace(/:/g, " / ")}
-          </span>
-          {readableDetails(change.details) && (
-            <span>{readableDetails(change.details)}</span>
-          )}
-        </li>
-      ))}
+      {targets.map((target) => {
+        const change = target.change!;
+        return (
+          <li
+            className={`proposal-review__change proposal-review__change--${change.kind}`}
+            key={target.id}
+            id={`review-target-${target.id}`}
+            data-review-target={target.id}
+            tabIndex={-1}
+          >
+            <span className="proposal-review__kind">
+              {KIND_LABEL[change.kind]}
+            </span>
+            <strong>{semanticLabel(change)}</strong>
+            <span>
+              {change.identity.replace(/\|/g, " → ").replace(/:/g, " / ")}
+            </span>
+            {readableDetails(change.details) && (
+              <span>{readableDetails(change.details)}</span>
+            )}
+          </li>
+        );
+      })}
     </ul>
   );
-}
-
-function groupedChanges(changes: SemanticChange[]): SemanticChange[] {
-  const grouped = new Map<string, SemanticChange>();
-  for (const change of changes) {
-    const event =
-      typeof change.details?.event === "string"
-        ? change.details.event
-        : change.entity === "event"
-          ? change.identity
-          : null;
-    const related =
-      event &&
-      [
-        "event",
-        "event-metadata",
-        "publication",
-        "subscription",
-        "channel",
-      ].includes(change.entity);
-    const key = related
-      ? `event:${event}`
-      : `${change.entity}:${change.identity}`;
-    const previous = grouped.get(key);
-    if (!previous) {
-      grouped.set(key, { ...change });
-      continue;
-    }
-    grouped.set(key, {
-      ...previous,
-      entity: "event",
-      identity: event ?? previous.identity,
-      details: { ...previous.details, related: true },
-    });
-  }
-  return [...grouped.values()];
 }
 
 function SourceDiff({ diff }: { diff: ServerChangeProposalDiff }) {
@@ -397,10 +362,9 @@ export default function ProposalReview({
     useState<DiagramViewportTransform | null>(null);
   const representation = resourceRepresentationOfType(diff.type);
   const metadataChanges = diff.metadata.changes;
-  const contentChanges = diff.content.available
-    ? groupedChanges(diff.content.changes)
-    : [];
-  const reviewChanges = [...metadataChanges, ...contentChanges];
+  const reviewTargets = diff.content.available
+    ? reviewChangeTargets(metadataChanges, diff.content.changes)
+    : reviewChangeTargets(metadataChanges, []);
 
   useEffect(() => {
     setView("changes");
@@ -409,11 +373,13 @@ export default function ProposalReview({
   }, [proposal.id]);
 
   useEffect(() => {
-    if (reviewChanges.length === 0) return;
-    const element = document.getElementById(`review-change-${changeIndex}`);
+    if (reviewTargets.length === 0) return;
+    const element = document.getElementById(
+      `review-target-${reviewTargets[changeIndex]?.id ?? ""}`,
+    );
     element?.scrollIntoView?.({ block: "nearest" });
     element?.focus();
-  }, [changeIndex, reviewChanges.length]);
+  }, [changeIndex, reviewTargets.length]);
 
   const artifact = (
     label: string,
@@ -437,7 +403,7 @@ export default function ProposalReview({
           reviewSide={side}
           linkedTransform={linkedNavigation ? linkedTransform : null}
           onTransformChange={linkedNavigation ? setLinkedTransform : undefined}
-          activeReviewChange={reviewChanges[changeIndex]?.identity}
+          activeReviewChange={reviewTargets[changeIndex]?.id}
         />
       ) : (
         <Preview
@@ -447,7 +413,7 @@ export default function ProposalReview({
           reviewSide={side}
           linkedTransform={linkedNavigation ? linkedTransform : null}
           onTransformChange={linkedNavigation ? setLinkedTransform : undefined}
-          activeReviewChange={reviewChanges[changeIndex]?.identity}
+          activeReviewChange={reviewTargets[changeIndex]?.id}
         />
       )}
     </section>
@@ -555,11 +521,11 @@ export default function ProposalReview({
             ) : (
               <ul className="proposal-review__changes">
               {metadataChanges.map((change, index) => (
-                <li
+                  <li
                     className={`proposal-review__change proposal-review__change--${change.kind}`}
                   key={`${change.field}-${change.identity}`}
-                  id={`review-change-${index}`}
-                  data-review-change={index}
+                    id={`review-target-${reviewTargets[index]?.id}`}
+                    data-review-target={reviewTargets[index]?.id}
                   tabIndex={-1}
                   >
                     <strong>
@@ -584,8 +550,7 @@ export default function ProposalReview({
             </h2>
             {diff.content.available ? (
               <ChangeList
-                changes={contentChanges}
-                startIndex={metadataChanges.length}
+                targets={reviewTargets.filter((target) => target.kind === "semantic")}
               />
             ) : (
               <>
@@ -603,7 +568,7 @@ export default function ProposalReview({
               Semantic changes are truncated. More changes exist.
             </p>
           )}
-          {reviewChanges.length > 0 && (
+          {reviewTargets.length > 1 && (
             <div
               className="proposal-review__change-nav"
               aria-label="Change navigation"
@@ -618,16 +583,16 @@ export default function ProposalReview({
                 ‹ Previous change
               </button>
               <span>
-                {changeIndex + 1} of {reviewChanges.length}
+                {changeIndex + 1} of {reviewTargets.length}
               </span>
               <button
                 type="button"
                 onClick={() =>
                     setChangeIndex((index) =>
-                      Math.min(reviewChanges.length - 1, index + 1),
+                       Math.min(reviewTargets.length - 1, index + 1),
                     )
                   }
-                  disabled={changeIndex >= reviewChanges.length - 1}
+                  disabled={changeIndex >= reviewTargets.length - 1}
               >
                 Next change ›
               </button>
@@ -654,7 +619,7 @@ export default function ProposalReview({
             artifact("CURRENT", currentContent, "base")}
           {artifact("PROPOSED", diff.proposedContent, "proposed")}
           </div>
-          {reviewChanges.length > 0 && (
+           {reviewTargets.length > 1 && (
             <div className="proposal-review__change-nav" aria-label="Change navigation">
               <button
                 type="button"
@@ -663,11 +628,11 @@ export default function ProposalReview({
               >
                 ‹ Previous change
               </button>
-              <span>{changeIndex + 1} of {reviewChanges.length}</span>
+               <span>{changeIndex + 1} of {reviewTargets.length}</span>
               <button
                 type="button"
-                onClick={() => setChangeIndex((index) => Math.min(reviewChanges.length - 1, index + 1))}
-                disabled={changeIndex >= reviewChanges.length - 1}
+               onClick={() => setChangeIndex((index) => Math.min(reviewTargets.length - 1, index + 1))}
+                 disabled={changeIndex >= reviewTargets.length - 1}
               >
                 Next change ›
               </button>

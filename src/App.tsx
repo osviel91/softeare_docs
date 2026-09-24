@@ -179,6 +179,7 @@ import LoginScreen from "./features/server/LoginScreen";
 import { RevisionConflictError } from "./workspace/server/api-errors";
 import { supportsForcedWrite } from "./workspace/server/server-workspace-repository";
 import ResourceMetadataEditor from "./features/resource/ResourceMetadataEditor";
+import { ProposalReviewPanel } from "./features/proposals/ProposalReview";
 import type { ResourceMetadata } from "./domain/workspace/resource-metadata";
 
 const PRODUCT_NAME = "Software Docs Manager";
@@ -434,6 +435,7 @@ export default function App() {
     diagramId: string;
     source: string;
   } | null>(null);
+  const [proposalReviewOpen, setProposalReviewOpen] = useState(false);
 
   const resizePane = useCallback(
     (pane: "explorer" | "editor", clientX: number): void => {
@@ -1216,6 +1218,7 @@ export default function App() {
     : selectedNote
       ? resourceIdForFile(selectedNote)
       : null;
+  const canReviewProposals = workspaceMode === "server" && activeResourceId !== null && selectedProjectId !== null;
 
   // Which language the active document is written in. A project holds three, and
   // the extension is what says so — the same rule a folder project uses.
@@ -2593,7 +2596,14 @@ export default function App() {
                 editorWidth === null ? undefined : { flexBasis: editorWidth }
               }
             >
-              {view === "outline" ? (
+              {proposalReviewOpen && canReviewProposals ? (
+                <ProposalReviewPanel
+                  client={apiClient}
+                  projectId={selectedProjectId}
+                  resourceId={activeResourceId}
+                  onBack={() => setProposalReviewOpen(false)}
+                />
+              ) : view === "outline" ? (
                 <OutlinePanel
                   nodes={outlineNodes}
                   activeLine={offsetToPosition(source, caretOffset).line + 1}
@@ -2686,6 +2696,11 @@ export default function App() {
                       writable={metadataWritable}
                       onSave={saveResourceMetadata}
                     />
+                    {canReviewProposals && (
+                      <button type="button" className="button button--ghost button--small" onClick={() => setProposalReviewOpen(true)}>
+                        Proposals
+                      </button>
+                    )}
                   </div>
                   <MarkdownEditor
                     value={source}
@@ -2722,6 +2737,11 @@ export default function App() {
                       writable={metadataWritable}
                       onSave={saveResourceMetadata}
                     />
+                    {canReviewProposals && (
+                      <button type="button" className="button button--ghost button--small" onClick={() => setProposalReviewOpen(true)}>
+                        Proposals
+                      </button>
+                    )}
                   </div>
                   <Editor
                     value={source}

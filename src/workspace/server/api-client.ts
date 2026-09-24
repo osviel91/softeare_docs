@@ -23,6 +23,8 @@
  */
 import { apiErrorFromResponse, NetworkError } from "./api-errors";
 import type { ResourceMetadata } from "../../domain/workspace/resource-metadata";
+import type { ResourceAuthorship } from "../../domain/workspace/resource-revision";
+import type { ResourceDiff } from "../../domain/diff/resource-diff";
 
 /** The signed-in person, as `GET /api/me` reports them. */
 export interface AuthenticatedUser {
@@ -169,6 +171,34 @@ export interface ServerApiClientOptions {
 export interface ServerResourceRead {
   resource: ServerResource;
   content: string;
+}
+
+export interface ServerChangeProposal {
+  id: string;
+  resourceId: string;
+  baseRevision: number;
+  proposedContent: string;
+  proposedMetadata?: ResourceMetadata;
+  title: string;
+  description?: string;
+  author: ResourceAuthorship;
+  createdAt: string;
+  updatedAt: string;
+  status: "draft" | "open" | "closed";
+  version: number;
+}
+
+export interface ServerChangeProposalDiff extends ResourceDiff {
+  proposalId: string;
+  resourceId: string;
+  baseRevision: number;
+  currentRevision: number;
+  stale: boolean;
+  type: "sequence-diagram" | "event-flow" | "markdown-document";
+  baseContent: string;
+  proposedContent: string;
+  baseMetadata?: ResourceMetadata;
+  proposedMetadata?: ResourceMetadata;
 }
 
 /**
@@ -387,6 +417,33 @@ export class ServerApiClient {
       "GET",
       `/api/projects/${encodeURIComponent(projectId)}/resources/${encodeURIComponent(resourceId)}`,
     );
+  }
+
+  async listChangeProposals(
+    projectId: string,
+    resourceId: string,
+  ): Promise<ServerChangeProposal[]> {
+    const body = await this.request<{ proposals: ServerChangeProposal[] }>(
+      "GET",
+      `/api/projects/${encodeURIComponent(projectId)}/resources/${encodeURIComponent(resourceId)}/proposals`,
+    );
+    return body.proposals ?? [];
+  }
+
+  async getChangeProposal(id: string): Promise<ServerChangeProposal> {
+    const body = await this.request<{ proposal: ServerChangeProposal }>(
+      "GET",
+      `/api/change-proposals/${encodeURIComponent(id)}`,
+    );
+    return body.proposal;
+  }
+
+  async getChangeProposalDiff(id: string): Promise<ServerChangeProposalDiff> {
+    const body = await this.request<{ diff: ServerChangeProposalDiff }>(
+      "GET",
+      `/api/change-proposals/${encodeURIComponent(id)}/diff`,
+    );
+    return body.diff;
   }
 
   /** Create a resource at a path, refusing one that is already taken. */

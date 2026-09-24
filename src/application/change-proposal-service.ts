@@ -18,6 +18,7 @@ import { diffResources, type ResourceDiff } from "../domain/diff/resource-diff";
 import {
   resourceStateFromProposal,
   resourceStateFromRevision,
+  type ResourceState,
 } from "../domain/diff/resource-state";
 
 export interface ChangeProposalDiff extends ResourceDiff {
@@ -26,6 +27,11 @@ export interface ChangeProposalDiff extends ResourceDiff {
   baseRevision: number;
   currentRevision: number;
   stale: boolean;
+  type: ResourceState["type"];
+  baseContent: string;
+  proposedContent: string;
+  baseMetadata?: ResourceState["metadata"];
+  proposedMetadata?: ResourceState["metadata"];
 }
 
 export interface ChangeProposalService {
@@ -260,6 +266,13 @@ export function createChangeProposalService(options: {
         baseRevision: proposal.baseRevision,
         currentRevision: resource.revision,
         stale: resource.revision !== proposal.baseRevision,
+        type: base.type,
+        baseContent: base.content,
+        proposedContent: proposal.proposedContent,
+        ...(base.metadata === undefined ? {} : { baseMetadata: base.metadata }),
+        ...(proposal.proposedMetadata === undefined
+          ? {}
+          : { proposedMetadata: proposal.proposedMetadata }),
       };
     },
   };

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Preview from "../preview/Preview";
 import EventFlowPreview, {
   type EventFlowView,
@@ -298,6 +298,46 @@ function ChangeList({ targets }: { targets: ReviewChangeTarget[] }) {
   );
 }
 
+/**
+ * The one navigator for review changes. It renders only when there is more
+ * than one target, and every value it shows — position, total, and the
+ * disabled state of both arrows — is derived from the same `targets` array.
+ */
+function ChangeNavigator({
+  targets,
+  currentIndex,
+  onChange,
+}: {
+  targets: ReviewChangeTarget[];
+  currentIndex: number;
+  onChange: (index: number) => void;
+}) {
+  if (targets.length <= 1) return null;
+  return (
+    <div className="proposal-review__change-nav" aria-label="Change navigation">
+      <button
+        type="button"
+        data-testid="change-previous"
+        onClick={() => onChange(Math.max(0, currentIndex - 1))}
+        disabled={currentIndex === 0}
+      >
+        ‹ Previous change
+      </button>
+      <span data-testid="change-position">
+        {currentIndex + 1} of {targets.length}
+      </span>
+      <button
+        type="button"
+        data-testid="change-next"
+        onClick={() => onChange(Math.min(targets.length - 1, currentIndex + 1))}
+        disabled={currentIndex >= targets.length - 1}
+      >
+        Next change ›
+      </button>
+    </div>
+  );
+}
+
 function SourceDiff({ diff }: { diff: ServerChangeProposalDiff }) {
   if (!diff.source.changed)
     return <p className="proposal-review__empty">No source changes.</p>;
@@ -358,66 +398,123 @@ export default function ProposalReview({
   const [changeIndex, setChangeIndex] = useState(0);
   const [eventFlowView, setEventFlowView] = useState<EventFlowView>("flow");
   const [linkedNavigation, setLinkedNavigation] = useState(true);
-  const [linkedTransform, setLinkedTransform] =
-    useState<DiagramViewportTransform | null>(null);
+  // The active linked camera plus which pane last moved it. A pane never
+  // receives its own camera back, so synchronization can never echo between
+  // the two views.
+  const [linkedCamera, setLinkedCamera] = useState<{
+    origin: "base" | "proposed";
+    transform: DiagramViewportTransform;
+  } | null>(null);
   const representation = resourceRepresentationOfType(diff.type);
-  const metadataChanges = diff.metadata.changes;
-  const reviewTargets = diff.content.available
-    ? reviewChangeTargets(metadataChanges, diff.content.changes)
-    : reviewChangeTargets(metadataChanges, []);
+  // The single source of truth for navigable review changes: position, total,
+  // disabled states, and the focused target all derive from this one list.
+  const reviewTargets = useMemo(
+    () =>
+      diff.content.available
+        ? reviewChangeTargets(diff.metadata.changes, diff.content.changes)
+        : reviewChangeTargets(diff.metadata.changes, []),
+    [diff.metadata.changes, diff.content.changes, diff.content.available],
+  );
+  const metadataTargets = useMemo(
+    () => reviewTargets.filter((target) => target.kind === "metadata"),
+    [reviewTargets],
+  );
+  const semanticTargets = useMemo(
+    () => reviewTargets.filter((target) => target.kind === "semantic"),
+    [reviewTargets],
+  );
+  const semanticChanges = useMemo(
+    () =>
+      semanticTargets
+        .map((target) => target.change)
+        .filter((change): change is SemanticChange => change != null),
+    [semanticTargets],
+  );
+  const currentTargetIndex =
+    reviewTargets.length === 0
+      ? -1
+      : Math.min(changeIndex, reviewTargets.length - 1);
+  const currentTarget = reviewTargets[currentTargetIndex] ?? null;
 
   useEffect(() => {
     setView("changes");
     setChangeIndex(0);
-    setLinkedTransform(null);
+    setLinkedCamera(null);
   }, [proposal.id]);
 
+  // A reloaded/regrouped target list invalidates the previous position.
   useEffect(() => {
-    if (reviewTargets.length === 0) return;
-    const element = document.getElementById(
-      `review-target-${reviewTargets[changeIndex]?.id ?? ""}`,
-    );
+    setChangeIndex(0);
+  }, [reviewTargets]);
+
+  useEffect(() => {
+    if (!currentTarget) return;
+    const element = document.getElementById(`review-target-${currentTarget.id}`);
     element?.scrollIntoView?.({ block: "nearest" });
     element?.focus();
-  }, [changeIndex, reviewTargets.length]);
+  }, [currentTarget]);
+
+  const handleBaseCamera = useCallback(
+    (transform: DiagramViewportTransform) =>
+      setLinkedCamera({ origin: "base", transform }),
+    [],
+  );
+  const handleProposedCamera = useCallback(
+    (transform: DiagramViewportTransform) =>
+      setLinkedCamera({ origin: "proposed", transform }),
+    [],
+  );
 
   const artifact = (
     label: string,
     content: string,
     side: "base" | "proposed",
-  ) => (
-    <section
-      className="proposal-review__artifact"
-      aria-labelledby={`proposal-${label.toLowerCase()}`}
-    >
-      <h2 id={`proposal-${label.toLowerCase()}`}>{label}</h2>
-      {representation === "markdown" ? (
-        <MarkdownView markdown={content} />
-      ) : representation === "event-flow" ? (
-        <EventFlowPreview
-          source={content}
-          view={eventFlowView}
-          onViewChange={setEventFlowView}
-          reviewChanges={diff.content.changes}
-          reviewMode
-          reviewSide={side}
-          linkedTransform={linkedNavigation ? linkedTransform : null}
-          onTransformChange={linkedNavigation ? setLinkedTransform : undefined}
-          activeReviewChange={reviewTargets[changeIndex]?.id}
-        />
-      ) : (
-        <Preview
-          source={content}
-          reviewChanges={diff.content.changes}
-          reviewMode
-          reviewSide={side}
-          linkedTransform={linkedNavigation ? linkedTransform : null}
-          onTransformChange={linkedNavigation ? setLinkedTransform : undefined}
-          activeReviewChange={reviewTargets[changeIndex]?.id}
-        />
-      )}
-    </section>
-  );
+  ) => {
+    // In linked mode a pane follows the *other* pane's camera and reports its
+    // own; the origin pane never gets its own camera echoed back.
+    const linkedTransform =
+      linkedNavigation && linkedCamera && linkedCamera.origin !== side
+        ? linkedCamera.transform
+        : null;
+    const onTransformChange = linkedNavigation
+      ? side === "base"
+        ? handleBaseCamera
+        : handleProposedCamera
+      : undefined;
+    return (
+      <section
+        className="proposal-review__artifact"
+        aria-labelledby={`proposal-${label.toLowerCase()}`}
+      >
+        <h2 id={`proposal-${label.toLowerCase()}`}>{label}</h2>
+        {representation === "markdown" ? (
+          <MarkdownView markdown={content} />
+        ) : representation === "event-flow" ? (
+          <EventFlowPreview
+            source={content}
+            view={eventFlowView}
+            onViewChange={setEventFlowView}
+            reviewChanges={semanticChanges}
+            reviewMode
+            reviewSide={side}
+            linkedTransform={linkedTransform}
+            onTransformChange={onTransformChange}
+            activeReviewChange={currentTarget?.id}
+          />
+        ) : (
+          <Preview
+            source={content}
+            reviewChanges={semanticChanges}
+            reviewMode
+            reviewSide={side}
+            linkedTransform={linkedTransform}
+            onTransformChange={onTransformChange}
+            activeReviewChange={currentTarget?.id}
+          />
+        )}
+      </section>
+    );
+  };
 
   return (
     <div className="proposal-review" data-testid="proposal-review">
@@ -516,27 +613,30 @@ export default function ProposalReview({
         <div className="proposal-review__changes-view">
           <section>
             <h2>Resource metadata</h2>
-            {diff.metadata.changes.length === 0 ? (
+            {metadataTargets.length === 0 ? (
               <p className="proposal-review__empty">No metadata changes.</p>
             ) : (
               <ul className="proposal-review__changes">
-              {metadataChanges.map((change, index) => (
-                  <li
-                    className={`proposal-review__change proposal-review__change--${change.kind}`}
-                  key={`${change.field}-${change.identity}`}
-                    id={`review-target-${reviewTargets[index]?.id}`}
-                    data-review-target={reviewTargets[index]?.id}
-                  tabIndex={-1}
-                  >
-                    <strong>
-                      {change.field === "tag" ? "Tags" : "Description"}
-                    </strong>
-                    <span>
-                      {change.kind === "removed" ? "−" : "+"}{" "}
-                      {change.newValue ?? change.oldValue}
-                    </span>
-                  </li>
-                ))}
+                {metadataTargets.map((target) => {
+                  const change = target.metadata!;
+                  return (
+                    <li
+                      className={`proposal-review__change proposal-review__change--${change.kind}`}
+                      key={target.id}
+                      id={`review-target-${target.id}`}
+                      data-review-target={target.id}
+                      tabIndex={-1}
+                    >
+                      <strong>
+                        {change.field === "tag" ? "Tags" : "Description"}
+                      </strong>
+                      <span>
+                        {change.kind === "removed" ? "−" : "+"}{" "}
+                        {change.newValue ?? change.oldValue}
+                      </span>
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </section>
@@ -549,9 +649,7 @@ export default function ProposalReview({
                   : "Sequence"}
             </h2>
             {diff.content.available ? (
-              <ChangeList
-                targets={reviewTargets.filter((target) => target.kind === "semantic")}
-              />
+              <ChangeList targets={semanticTargets} />
             ) : (
               <>
                 <p>Semantic comparison unavailable.</p>
@@ -568,36 +666,11 @@ export default function ProposalReview({
               Semantic changes are truncated. More changes exist.
             </p>
           )}
-          {reviewTargets.length > 1 && (
-            <div
-              className="proposal-review__change-nav"
-              aria-label="Change navigation"
-            >
-                <button
-                  type="button"
-                onClick={() =>
-                  setChangeIndex((index) => Math.max(0, index - 1))
-                }
-                disabled={changeIndex === 0}
-              >
-                ‹ Previous change
-              </button>
-              <span>
-                {changeIndex + 1} of {reviewTargets.length}
-              </span>
-              <button
-                type="button"
-                onClick={() =>
-                    setChangeIndex((index) =>
-                       Math.min(reviewTargets.length - 1, index + 1),
-                    )
-                  }
-                  disabled={changeIndex >= reviewTargets.length - 1}
-              >
-                Next change ›
-              </button>
-            </div>
-          )}
+          <ChangeNavigator
+            targets={reviewTargets}
+            currentIndex={currentTargetIndex}
+            onChange={setChangeIndex}
+          />
         </div>
       )}
       {view === "compare" && (
@@ -607,7 +680,12 @@ export default function ProposalReview({
               <input
                 type="checkbox"
                 checked={linkedNavigation}
-                onChange={(event) => setLinkedNavigation(event.target.checked)}
+                onChange={(event) => {
+                  setLinkedNavigation(event.target.checked);
+                  // Turning linking on/off never moves the cameras; the next
+                  // pan or zoom on either pane establishes the leader.
+                  setLinkedCamera(null);
+                }}
               />{" "}
               Link pan and zoom
             </label>
@@ -619,25 +697,11 @@ export default function ProposalReview({
             artifact("CURRENT", currentContent, "base")}
           {artifact("PROPOSED", diff.proposedContent, "proposed")}
           </div>
-           {reviewTargets.length > 1 && (
-            <div className="proposal-review__change-nav" aria-label="Change navigation">
-              <button
-                type="button"
-                onClick={() => setChangeIndex((index) => Math.max(0, index - 1))}
-                disabled={changeIndex === 0}
-              >
-                ‹ Previous change
-              </button>
-               <span>{changeIndex + 1} of {reviewTargets.length}</span>
-              <button
-                type="button"
-               onClick={() => setChangeIndex((index) => Math.min(reviewTargets.length - 1, index + 1))}
-                 disabled={changeIndex >= reviewTargets.length - 1}
-              >
-                Next change ›
-              </button>
-            </div>
-          )}
+          <ChangeNavigator
+            targets={reviewTargets}
+            currentIndex={currentTargetIndex}
+            onChange={setChangeIndex}
+          />
         </div>
       )}
       {view === "source" && <SourceDiff diff={diff} />}

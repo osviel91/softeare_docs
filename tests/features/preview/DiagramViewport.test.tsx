@@ -185,6 +185,89 @@ describe("DiagramViewport", () => {
   });
 });
 
+describe("DiagramViewport — linked camera", () => {
+  beforeEach(() => stubPaneSize(800, 600));
+  afterEach(() => vi.restoreAllMocks());
+
+  it("ignores a fresh size object with the same numbers while linked", () => {
+    const onTransformChange = vi.fn();
+    const { rerender } = render(
+      <DiagramViewport
+        svg={SVG}
+        size={{ width: 400, height: 300 }}
+        onTransformChange={onTransformChange}
+      />,
+    );
+    onTransformChange.mockClear();
+
+    // A caller that passes a new `{ width, height }` literal each render must
+    // not re-fit (and, while linked, must not echo a camera on every render).
+    rerender(
+      <DiagramViewport
+        svg={SVG}
+        size={{ width: 400, height: 300 }}
+        onTransformChange={onTransformChange}
+      />,
+    );
+    rerender(
+      <DiagramViewport
+        svg={SVG}
+        size={{ width: 400, height: 300 }}
+        onTransformChange={onTransformChange}
+      />,
+    );
+
+    expect(onTransformChange).not.toHaveBeenCalled();
+  });
+
+  it("adopts a linked transform without reporting it back to the parent", () => {
+    const onTransformChange = vi.fn();
+    const { rerender } = render(
+      <DiagramViewport
+        svg={SVG}
+        size={SIZE}
+        onTransformChange={onTransformChange}
+      />,
+    );
+    onTransformChange.mockClear();
+
+    rerender(
+      <DiagramViewport
+        svg={SVG}
+        size={SIZE}
+        linkedTransform={{ x: 10, y: 20, scale: 1.5 }}
+        onTransformChange={onTransformChange}
+      />,
+    );
+
+    expect(transformOf()).toContain("translate(10px, 20px)");
+    expect(transformOf()).toContain("scale(1.5)");
+    // Following the peer is not the same as moving: no echo back to the source.
+    expect(onTransformChange).not.toHaveBeenCalled();
+  });
+
+  it("does not reset the camera when the report callback appears or disappears", () => {
+    const onTransformChange = vi.fn();
+    const { rerender } = render(<DiagramViewport svg={SVG} size={SIZE} />);
+    fireEvent.click(screen.getByTestId("zoom-in"));
+    expect(screen.getByTestId("zoom-level").textContent).toBe("125%");
+
+    // Linking toggles the callback on; that alone must not re-fit the pane.
+    rerender(
+      <DiagramViewport
+        svg={SVG}
+        size={SIZE}
+        onTransformChange={onTransformChange}
+      />,
+    );
+    expect(screen.getByTestId("zoom-level").textContent).toBe("125%");
+
+    // Unlinking removes it; the camera must survive too.
+    rerender(<DiagramViewport svg={SVG} size={SIZE} />);
+    expect(screen.getByTestId("zoom-level").textContent).toBe("125%");
+  });
+});
+
 describe("DiagramViewport — dragging a participant", () => {
   // A participant group as the renderer emits it.
   const SVG_WITH_PARTICIPANT =

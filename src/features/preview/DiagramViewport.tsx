@@ -138,16 +138,27 @@ export default function DiagramViewport({
   const [paneSize, setPaneSize] = useState<Size>(() => measure(null));
   const [transform, setTransform] =
     useState<ViewportTransform>(IDENTITY_TRANSFORM);
-  const applyingLinkedTransform = useRef(false);
+  // Latest camera, readable synchronously so a burst of interactions in one
+  // event batch accumulates instead of each computing from a stale render.
+  const transformRef = useRef<ViewportTransform>(IDENTITY_TRANSFORM);
+  // Read the callback through a ref so `updateTransform` keeps one identity for
+  // the pane's whole life. Callers wire linking conditionally (the callback is
+  // undefined while unlinked), and an identity change here would re-run the
+  // auto-fit effect and reset both cameras each time linking is toggled.
+  const onTransformChangeRef = useRef(onTransformChange);
+  onTransformChangeRef.current = onTransformChange;
+  // Local camera changes flow outward; an adopted peer camera is written with
+  // the plain setter below and never reported back, which is what stops a
+  // linked pair from echoing a change endlessly between the two panes.
   const updateTransform = useCallback(
     (next: ViewportTransform | ((current: ViewportTransform) => ViewportTransform)) => {
-      setTransform((current) => {
-        const value = typeof next === "function" ? next(current) : next;
-         if (!applyingLinkedTransform.current) onTransformChange?.(value);
-        return value;
-      });
+      const value =
+        typeof next === "function" ? next(transformRef.current) : next;
+      transformRef.current = value;
+      setTransform(value);
+      onTransformChangeRef.current?.(value);
     },
-    [onTransformChange],
+    [],
   );
   const [isPanning, setIsPanning] = useState(false);
   // Drag origin lives in a ref: it changes on every pointer move and must not
@@ -173,17 +184,17 @@ export default function DiagramViewport({
 
   useEffect(() => {
     if (!linkedTransform) return;
-    applyingLinkedTransform.current = true;
-    setTransform((current) => {
-      if (
-        current.x === linkedTransform.x &&
-        current.y === linkedTransform.y &&
-        current.scale === linkedTransform.scale
-      )
-        return current;
-      return linkedTransform;
-    });
-    applyingLinkedTransform.current = false;
+    const current = transformRef.current;
+    if (
+      current.x === linkedTransform.x &&
+      current.y === linkedTransform.y &&
+      current.scale === linkedTransform.scale
+    )
+      return;
+    // Adopt the peer camera without reporting it outward: this pane follows,
+    // it does not become the new source.
+    transformRef.current = linkedTransform;
+    setTransform(linkedTransform);
   }, [linkedTransform]);
 
   const fit = useCallback(() => {
@@ -196,9 +207,22 @@ export default function DiagramViewport({
 
   // Fit whenever a different diagram arrives (and once the pane is measured).
   // Without this a diagram larger than the pane opens off-screen.
+  //
+  // Depend on the measured numbers, not the `size`/`paneSize` objects: callers
+  // routinely pass a fresh `{ width, height }` literal each render, which would
+  // otherwise change `fit`'s identity, re-run this effect, and — when the
+  // camera is linked — report a new camera to the parent on every render,
+  // looping forever.
   useEffect(() => {
-    fit();
-  }, [fit, resetKey]);
+    updateTransform(fitTransform(size, paneSize));
+  }, [
+    size.width,
+    size.height,
+    paneSize.width,
+    paneSize.height,
+    resetKey,
+    updateTransform,
+  ]);
 
   // Wheel zoom must be a non-passive native listener: React attaches wheel
   // handlers passively, so preventDefault there is ignored and the pane would

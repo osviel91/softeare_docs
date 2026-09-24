@@ -317,13 +317,31 @@ body {
   stroke-width: 3;
 }
 .review-change--added line,
-.review-change--added path {
+.review-change--added path,
+.review-change--added polyline,
+.review-change--added polygon,
+.review-change--added circle {
   stroke: var(--ok);
 }
+.review-change--added polygon {
+  fill: var(--ok);
+}
+.review-change--added text {
+  fill: var(--ok);
+}
 .review-change--removed line,
-.review-change--removed path {
+.review-change--removed path,
+.review-change--removed polyline,
+.review-change--removed polygon,
+.review-change--removed circle {
   stroke: var(--danger);
   stroke-dasharray: 5 3;
+}
+.review-change--removed polygon {
+  fill: var(--danger);
+}
+.review-change--removed text {
+  fill: var(--danger);
 }
 .review-change--active {
   filter: drop-shadow(0 0 7px var(--accent));

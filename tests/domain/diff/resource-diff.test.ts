@@ -83,7 +83,7 @@ describe("resource diff", () => {
     expect(diff.source.changed).toBe(true);
   });
 
-  it("compares sequence participants and positional interactions", () => {
+  it("compares sequence participants and interactions conservatively", () => {
     const base = "participant A\nparticipant B\nA -> B: one";
     const proposed = "participant A\nparticipant C\nA -> C: two\nA -> C: three";
     const diff = diffResources(
@@ -102,21 +102,29 @@ describe("resource diff", () => {
           entity: "participant",
           identity: "C",
         }),
+        // The single old message shares neither endpoint nor label with either
+        // new one, so correspondence is ambiguous: removed plus added, no
+        // invented modification.
         expect.objectContaining({
-          kind: "modified",
+          kind: "removed",
           entity: "interaction",
-          identity: "message:1",
+          identity: "message:1-0",
         }),
         expect.objectContaining({
           kind: "added",
           entity: "interaction",
-          identity: "message:2",
+          identity: "message:0-1",
+        }),
+        expect.objectContaining({
+          kind: "added",
+          entity: "interaction",
+          identity: "message:0-2",
         }),
       ]),
     );
   });
 
-  it("keeps positional sequence changes addressable in a large diagram", () => {
+  it("keeps sequence changes addressable in a large diagram", () => {
     const base = [
       "participant A",
       "participant B",
@@ -124,20 +132,26 @@ describe("resource diff", () => {
     ].join("\n");
     const proposed = base
       .replace("stage 24", "canonical 24")
-      .replace("stage 28", "");
+      .replace("\nA -> B: stage 28", "");
     const diff = diffResources(
       state(base, "sequence-diagram"),
       state(proposed, "sequence-diagram"),
     );
 
+    // LCS anchoring keeps the edited message at 24 on both sides, and the
+    // truncated tail is a removal rather than a shift of every later message.
     expect(diff.content.changes).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           entity: "interaction",
-          identity: "message:24",
+          identity: "message:24-24",
           kind: "modified",
         }),
-        expect.objectContaining({ entity: "interaction", identity: "message:28", kind: "modified" }),
+        expect.objectContaining({
+          entity: "interaction",
+          identity: "message:28-0",
+          kind: "removed",
+        }),
       ]),
     );
   });
@@ -180,5 +194,104 @@ describe("resource diff", () => {
         state("# One\n\nnew", "markdown-document"),
       ),
     );
+  });
+});
+
+/** Diff two sequence sources and return only the interaction changes. */
+function interactions(base: string, proposed: string) {
+  return diffResources(
+    state(base, "sequence-diagram"),
+    state(proposed, "sequence-diagram"),
+  ).content.changes.filter((change) => change.entity === "interaction");
+}
+
+function oldShape(change: { details?: Record<string, unknown> }) {
+  return change.details?.old as { from: string; to: string; label: string };
+}
+
+function newShape(change: { details?: Record<string, unknown> }) {
+  return change.details?.new as { from: string; to: string; label: string };
+}
+
+describe("sequence interaction matching", () => {
+  const participants = "participant A\nparticipant B\nparticipant C\n";
+
+  it("pairs a message whose text changed as one modification", () => {
+    const changes = interactions(
+      `${participants}A -> B: old text`,
+      `${participants}A -> B: new text`,
+    );
+    expect(changes).toHaveLength(1);
+    expect(changes[0].kind).toBe("modified");
+    expect(changes[0].identity).toBe("message:1-1");
+    expect(oldShape(changes[0]).label).toBe("old text");
+    expect(newShape(changes[0]).label).toBe("new text");
+  });
+
+  it("pairs a direction change as one modification", () => {
+    const changes = interactions(
+      `${participants}A -> B: command`,
+      `${participants}B -> A: command`,
+    );
+    expect(changes).toHaveLength(1);
+    expect(changes[0].kind).toBe("modified");
+    expect(oldShape(changes[0])).toMatchObject({ from: "A", to: "B" });
+    expect(newShape(changes[0])).toMatchObject({ from: "B", to: "A" });
+  });
+
+  it("pairs an endpoint change as one modification", () => {
+    const changes = interactions(
+      `${participants}A -> B: command`,
+      `${participants}A -> C: command`,
+    );
+    expect(changes).toHaveLength(1);
+    expect(changes[0].kind).toBe("modified");
+    expect(oldShape(changes[0]).to).toBe("B");
+    expect(newShape(changes[0]).to).toBe("C");
+  });
+
+  it("reports an inserted interaction as added without disturbing its neighbours", () => {
+    const changes = interactions(
+      `${participants}A -> B: one\nA -> B: three`,
+      `${participants}A -> B: one\nA -> B: two\nA -> B: three`,
+    );
+    expect(changes).toEqual([
+      expect.objectContaining({ kind: "added", identity: "message:0-2" }),
+    ]);
+  });
+
+  it("reports a deleted interaction as removed without disturbing its neighbours", () => {
+    const changes = interactions(
+      `${participants}A -> B: one\nA -> B: two\nA -> B: three`,
+      `${participants}A -> B: one\nA -> B: three`,
+    );
+    expect(changes).toEqual([
+      expect.objectContaining({ kind: "removed", identity: "message:2-0" }),
+    ]);
+  });
+
+  it("reports added and removed participants", () => {
+    const changes = diffResources(
+      state("participant A\nA -> A: self", "sequence-diagram"),
+      state(
+        "participant A\nparticipant B\nA -> A: self",
+        "sequence-diagram",
+      ),
+    ).content.changes;
+    expect(changes).toEqual([
+      expect.objectContaining({
+        entity: "participant",
+        kind: "added",
+        identity: "B",
+      }),
+    ]);
+  });
+
+  it("emits removed plus added when correspondence is ambiguous", () => {
+    const changes = interactions(
+      `${participants}A -> B: one`,
+      `${participants}A -> C: two`,
+    );
+    expect(changes.map((change) => change.kind)).toEqual(["removed", "added"]);
   });
 });

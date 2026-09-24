@@ -20,6 +20,7 @@ import { loadProjectProposals } from "./project-proposals";
 import { ApiError, NetworkError } from "../../workspace/server/api-errors";
 import type { DiagramViewportTransform } from "../preview/DiagramViewport";
 import {
+  navigableTargets,
   reviewChangeTargets,
   type ReviewChangeTarget,
 } from "./review-targets";
@@ -351,6 +352,9 @@ function SourceDiff({ diff }: { diff: ServerChangeProposalDiff }) {
         <div
           className="proposal-review__hunk"
           key={`${hunk.oldStart}-${hunk.newStart}-${index}`}
+          id={`review-target-source:hunk:${index}`}
+          data-review-target={`source:hunk:${index}`}
+          tabIndex={-1}
         >
           <div className="proposal-review__hunk-heading">
             @@ {hunk.oldStart} / {hunk.newStart} @@
@@ -430,11 +434,15 @@ export default function ProposalReview({
         .filter((change): change is SemanticChange => change != null),
     [semanticTargets],
   );
+  // Only the targets the active mode can actually reveal are navigable, so
+  // Previous/Next never lands on a phantom location.
+  const navigable = useMemo(
+    () => navigableTargets(view, reviewTargets, diff.source, representation),
+    [view, reviewTargets, diff.source, representation],
+  );
   const currentTargetIndex =
-    reviewTargets.length === 0
-      ? -1
-      : Math.min(changeIndex, reviewTargets.length - 1);
-  const currentTarget = reviewTargets[currentTargetIndex] ?? null;
+    navigable.length === 0 ? -1 : Math.min(changeIndex, navigable.length - 1);
+  const currentTarget = navigable[currentTargetIndex] ?? null;
 
   useEffect(() => {
     setView("changes");
@@ -442,10 +450,11 @@ export default function ProposalReview({
     setLinkedCamera(null);
   }, [proposal.id]);
 
-  // A reloaded/regrouped target list invalidates the previous position.
+  // A reloaded/regrouped target list, or a different review mode, invalidates
+  // the previous position.
   useEffect(() => {
     setChangeIndex(0);
-  }, [reviewTargets]);
+  }, [view, reviewTargets]);
 
   useEffect(() => {
     if (!currentTarget) return;
@@ -500,6 +509,7 @@ export default function ProposalReview({
             linkedTransform={linkedTransform}
             onTransformChange={onTransformChange}
             activeReviewChange={currentTarget?.id}
+            focusReviewChange={currentTarget?.id}
           />
         ) : (
           <Preview
@@ -510,6 +520,7 @@ export default function ProposalReview({
             linkedTransform={linkedTransform}
             onTransformChange={onTransformChange}
             activeReviewChange={currentTarget?.id}
+            focusReviewChange={currentTarget?.id}
           />
         )}
       </section>
@@ -667,7 +678,7 @@ export default function ProposalReview({
             </p>
           )}
           <ChangeNavigator
-            targets={reviewTargets}
+            targets={navigable}
             currentIndex={currentTargetIndex}
             onChange={setChangeIndex}
           />
@@ -698,13 +709,22 @@ export default function ProposalReview({
           {artifact("PROPOSED", diff.proposedContent, "proposed")}
           </div>
           <ChangeNavigator
-            targets={reviewTargets}
+            targets={navigable}
             currentIndex={currentTargetIndex}
             onChange={setChangeIndex}
           />
         </div>
       )}
-      {view === "source" && <SourceDiff diff={diff} />}
+      {view === "source" && (
+        <div className="proposal-review__source-view">
+          <SourceDiff diff={diff} />
+          <ChangeNavigator
+            targets={navigable}
+            currentIndex={currentTargetIndex}
+            onChange={setChangeIndex}
+          />
+        </div>
+      )}
       {analysis.conflicts.length > 0 && (
         <section>
           <h2>Merge conflicts</h2>

@@ -45,6 +45,7 @@ export interface EventFlowPreviewProps {
   linkedTransform?: DiagramViewportTransform | null;
   onTransformChange?: (transform: DiagramViewportTransform) => void;
   activeReviewChange?: string | null;
+  focusReviewChange?: string | null;
   reviewSide?: "base" | "proposed";
 }
 
@@ -62,6 +63,7 @@ export default function EventFlowPreview({
   linkedTransform = null,
   onTransformChange,
   activeReviewChange = null,
+  focusReviewChange = null,
   reviewSide = "proposed",
 }: EventFlowPreviewProps) {
   const document = useMemo(() => {
@@ -248,6 +250,7 @@ export default function EventFlowPreview({
                 linkedTransform={linkedTransform}
                 onTransformChange={onTransformChange}
                 activeReviewChange={activeReviewChange}
+                focusReviewChange={focusReviewChange}
               />
               <div
                 className="event-topology__details"
@@ -343,6 +346,7 @@ export default function EventFlowPreview({
         linkedTransform={linkedTransform}
         onTransformChange={onTransformChange}
         activeReviewChange={activeReviewChange}
+        focusReviewChange={focusReviewChange}
       />
     </div>
   );

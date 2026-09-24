@@ -359,7 +359,8 @@ function renderMessage(
   palette: RenderPalette,
 ): string {
   // A self-message is a loop, not a horizontal arrow.
-  if (msg.selfLoop) return renderSelfMessage(msg, number, palette);
+  if (msg.selfLoop)
+    return `<g class="sequence-message" data-sequence-message="${number}">${renderSelfMessage(msg, number, palette)}</g>`;
 
   const dashed = msg.lineStyle === "dashed" ? ' stroke-dasharray="5 4"' : "";
   // `dashed` must sit inside the tag, before the self-closing slash: emitting it
@@ -382,7 +383,10 @@ function renderMessage(
     ? `<text x="${labelX}" y="${(msg.y - 6).toFixed(2)}" text-anchor="middle" font-size="12" fill="${palette.label}">${escapeXml(msg.label)}</text>`
     : "";
 
-  return `${line}${head}${renderSequenceBadge(msg, number, palette)}${label}`;
+  // The group is the addressable unit for review decoration: one wrapper covers
+  // the arrow, its heads, the step badge, and the label. It changes no drawing
+  // geometry and is independent of `data-node-id`, which stays source-derived.
+  return `<g class="sequence-message" data-sequence-message="${number}">${line}${head}${renderSequenceBadge(msg, number, palette)}${label}</g>`;
 }
 
 /** Size of the dog-ear fold on a note's top-right corner, in pixels. */

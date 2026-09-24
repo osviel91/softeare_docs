@@ -4,21 +4,51 @@ import { decorateReviewSvg } from "../../../src/features/proposals/review-decora
 describe("review SVG decoration", () => {
   it("marks a modified sequence interaction as removed in BASE and added in PROPOSED", () => {
     const svg =
-      '<line data-node-id="message:1"/><g class="sequence-number" data-sequence-number="1"></g>';
+      '<g class="sequence-message" data-sequence-message="1"><line data-node-id="message@0:1"/><polygon points="0,0 1,1"/><text>x</text></g>';
     const change = {
       kind: "modified" as const,
       entity: "interaction",
-      identity: "message:1",
+      identity: "message:1-1",
+      details: {
+        baseNumber: 1,
+        proposedNumber: 1,
+        old: { from: "A", to: "B", label: "old", arrowStyle: "arrow", lineStyle: "solid" },
+        new: { from: "A", to: "B", label: "new", arrowStyle: "arrow", lineStyle: "solid" },
+      },
     };
 
     expect(decorateReviewSvg(svg, "sequence", [change], "base")).toContain(
-      'class="review-change--removed"',
+      'class="sequence-message review-change--removed"',
     );
     expect(decorateReviewSvg(svg, "sequence", [change], "proposed")).toContain(
-      'class="review-change--added"',
+      'class="sequence-message review-change--added"',
     );
     expect(decorateReviewSvg(svg, "sequence", [change])).toContain(
-      'data-review-change="interaction:message:1"',
+      'data-review-change="interaction:message:1-1"',
+    );
+  });
+
+  it("decorates an added interaction only where it is rendered", () => {
+    const change = {
+      kind: "added" as const,
+      entity: "interaction",
+      identity: "message:0-2",
+      details: {
+        baseNumber: 0,
+        proposedNumber: 2,
+        old: null,
+        new: { from: "A", to: "B", label: "two", arrowStyle: "arrow", lineStyle: "solid" },
+      },
+    };
+    const proposedSvg =
+      '<g class="sequence-message" data-sequence-message="2"><line/></g>';
+    expect(decorateReviewSvg(proposedSvg, "sequence", [change], "proposed")).toContain(
+      "review-change--added",
+    );
+    const baseSvg =
+      '<g class="sequence-message" data-sequence-message="1"><line/></g>';
+    expect(decorateReviewSvg(baseSvg, "sequence", [change], "base")).not.toContain(
+      "data-review-change",
     );
   });
 

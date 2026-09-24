@@ -76,6 +76,13 @@ export interface DiagramViewportProps {
   linkedTransform?: DiagramViewportTransform | null;
   onTransformChange?: (transform: DiagramViewportTransform) => void;
   activeReviewChange?: string | null;
+  /**
+   * A review target to reveal. When it changes, the pane centers it, so
+   * Previous/Next visibly moves to the decorated element instead of only
+   * recolouring it. Kept separate from `activeReviewChange` because the class
+   * toggle must not depend on geometry.
+   */
+  focusReviewChange?: string | null;
 }
 
 /** Pixels to pan per arrow key press. */
@@ -89,6 +96,19 @@ function measure(element: HTMLElement | null): Size {
     width: Math.max(1, Math.round(rect.width)),
     height: Math.max(1, Math.round(rect.height)),
   };
+}
+
+/** The centre of a rendered SVG element, in the diagram's own coordinates. */
+function elementCentre(element: SVGGraphicsElement): { x: number; y: number } {
+  // jsdom has no getBBox; a real browser does, and it is the only measure in
+  // diagram units rather than screen pixels.
+  const box = typeof element.getBBox === "function" ? element.getBBox() : null;
+  if (box && (box.width > 0 || box.height > 0))
+    return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  const rect = element.getBoundingClientRect();
+  if (rect.width > 0 || rect.height > 0)
+    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+  return { x: 0, y: 0 };
 }
 
 /** The note index carried by the closest bullet ancestor of `target`, if any. */
@@ -129,6 +149,7 @@ export default function DiagramViewport({
   linkedTransform = null,
   onTransformChange,
   activeReviewChange = null,
+  focusReviewChange = null,
 }: DiagramViewportProps) {
   const paneRef = useRef<HTMLDivElement | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
@@ -364,6 +385,28 @@ export default function DiagramViewport({
       `[data-review-change="${CSS.escape(activeReviewChange)}"]`,
     )) element.classList.add("review-change--active");
   }, [activeReviewChange, svg]);
+
+  // Reveal the focused review change by centering it in the pane. This is what
+  // makes Next/Previous move the viewport to the actual decoration; the class
+  // toggle above only recolours it. A pane that has no element for the target
+  // (an addition in BASE, say) simply stays put.
+  useEffect(() => {
+    if (!focusReviewChange) return;
+    const content = contentRef.current;
+    const pane = paneRef.current;
+    if (!content || !pane) return;
+    const target = content.querySelector<SVGGraphicsElement>(
+      `[data-review-change="${CSS.escape(focusReviewChange)}"]`,
+    );
+    if (!target) return;
+    const centre = elementCentre(target);
+    const box = measure(pane);
+    updateTransform((current) => ({
+      ...current,
+      x: box.width / 2 - centre.x * current.scale,
+      y: box.height / 2 - centre.y * current.scale,
+    }));
+  }, [focusReviewChange, svg, updateTransform]);
 
   const onContentKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     if (!onNoteToggle) return;

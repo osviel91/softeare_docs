@@ -371,6 +371,103 @@ function relationshipChanges(
   }
 }
 
+/** The fields that make two interactions semantically comparable. */
+interface InteractionShape {
+  from: string;
+  to: string;
+  label: string;
+  arrowStyle: string;
+  lineStyle: string;
+}
+
+function interactionShape(message: MessageNode): InteractionShape {
+  return {
+    from: message.from,
+    to: message.to,
+    label: message.label,
+    arrowStyle: message.arrowStyle,
+    lineStyle: message.lineStyle,
+  };
+}
+
+function interactionSignature(message: MessageNode): string {
+  const shape = interactionShape(message);
+  return [
+    shape.from,
+    shape.to,
+    shape.label,
+    shape.arrowStyle,
+    shape.lineStyle,
+  ].join("\u0000");
+}
+
+/**
+ * Whether an old and a new message could be the same message after an edit.
+ *
+ * A modification is only claimed when the pair still shares something
+ * unmistakable — the same endpoints, the same label, or a swapped direction. A
+ * pair with none of those is a coincidental alignment, so it is reported as a
+ * removal plus an addition instead of an invented modification.
+ */
+function plausiblySame(oldMessage: MessageNode, newMessage: MessageNode): boolean {
+  const sameEndpoints =
+    oldMessage.from === newMessage.from && oldMessage.to === newMessage.to;
+  const sameLabel = oldMessage.label === newMessage.label;
+  const swapped =
+    oldMessage.from === newMessage.to && oldMessage.to === newMessage.from;
+  return sameEndpoints || sameLabel || swapped;
+}
+
+/**
+ * Index pairs of messages that are byte-for-byte unchanged on both sides, found
+ * by longest common subsequence over their semantic signatures. Insertions and
+ * removals therefore do not shift every later message into a false
+ * modification, which positional alignment alone cannot avoid.
+ */
+function unchangedMessagePairs(
+  oldMessages: MessageNode[],
+  newMessages: MessageNode[],
+): Array<[number, number]> {
+  if (oldMessages.length * newMessages.length > MAX_LCS_CELLS) {
+    // ponytail: huge diagrams fall back to no anchors, so every message is
+    // compared in order; fine at this size, swap in a banded LCS if it matters.
+    return [];
+  }
+  const oldSignatures = oldMessages.map(interactionSignature);
+  const newSignatures = newMessages.map(interactionSignature);
+  const rows = oldMessages.length + 1;
+  const cols = newMessages.length + 1;
+  const table: number[][] = Array.from({ length: rows }, () =>
+    Array(cols).fill(0),
+  );
+  for (let oldIndex = oldMessages.length - 1; oldIndex >= 0; oldIndex -= 1) {
+    for (let newIndex = newMessages.length - 1; newIndex >= 0; newIndex -= 1) {
+      table[oldIndex][newIndex] =
+        oldSignatures[oldIndex] === newSignatures[newIndex]
+          ? table[oldIndex + 1][newIndex + 1] + 1
+          : Math.max(
+              table[oldIndex + 1][newIndex],
+              table[oldIndex][newIndex + 1],
+            );
+    }
+  }
+  const pairs: Array<[number, number]> = [];
+  let oldIndex = 0;
+  let newIndex = 0;
+  while (oldIndex < oldMessages.length && newIndex < newMessages.length) {
+    if (oldSignatures[oldIndex] === newSignatures[newIndex]) {
+      pairs.push([oldIndex, newIndex]);
+      oldIndex += 1;
+      newIndex += 1;
+    } else if (table[oldIndex + 1][newIndex] >= table[oldIndex][newIndex + 1]) {
+      oldIndex += 1;
+    } else {
+      newIndex += 1;
+    }
+  }
+  return pairs;
+}
+
 function sequenceDiff(
   before: SequenceDiagram,
   after: SequenceDiagram,
@@ -419,39 +516,81 @@ function sequenceDiff(
   const newMessages = [...walkStatements(after.statements)].filter(
     (statement): statement is MessageNode => statement.type === "message",
   );
-  const count = Math.max(oldMessages.length, newMessages.length);
-  for (let index = 0; index < count; index += 1) {
-    const oldMessage = oldMessages[index];
-    const newMessage = newMessages[index];
-    const identity = `message:${index + 1}`;
-    if (!oldMessage || !newMessage)
-      changes.push({
-        kind: oldMessage ? "removed" : "added",
-        entity: "interaction",
-        identity,
-      });
-    else if (
-      JSON.stringify({ ...oldMessage, range: undefined }) !==
-      JSON.stringify({ ...newMessage, range: undefined })
-    )
-      changes.push({
-        kind: "modified",
-        entity: "interaction",
-        identity,
-        details: {
-          old: {
-            from: oldMessage.from,
-            to: oldMessage.to,
-            label: oldMessage.label,
+  // A rendered message is identified by its 1-based ordinal on each side, so a
+  // change can be resolved back to the exact arrow the renderer drew. Zero means
+  // the message does not exist on that side.
+  const numberIdentity = (baseNumber: number, proposedNumber: number) =>
+    `message:${baseNumber}-${proposedNumber}`;
+  const removedInteraction = (message: MessageNode, baseNumber: number) => ({
+    kind: "removed" as const,
+    entity: "interaction",
+    identity: numberIdentity(baseNumber, 0),
+    details: {
+      baseNumber,
+      proposedNumber: 0,
+      old: interactionShape(message),
+      new: null,
+    },
+  });
+  const addedInteraction = (message: MessageNode, proposedNumber: number) => ({
+    kind: "added" as const,
+    entity: "interaction",
+    identity: numberIdentity(0, proposedNumber),
+    details: {
+      baseNumber: 0,
+      proposedNumber,
+      old: null,
+      new: interactionShape(message),
+    },
+  });
+  const emitGap = (
+    oldStart: number,
+    oldEnd: number,
+    newStart: number,
+    newEnd: number,
+  ): void => {
+    const oldCount = oldEnd - oldStart;
+    const newCount = newEnd - newStart;
+    const count = Math.max(oldCount, newCount);
+    for (let offset = 0; offset < count; offset += 1) {
+      const oldMessage = offset < oldCount ? oldMessages[oldStart + offset] : null;
+      const newMessage = offset < newCount ? newMessages[newStart + offset] : null;
+      const baseNumber = oldMessage ? oldStart + offset + 1 : 0;
+      const proposedNumber = newMessage ? newStart + offset + 1 : 0;
+      if (oldMessage && newMessage && plausiblySame(oldMessage, newMessage)) {
+        changes.push({
+          kind: "modified",
+          entity: "interaction",
+          identity: numberIdentity(baseNumber, proposedNumber),
+          details: {
+            baseNumber,
+            proposedNumber,
+            old: interactionShape(oldMessage),
+            new: interactionShape(newMessage),
           },
-          new: {
-            from: newMessage.from,
-            to: newMessage.to,
-            label: newMessage.label,
-          },
-        },
-      });
+        });
+      } else if (oldMessage && newMessage) {
+        // Aligned but not confidently the same message: report both sides.
+        changes.push(removedInteraction(oldMessage, baseNumber));
+        changes.push(addedInteraction(newMessage, proposedNumber));
+      } else if (oldMessage) {
+        changes.push(removedInteraction(oldMessage, baseNumber));
+      } else if (newMessage) {
+        changes.push(addedInteraction(newMessage, proposedNumber));
+      }
+    }
+  };
+  let cursorOld = 0;
+  let cursorNew = 0;
+  for (const [oldIndex, newIndex] of unchangedMessagePairs(
+    oldMessages,
+    newMessages,
+  )) {
+    emitGap(cursorOld, oldIndex, cursorNew, newIndex);
+    cursorOld = oldIndex + 1;
+    cursorNew = newIndex + 1;
   }
+  emitGap(cursorOld, oldMessages.length, cursorNew, newMessages.length);
   return changes;
 }
 

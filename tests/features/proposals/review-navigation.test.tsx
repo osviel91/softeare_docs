@@ -170,8 +170,9 @@ describe("proposal review change navigation", () => {
     expect(expected).toEqual([
       "participant:B",
       "participant:C",
-      "interaction:message:1",
-      "interaction:message:2",
+      "interaction:message:1-0",
+      "interaction:message:0-1",
+      "interaction:message:0-2",
     ]);
     expect(screen.getByTestId("change-position")).toHaveTextContent(
       `1 of ${expected.length}`,

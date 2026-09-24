@@ -48,6 +48,7 @@ export interface PreviewProps {
   linkedTransform?: DiagramViewportTransform | null;
   onTransformChange?: (transform: DiagramViewportTransform) => void;
   activeReviewChange?: string | null;
+  focusReviewChange?: string | null;
   reviewSide?: "base" | "proposed";
 }
 
@@ -65,6 +66,7 @@ export default function Preview({
   linkedTransform = null,
   onTransformChange,
   activeReviewChange = null,
+  focusReviewChange = null,
   reviewSide = "proposed",
 }: PreviewProps) {
   const { ast, diagnostics } = useDiagram(source);
@@ -150,6 +152,7 @@ export default function Preview({
             linkedTransform={linkedTransform}
             onTransformChange={onTransformChange}
             activeReviewChange={activeReviewChange}
+            focusReviewChange={focusReviewChange}
           />
           {!autoUpdate && (
             <div className="preview__pause" data-testid="preview-paused">

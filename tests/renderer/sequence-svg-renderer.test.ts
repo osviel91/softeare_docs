@@ -465,9 +465,9 @@ describe("renderDiagramToSvg — well-formedness", () => {
     const svg = doc.documentElement;
     expect(svg.querySelector("line > polygon")).toBeNull();
     expect(svg.querySelector("line > text")).toBeNull();
-    // Both are still present, directly under the root.
-    expect(svg.querySelector(":scope > polygon")).not.toBeNull();
-    expect(svg.querySelector(":scope > text")).not.toBeNull();
+    // Both are still present, alongside the line inside the message group.
+    expect(svg.querySelector(".sequence-message > polygon")).not.toBeNull();
+    expect(svg.querySelector(".sequence-message > text")).not.toBeNull();
   });
 
   it("carries the dash pattern as an attribute, not as child text", () => {

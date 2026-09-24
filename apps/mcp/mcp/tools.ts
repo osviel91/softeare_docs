@@ -611,7 +611,9 @@ export function createMcpTools(): McpTool[] {
           resource.id,
         );
         return {
-          text: proposals.map(describeProposal).join("\n") || "No change proposals.",
+          text:
+            proposals.map(describeProposal).join("\n") ||
+            "No change proposals.",
           structured: { proposals },
         };
       },
@@ -620,7 +622,8 @@ export function createMcpTools(): McpTool[] {
     {
       name: "create_change_proposal",
       title: "Create change proposal",
-      description: "Create a draft proposal initialized from an immutable resource revision.",
+      description:
+        "Create a draft proposal initialized from an immutable resource revision.",
       inputSchema: {
         projectId: projectId(),
         resource: resourceReference(),
@@ -632,15 +635,23 @@ export function createMcpTools(): McpTool[] {
       requiredPermissions: ["resource:update"],
       async run(args, toolContext) {
         const project = stringArg(args, "projectId");
-        const resource = await resolveResource(toolContext, project, stringArg(args, "resource"));
+        const resource = await resolveResource(
+          toolContext,
+          project,
+          stringArg(args, "resource"),
+        );
         const proposal = await toolContext.proposals.create(
           toolContext.context,
           project,
           resource.id,
           {
             title: stringArg(args, "title"),
-            ...(typeof args.description === "string" ? { description: args.description } : {}),
-            ...(typeof args.baseRevision === "number" ? { baseRevision: args.baseRevision } : {}),
+            ...(typeof args.description === "string"
+              ? { description: args.description }
+              : {}),
+            ...(typeof args.baseRevision === "number"
+              ? { baseRevision: args.baseRevision }
+              : {}),
           },
         );
         return { text: describeProposal(proposal), structured: { proposal } };
@@ -650,7 +661,8 @@ export function createMcpTools(): McpTool[] {
     {
       name: "get_change_proposal",
       title: "Get change proposal",
-      description: "Read a proposal's isolated content, metadata, status and provenance.",
+      description:
+        "Read a proposal's isolated content, metadata, status and provenance.",
       inputSchema: { proposalId: z.string().uuid() },
       annotations: { ...READ_ONLY, title: "Get change proposal" },
       requiredPermissions: ["resource:read"],
@@ -664,9 +676,30 @@ export function createMcpTools(): McpTool[] {
     },
 
     {
+      name: "get_change_proposal_diff",
+      title: "Get change proposal diff",
+      description:
+        "Compare a proposal's immutable base revision with its candidate state. Returns structured semantic changes, metadata changes, bounded source hunks, diagnostics, and separate canonical staleness information. This is read-only and does not detect conflicts or merge.",
+      inputSchema: { proposalId: z.string().uuid() },
+      annotations: { ...READ_ONLY, title: "Get change proposal diff" },
+      requiredPermissions: ["resource:read"],
+      async run(args, toolContext) {
+        const diff = await toolContext.proposals.diff(
+          toolContext.context,
+          stringArg(args, "proposalId"),
+        );
+        return {
+          text: `${diff.summary.semanticChanges} semantic changes; ${diff.summary.sourceHunks} source hunks. Base revision ${diff.baseRevision}, current revision ${diff.currentRevision}${diff.stale ? " (stale)" : ""}.`,
+          structured: { ...diff },
+        };
+      },
+    },
+
+    {
       name: "update_change_proposal",
       title: "Update change proposal",
-      description: "Edit a draft or open proposal using its proposal-local version.",
+      description:
+        "Edit a draft or open proposal using its proposal-local version.",
       inputSchema: {
         proposalId: z.string().uuid(),
         expectedVersion: z.number().int().min(1),
@@ -683,10 +716,23 @@ export function createMcpTools(): McpTool[] {
           stringArg(args, "proposalId"),
           {
             expectedVersion: numberArg(args, "expectedVersion") ?? 0,
-            ...(typeof args.proposedContent === "string" ? { proposedContent: args.proposedContent } : {}),
-            ...(args.proposedMetadata === undefined ? {} : { proposedMetadata: normalizeResourceMetadata(args.proposedMetadata as { description?: string; tags?: string[] }) }),
+            ...(typeof args.proposedContent === "string"
+              ? { proposedContent: args.proposedContent }
+              : {}),
+            ...(args.proposedMetadata === undefined
+              ? {}
+              : {
+                  proposedMetadata: normalizeResourceMetadata(
+                    args.proposedMetadata as {
+                      description?: string;
+                      tags?: string[];
+                    },
+                  ),
+                }),
             ...(typeof args.title === "string" ? { title: args.title } : {}),
-            ...(typeof args.description === "string" ? { description: args.description } : {}),
+            ...(typeof args.description === "string"
+              ? { description: args.description }
+              : {}),
           },
         );
         return { text: describeProposal(proposal), structured: { proposal } };
@@ -696,12 +742,20 @@ export function createMcpTools(): McpTool[] {
     {
       name: "open_change_proposal",
       title: "Open change proposal",
-      description: "Move a draft proposal to open using its proposal-local version.",
-      inputSchema: { proposalId: z.string().uuid(), expectedVersion: z.number().int().min(1) },
+      description:
+        "Move a draft proposal to open using its proposal-local version.",
+      inputSchema: {
+        proposalId: z.string().uuid(),
+        expectedVersion: z.number().int().min(1),
+      },
       annotations: { ...WRITE, title: "Open change proposal" },
       requiredPermissions: ["resource:update"],
       async run(args, toolContext) {
-        const proposal = await toolContext.proposals.open(toolContext.context, stringArg(args, "proposalId"), numberArg(args, "expectedVersion") ?? 0);
+        const proposal = await toolContext.proposals.open(
+          toolContext.context,
+          stringArg(args, "proposalId"),
+          numberArg(args, "expectedVersion") ?? 0,
+        );
         return { text: describeProposal(proposal), structured: { proposal } };
       },
     },
@@ -709,12 +763,20 @@ export function createMcpTools(): McpTool[] {
     {
       name: "close_change_proposal",
       title: "Close change proposal",
-      description: "Close a draft or open proposal using its proposal-local version.",
-      inputSchema: { proposalId: z.string().uuid(), expectedVersion: z.number().int().min(1) },
+      description:
+        "Close a draft or open proposal using its proposal-local version.",
+      inputSchema: {
+        proposalId: z.string().uuid(),
+        expectedVersion: z.number().int().min(1),
+      },
       annotations: { ...WRITE, title: "Close change proposal" },
       requiredPermissions: ["resource:update"],
       async run(args, toolContext) {
-        const proposal = await toolContext.proposals.close(toolContext.context, stringArg(args, "proposalId"), numberArg(args, "expectedVersion") ?? 0);
+        const proposal = await toolContext.proposals.close(
+          toolContext.context,
+          stringArg(args, "proposalId"),
+          numberArg(args, "expectedVersion") ?? 0,
+        );
         return { text: describeProposal(proposal), structured: { proposal } };
       },
     },

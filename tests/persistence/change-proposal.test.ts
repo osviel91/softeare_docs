@@ -97,14 +97,14 @@ describe("change proposals", () => {
     expect(proposal.proposedMetadata).toEqual({ tags: ["one"] });
     expect(proposal.status).toBe("draft");
     expect(proposal.version).toBe(1);
-    expect((await service.list(context, projectId, otherResourceId))).toEqual([]);
+    expect(await service.list(context, projectId, otherResourceId)).toEqual([]);
 
     const open = await service.open(context, proposal.id, 1);
     expect(open.status).toBe("open");
     expect(open.version).toBe(2);
-    await expect(
-      service.close(context, proposal.id, 1),
-    ).rejects.toMatchObject({ code: "conflict" });
+    await expect(service.close(context, proposal.id, 1)).rejects.toMatchObject({
+      code: "conflict",
+    });
     const closed = await service.close(context, proposal.id, 2);
     expect(closed.status).toBe("closed");
     expect(closed.version).toBe(3);
@@ -126,5 +126,55 @@ describe("change proposals", () => {
     await expect(service.get(context, proposal.id)).rejects.toBeInstanceOf(
       ApplicationError,
     );
+  });
+
+  it("compares base to candidate and reports canonical staleness without mutating", async () => {
+    const { context, projectId, resourceId } = await fixture();
+    const service = createChangeProposalService({ proposals, projects });
+    const proposal = await service.create(context, projectId, resourceId, {
+      title: "Diff me",
+    });
+    await service.update(context, proposal.id, {
+      expectedVersion: proposal.version,
+      proposedContent: "candidate",
+    });
+
+    await client.query("UPDATE resources SET revision = 2 WHERE id = $1", [
+      resourceId,
+    ]);
+    await client.query(
+      `INSERT INTO resource_revisions
+         (resource_id, revision, content, type, metadata, authorship)
+       VALUES ($1, 2, $2, $3, $4::jsonb, $5::jsonb)`,
+      [
+        resourceId,
+        "canonical",
+        "markdown-document",
+        "{}",
+        JSON.stringify({ kind: "system" }),
+      ],
+    );
+
+    const beforeProposal = await proposals.get(proposal.id);
+    const beforeRevisionCount = await client.query(
+      "SELECT count(*) AS count FROM resource_revisions WHERE resource_id = $1",
+      [resourceId],
+    );
+    const diff = await service.diff(context, proposal.id);
+    expect(diff.baseRevision).toBe(1);
+    expect(diff.currentRevision).toBe(2);
+    expect(diff.stale).toBe(true);
+    expect(diff.source.changed).toBe(true);
+    expect((await proposals.get(proposal.id))?.version).toBe(
+      beforeProposal?.version,
+    );
+    expect(
+      (
+        await client.query(
+          "SELECT count(*) AS count FROM resource_revisions WHERE resource_id = $1",
+          [resourceId],
+        )
+      ).rows[0].count,
+    ).toBe(beforeRevisionCount.rows[0].count);
   });
 });

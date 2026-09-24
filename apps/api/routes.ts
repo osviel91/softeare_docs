@@ -343,6 +343,17 @@ export function createRouter(dependencies: AppDependencies): Router {
     }),
   );
 
+  router.get(
+    "/api/change-proposals/:proposalId/diff",
+    async (request, params) =>
+      guarded(correlationId(request), async () => {
+        const context = await contextOf(request);
+        return json(200, {
+          diff: await dependencies.proposals.diff(context, params.proposalId),
+        });
+      }),
+  );
+
   router.patch("/api/change-proposals/:proposalId", async (request, params) =>
     guarded(correlationId(request), async () => {
       const context = await contextOf(request);
@@ -368,30 +379,34 @@ export function createRouter(dependencies: AppDependencies): Router {
     }),
   );
 
-  router.post("/api/change-proposals/:proposalId/open", async (request, params) =>
-    guarded(correlationId(request), async () => {
-      const context = await contextOf(request);
-      const body = parseJsonBody(request.body);
-      const proposal = await dependencies.proposals.open(
-        context,
-        params.proposalId,
-        requireExpectedRevision(body, "expectedVersion"),
-      );
-      return json(200, { proposal: proposalView(proposal) });
-    }),
+  router.post(
+    "/api/change-proposals/:proposalId/open",
+    async (request, params) =>
+      guarded(correlationId(request), async () => {
+        const context = await contextOf(request);
+        const body = parseJsonBody(request.body);
+        const proposal = await dependencies.proposals.open(
+          context,
+          params.proposalId,
+          requireExpectedRevision(body, "expectedVersion"),
+        );
+        return json(200, { proposal: proposalView(proposal) });
+      }),
   );
 
-  router.post("/api/change-proposals/:proposalId/close", async (request, params) =>
-    guarded(correlationId(request), async () => {
-      const context = await contextOf(request);
-      const body = parseJsonBody(request.body);
-      const proposal = await dependencies.proposals.close(
-        context,
-        params.proposalId,
-        requireExpectedRevision(body, "expectedVersion"),
-      );
-      return json(200, { proposal: proposalView(proposal) });
-    }),
+  router.post(
+    "/api/change-proposals/:proposalId/close",
+    async (request, params) =>
+      guarded(correlationId(request), async () => {
+        const context = await contextOf(request);
+        const body = parseJsonBody(request.body);
+        const proposal = await dependencies.proposals.close(
+          context,
+          params.proposalId,
+          requireExpectedRevision(body, "expectedVersion"),
+        );
+        return json(200, { proposal: proposalView(proposal) });
+      }),
   );
 
   // ---- Projects -------------------------------------------------------------
@@ -810,12 +825,13 @@ function requireQueryString(
  * Required, not optional: a write that does not name a revision is a request to
  * overwrite whatever is there, and an agent and a browser may both be editing.
  */
-function requireExpectedRevision(body: Record<string, unknown>, name = "expectedRevision"): number {
+function requireExpectedRevision(
+  body: Record<string, unknown>,
+  name = "expectedRevision",
+): number {
   const value = body[name];
   if (typeof value !== "number" || !Number.isInteger(value)) {
-    throw invalid(
-      `${name} is required: send the value you last read.`,
-    );
+    throw invalid(`${name} is required: send the value you last read.`);
   }
   return value;
 }

@@ -34,6 +34,8 @@ import {
   type ViewportTransform,
 } from "./viewport";
 
+export type DiagramViewportTransform = ViewportTransform;
+
 export interface DiagramViewportProps {
   /** The rendered SVG document. */
   svg: string;
@@ -68,6 +70,12 @@ export interface DiagramViewportProps {
   maximized?: boolean;
   /** Toggles the preview-only app layout. */
   onToggleMaximize?: () => void;
+  /** Use the smaller control rail and minimap intended for side-by-side review. */
+  reviewMode?: boolean;
+  /** Optional shared transform for linked comparison panes. */
+  linkedTransform?: DiagramViewportTransform | null;
+  onTransformChange?: (transform: DiagramViewportTransform) => void;
+  activeReviewChange?: string | null;
 }
 
 /** Pixels to pan per arrow key press. */
@@ -117,6 +125,10 @@ export default function DiagramViewport({
   activeNodeId = null,
   maximized = false,
   onToggleMaximize,
+  reviewMode = false,
+  linkedTransform = null,
+  onTransformChange,
+  activeReviewChange = null,
 }: DiagramViewportProps) {
   const paneRef = useRef<HTMLDivElement | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
@@ -126,6 +138,16 @@ export default function DiagramViewport({
   const [paneSize, setPaneSize] = useState<Size>(() => measure(null));
   const [transform, setTransform] =
     useState<ViewportTransform>(IDENTITY_TRANSFORM);
+  const updateTransform = useCallback(
+    (next: ViewportTransform | ((current: ViewportTransform) => ViewportTransform)) => {
+      setTransform((current) => {
+        const value = typeof next === "function" ? next(current) : next;
+        onTransformChange?.(value);
+        return value;
+      });
+    },
+    [onTransformChange],
+  );
   const [isPanning, setIsPanning] = useState(false);
   // Drag origin lives in a ref: it changes on every pointer move and must not
   // cause a re-render of its own.
@@ -148,13 +170,24 @@ export default function DiagramViewport({
     return () => observer.disconnect();
   }, []);
 
+  useEffect(() => {
+    if (!linkedTransform) return;
+    setTransform((current) =>
+      current.x === linkedTransform.x &&
+      current.y === linkedTransform.y &&
+      current.scale === linkedTransform.scale
+        ? current
+        : linkedTransform,
+    );
+  }, [linkedTransform]);
+
   const fit = useCallback(() => {
-    setTransform(fitTransform(size, paneSize));
-  }, [size, paneSize]);
+    updateTransform(fitTransform(size, paneSize));
+  }, [size, paneSize, updateTransform]);
 
   const resetTo100 = useCallback(() => {
-    setTransform(centeredTransform(size, paneSize));
-  }, [size, paneSize]);
+    updateTransform(centeredTransform(size, paneSize));
+  }, [size, paneSize, updateTransform]);
 
   // Fit whenever a different diagram arrives (and once the pane is measured).
   // Without this a diagram larger than the pane opens off-screen.
@@ -179,12 +212,12 @@ export default function DiagramViewport({
       // Trackpads report small deltas, a wheel ~100 per notch; an exponential
       // step keeps both feeling proportional rather than jumpy.
       const factor = Math.exp(-event.deltaY / 400);
-      setTransform((current) => zoomAtPoint(current, factor, anchor));
+       updateTransform((current) => zoomAtPoint(current, factor, anchor));
     };
 
     pane.addEventListener("wheel", onWheel, { passive: false });
     return () => pane.removeEventListener("wheel", onWheel);
-  }, []);
+  }, [updateTransform]);
 
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return; // left button / touch / pen only
@@ -212,7 +245,7 @@ export default function DiagramViewport({
       movedSincePointerDown.current = true;
     drag.x = event.clientX;
     drag.y = event.clientY;
-    setTransform((current) => panBy(current, dx, dy));
+    updateTransform((current) => panBy(current, dx, dy));
   };
 
   const endDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -235,13 +268,13 @@ export default function DiagramViewport({
     const move = moves[event.key];
     if (!move) return;
     event.preventDefault();
-    setTransform((current) => panBy(current, move[0], move[1]));
+    updateTransform((current) => panBy(current, move[0], move[1]));
   };
 
   const zoomIn = () =>
-    setTransform((current) => zoomAtCenter(current, ZOOM_STEP, paneSize));
+    updateTransform((current) => zoomAtCenter(current, ZOOM_STEP, paneSize));
   const zoomOut = () =>
-    setTransform((current) => zoomAtCenter(current, 1 / ZOOM_STEP, paneSize));
+    updateTransform((current) => zoomAtCenter(current, 1 / ZOOM_STEP, paneSize));
 
   const [fullscreen, setFullscreen] = useState(false);
   useEffect(() => {
@@ -291,6 +324,17 @@ export default function DiagramViewport({
     );
     target?.classList.add("svg-node--active");
   }, [activeNodeId, svg]);
+
+  useEffect(() => {
+    const content = contentRef.current;
+    if (!content) return;
+    for (const element of content.querySelectorAll(".review-change--active"))
+      element.classList.remove("review-change--active");
+    if (!activeReviewChange) return;
+    for (const element of content.querySelectorAll(
+      `[data-review-change="${CSS.escape(activeReviewChange)}"]`,
+    )) element.classList.add("review-change--active");
+  }, [activeReviewChange, svg]);
 
   const onContentKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     if (!onNoteToggle) return;
@@ -349,7 +393,7 @@ export default function DiagramViewport({
       x: (event.clientX - rect.left) / minimap.scale,
       y: (event.clientY - rect.top) / minimap.scale,
     };
-    setTransform((current) => ({
+    updateTransform((current) => ({
       ...current,
       x: paneSize.width / 2 - target.x * current.scale,
       y: paneSize.height / 2 - target.y * current.scale,
@@ -357,7 +401,11 @@ export default function DiagramViewport({
   };
 
   return (
-    <div ref={viewportRef} className="viewport" data-testid="diagram-viewport">
+    <div
+      ref={viewportRef}
+      className={`viewport${reviewMode ? " viewport--review" : ""}`}
+      data-testid="diagram-viewport"
+    >
       <div
         ref={paneRef}
         className={`viewport__pane${isPanning ? " viewport__pane--panning" : ""}`}
@@ -399,6 +447,7 @@ export default function DiagramViewport({
           className="icon-button"
           data-testid="zoom-in"
           aria-label="Zoom in"
+          title="Zoom in"
           onClick={zoomIn}
         >
           +
@@ -408,6 +457,7 @@ export default function DiagramViewport({
           className="icon-button"
           data-testid="zoom-out"
           aria-label="Zoom out"
+          title="Zoom out"
           onClick={zoomOut}
         >
           −
@@ -424,6 +474,7 @@ export default function DiagramViewport({
           className="icon-button"
           data-testid="zoom-fit"
           aria-label="Fit diagram to view"
+          title="Fit diagram to view"
           onClick={fit}
         >
           ⤢
@@ -433,6 +484,7 @@ export default function DiagramViewport({
           className="icon-button icon-button--text"
           data-testid="zoom-reset"
           aria-label="Reset zoom to 100%"
+          title="Reset zoom to 100%"
           onClick={resetTo100}
         >
           1:1
@@ -473,7 +525,7 @@ export default function DiagramViewport({
         </button>
       </div>
 
-      <div className="minimap" data-testid="minimap" aria-hidden="true">
+      <div className={`minimap${reviewMode ? " minimap--review" : ""}`} data-testid="minimap" aria-hidden="true">
         <div
           className="minimap__canvas"
           style={{ width: minimap.width, height: minimap.height }}

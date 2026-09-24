@@ -18,6 +18,7 @@ import { isValid } from "../../language/validator/validator";
 import { useDiagram } from "./use-diagram";
 import { renderDiagramDocument } from "../../renderer/pipeline/diagram-to-svg";
 import DiagramViewport from "./DiagramViewport";
+import type { DiagramViewportTransform } from "./DiagramViewport";
 import type { SemanticChange } from "../../domain/diff/resource-diff";
 import { decorateReviewSvg } from "../proposals/review-decorations";
 
@@ -43,6 +44,11 @@ export interface PreviewProps {
   /** Toggles the preview-only app layout. */
   onToggleMaximize?: () => void;
   reviewChanges?: SemanticChange[];
+  reviewMode?: boolean;
+  linkedTransform?: DiagramViewportTransform | null;
+  onTransformChange?: (transform: DiagramViewportTransform) => void;
+  activeReviewChange?: string | null;
+  reviewSide?: "base" | "proposed";
 }
 
 export default function Preview({
@@ -55,6 +61,11 @@ export default function Preview({
   maximized = false,
   onToggleMaximize,
   reviewChanges = [],
+  reviewMode = false,
+  linkedTransform = null,
+  onTransformChange,
+  activeReviewChange = null,
+  reviewSide = "proposed",
 }: PreviewProps) {
   const { ast, diagnostics } = useDiagram(source);
   // Which note bullets are expanded. The set resets whenever the source changes
@@ -72,8 +83,8 @@ export default function Preview({
     [ast, expandedNotes],
   );
   const reviewSvg = useMemo(
-    () => decorateReviewSvg(document.svg, "sequence", reviewChanges),
-    [document.svg, reviewChanges],
+    () => decorateReviewSvg(document.svg, "sequence", reviewChanges, reviewSide),
+    [document.svg, reviewChanges, reviewSide],
   );
   // `isValid` requires a non-null AST, so guard before calling.
   const valid = ast != null && isValid(ast);
@@ -135,6 +146,10 @@ export default function Preview({
             activeNodeId={activeNodeId}
             maximized={maximized}
             onToggleMaximize={onToggleMaximize}
+            reviewMode={reviewMode}
+            linkedTransform={linkedTransform}
+            onTransformChange={onTransformChange}
+            activeReviewChange={activeReviewChange}
           />
           {!autoUpdate && (
             <div className="preview__pause" data-testid="preview-paused">

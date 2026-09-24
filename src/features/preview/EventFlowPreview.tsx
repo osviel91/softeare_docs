@@ -20,6 +20,7 @@ import {
   type EventMetadataEntry,
 } from "../../domain/eventflow/ast";
 import DiagramViewport from "./DiagramViewport";
+import type { DiagramViewportTransform } from "./DiagramViewport";
 import type { SemanticChange } from "../../domain/diff/resource-diff";
 import { decorateReviewSvg } from "../proposals/review-decorations";
 
@@ -40,6 +41,11 @@ export interface EventFlowPreviewProps {
   view?: EventFlowView;
   onViewChange?: (view: EventFlowView) => void;
   reviewChanges?: SemanticChange[];
+  reviewMode?: boolean;
+  linkedTransform?: DiagramViewportTransform | null;
+  onTransformChange?: (transform: DiagramViewportTransform) => void;
+  activeReviewChange?: string | null;
+  reviewSide?: "base" | "proposed";
 }
 
 export default function EventFlowPreview({
@@ -52,6 +58,11 @@ export default function EventFlowPreview({
   view = "flow",
   onViewChange,
   reviewChanges = [],
+  reviewMode = false,
+  linkedTransform = null,
+  onTransformChange,
+  activeReviewChange = null,
+  reviewSide = "proposed",
 }: EventFlowPreviewProps) {
   const document = useMemo(() => {
     // Parsing here rather than taking an AST keeps this component's contract the
@@ -60,8 +71,8 @@ export default function EventFlowPreview({
     return renderEventFlowDocument(flow);
   }, [source]);
   const reviewSvg = useMemo(
-    () => decorateReviewSvg(document.svg, "event-flow", reviewChanges),
-    [document.svg, reviewChanges],
+    () => decorateReviewSvg(document.svg, "event-flow", reviewChanges, reviewSide),
+    [document.svg, reviewChanges, reviewSide],
   );
   const flow = providedFlow ?? analyzeEventFlow(source).flow;
   const catalog = useMemo(() => projectEventFlowToCatalog(flow), [flow]);
@@ -233,6 +244,10 @@ export default function EventFlowPreview({
                 activeNodeId={activeNodeId}
                 maximized={maximized}
                 onToggleMaximize={onToggleMaximize}
+                reviewMode={reviewMode}
+                linkedTransform={linkedTransform}
+                onTransformChange={onTransformChange}
+                activeReviewChange={activeReviewChange}
               />
               <div
                 className="event-topology__details"
@@ -324,6 +339,10 @@ export default function EventFlowPreview({
         activeNodeId={activeNodeId}
         maximized={maximized}
         onToggleMaximize={onToggleMaximize}
+        reviewMode={reviewMode}
+        linkedTransform={linkedTransform}
+        onTransformChange={onTransformChange}
+        activeReviewChange={activeReviewChange}
       />
     </div>
   );

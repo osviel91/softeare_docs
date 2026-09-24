@@ -2755,19 +2755,21 @@ export default function App() {
                       writable={metadataWritable}
                       onSave={saveResourceMetadata}
                     />
-                    {canReviewProposals && (
+                    {canReviewProposals && resourceProposalCount > 0 && (
                       <button
                         type="button"
-                        className="button button--ghost button--small"
+                        className="resource-header__proposals"
                         onClick={() => {
                           setReviewProposalId(null);
                           setProposalReviewOpen(true);
                         }}
+                        aria-label={`Review ${resourceProposalCount} open change ${resourceProposalCount === 1 ? "proposal" : "proposals"}`}
+                        title={`Review ${resourceProposalCount} open change ${resourceProposalCount === 1 ? "proposal" : "proposals"}`}
                       >
-                        Changes
-                        {resourceProposalCount > 0
-                          ? ` ${resourceProposalCount}`
-                          : ""}
+                        <span aria-hidden="true">◇</span>
+                        <span className="resource-header__proposal-count">
+                          {resourceProposalCount}
+                        </span>
                       </button>
                     )}
                   </div>
@@ -2806,19 +2808,21 @@ export default function App() {
                       writable={metadataWritable}
                       onSave={saveResourceMetadata}
                     />
-                    {canReviewProposals && (
+                    {canReviewProposals && resourceProposalCount > 0 && (
                       <button
                         type="button"
-                        className="button button--ghost button--small"
+                        className="resource-header__proposals"
                         onClick={() => {
                           setReviewProposalId(null);
                           setProposalReviewOpen(true);
                         }}
+                        aria-label={`Review ${resourceProposalCount} open change ${resourceProposalCount === 1 ? "proposal" : "proposals"}`}
+                        title={`Review ${resourceProposalCount} open change ${resourceProposalCount === 1 ? "proposal" : "proposals"}`}
                       >
-                        Changes
-                        {resourceProposalCount > 0
-                          ? ` ${resourceProposalCount}`
-                          : ""}
+                        <span aria-hidden="true">◇</span>
+                        <span className="resource-header__proposal-count">
+                          {resourceProposalCount}
+                        </span>
                       </button>
                     )}
                   </div>

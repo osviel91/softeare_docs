@@ -116,6 +116,56 @@ describe("resource diff", () => {
     );
   });
 
+  it("keeps positional sequence changes addressable in a large diagram", () => {
+    const base = [
+      "participant A",
+      "participant B",
+      ...Array.from({ length: 28 }, (_, index) => `A -> B: stage ${index + 1}`),
+    ].join("\n");
+    const proposed = base
+      .replace("stage 24", "canonical 24")
+      .replace("stage 28", "");
+    const diff = diffResources(
+      state(base, "sequence-diagram"),
+      state(proposed, "sequence-diagram"),
+    );
+
+    expect(diff.content.changes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          entity: "interaction",
+          identity: "message:24",
+          kind: "modified",
+        }),
+        expect.objectContaining({ entity: "interaction", identity: "message:28", kind: "modified" }),
+      ]),
+    );
+  });
+
+  it("keeps event-flow additions and removals visible in semantic diff", () => {
+    const base = [
+      "event OrderCreated",
+      "event OrderDeleted",
+      "producer Orders",
+      "consumer Billing",
+      "Orders publishes OrderCreated",
+      "Billing consumes OrderDeleted",
+    ].join("\n");
+    const proposed = base.replace("event OrderDeleted\n", "").replace(
+      "Billing consumes OrderDeleted",
+      "Billing consumes OrderCreated",
+    );
+    const diff = diffResources(state(base), state(proposed));
+
+    expect(diff.content.changes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ entity: "event", identity: "OrderDeleted", kind: "removed" }),
+        expect.objectContaining({ entity: "subscription", identity: "OrderDeleted|Billing", kind: "removed" }),
+        expect.objectContaining({ entity: "subscription", identity: "OrderCreated|Billing", kind: "added" }),
+      ]),
+    );
+  });
+
   it("uses deterministic markdown block changes", () => {
     const diff = diffResources(
       state("# One\n\nold", "markdown-document"),

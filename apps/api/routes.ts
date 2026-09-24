@@ -365,7 +365,21 @@ export function createRouter(dependencies: AppDependencies): Router {
             params.proposalId,
           ),
         });
-      }),
+    }),
+  );
+
+  router.post("/api/change-proposals/:proposalId/merge", async (request, params) =>
+    guarded(correlationId(request), async () => {
+      const context = await contextOf(request);
+      const result = await dependencies.proposals.merge(
+        context,
+        params.proposalId,
+      );
+      return json(200, {
+        proposal: proposalView(result.proposal),
+        resource: resourceView(result.resource),
+      });
+    }),
   );
 
   router.patch("/api/change-proposals/:proposalId", async (request, params) =>

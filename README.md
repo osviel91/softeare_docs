@@ -103,7 +103,9 @@ The main boundaries are:
 - `mcp/`, `apps/api/`, and `apps/mcp/` are stdio, HTTP, and remote-MCP hosts.
 
 See [ARCHITECTURE.md](./ARCHITECTURE.md) for boundaries and decision records,
-and [CONTEXT.md](./CONTEXT.md) for the project vocabulary.
+and [CONTEXT.md](./CONTEXT.md) for the project vocabulary. The normative rules
+for choosing documentation representations are in
+[docs/documentation-model.md](./docs/documentation-model.md).
 
 ## Development
 
@@ -163,6 +165,7 @@ Configure the required secrets, database, public URLs, and OIDC values from
 
 ## Documentation Map
 
+- [Canonical documentation model](./docs/documentation-model.md)
 - [Architecture and ADRs](./ARCHITECTURE.md)
 - [Current vocabulary](./CONTEXT.md)
 - [H01 architecture baseline](./docs/architecture-baseline.md)

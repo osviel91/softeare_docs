@@ -53,6 +53,13 @@ brokers, channels, publications, and subscriptions using `.eventseq` source.
 **Documentation / note**: A Markdown resource using `.md` source. It explains a
 system and can link to other project resources.
 
+**Canonical documentation model**: The normative authoring rules in
+[`docs/documentation-model.md`](./docs/documentation-model.md). It distinguishes
+Sequence (execution/time), Event Flow (causality/reaction), future Conceptual
+(structure/relationships), future Database (data/persistence), and Notes
+(context/rules/decisions). The model does not add resource types or runtime
+capabilities.
+
 **MCP**: Model Context Protocol. In this product it is the agent-facing surface
 for discovering, reading, writing, validating, rendering, and searching project
 documentation. The stdio service works on local files; the remote service works

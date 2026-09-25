@@ -315,6 +315,11 @@ plans and deployment reports are indexed in
 [`docs/history/README.md`](./docs/history/README.md); they explain intent and
 tradeoffs but are not current status claims.
 
+The normative documentation ontology and authoring rules are in
+[`docs/documentation-model.md`](./docs/documentation-model.md). It documents
+current Sequence, Event Flow, and Markdown capabilities and defines Conceptual
+and Database as future semantic contracts only.
+
 ## 7. Architectural decision records (ADRs)
 
 | #       | Date       | Decision                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Consequence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |

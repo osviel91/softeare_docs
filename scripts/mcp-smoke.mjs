@@ -169,7 +169,7 @@ async function main() {
     const resources = await client.request("resources/list");
     check(
       "resources/list advertises the DSL references and guides",
-      (resources.result?.resources ?? []).length === 5,
+      (resources.result?.resources ?? []).length === 6,
     );
 
     const sequenceRef = await client.request("resources/read", {

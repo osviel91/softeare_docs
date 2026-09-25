@@ -5,6 +5,7 @@ import {
 } from "../../src/language/dsl-reference";
 import {
   DOCUMENTING_GUIDE_URI,
+  DOCUMENTATION_MODEL_URI,
   EVENT_FLOW_DSL_URI,
   MARKDOWN_URI,
   PROJECT_RESOURCE_TEMPLATE,
@@ -12,6 +13,7 @@ import {
   SERVER_INSTRUCTIONS,
   WORKFLOW_GUIDE_URI,
   documentingGuideText,
+  documentationModelText,
   eventFlowDslText,
   markdownReferenceText,
   resourceTemplates,
@@ -29,6 +31,7 @@ describe("MCP reference resources", () => {
       MARKDOWN_URI,
       DOCUMENTING_GUIDE_URI,
       WORKFLOW_GUIDE_URI,
+      DOCUMENTATION_MODEL_URI,
     ]);
     const uris = new Set(resources.map((entry) => entry.uri));
     expect(uris.size).toBe(resources.length);
@@ -61,6 +64,9 @@ describe("MCP reference resources", () => {
     );
     expect(staticResourceText(WORKFLOW_GUIDE_URI)).toEqual(
       expect.stringContaining("audit_documentation"),
+    );
+    expect(staticResourceText(DOCUMENTATION_MODEL_URI)).toBe(
+      documentationModelText(),
     );
     expect(staticResourceText("sequencediagrams://nope")).toBe(null);
   });
@@ -96,6 +102,29 @@ describe("MCP reference resources", () => {
       expect(SERVER_INSTRUCTIONS).toContain(tool);
     }
     expect(SERVER_INSTRUCTIONS).toContain(SEQUENCE_DSL_URI);
+    expect(SERVER_INSTRUCTIONS).toContain(DOCUMENTATION_MODEL_URI);
+  });
+
+  it("exposes bounded canonical representation guidance", () => {
+    const guidance = documentationModelText();
+    for (const phrase of [
+      "Sequence",
+      "Event Flow",
+      "Note",
+      "Conceptual",
+      "Database",
+      "future; unsupported today",
+      "Discover before authoring",
+      "Change Proposals",
+      "observed, inferred, or unknown",
+      "Event -> Handler/consumer -> Effects -> Resulting events",
+      "Current projections derive",
+    ]) {
+      expect(guidance).toContain(phrase);
+    }
+    expect(guidance.length).toBeLessThan(10000);
+    expect(guidance).not.toContain("kind: conceptual");
+    expect(guidance).not.toContain("kind: database");
   });
 
   it("offers one resource template for reading project files", () => {

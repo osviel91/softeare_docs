@@ -13,6 +13,7 @@
  */
 import type { PromptDefinition, PromptMessage } from "./protocol";
 import {
+  DOCUMENTATION_MODEL_URI,
   DOCUMENTING_GUIDE_URI,
   EVENT_FLOW_DSL_URI,
   MARKDOWN_URI,
@@ -148,15 +149,16 @@ export function resolvePrompt(
               projectHint,
               "",
               `First read the writing guide at ${DOCUMENTING_GUIDE_URI}.`,
+              `Read the canonical representation guidance at ${DOCUMENTATION_MODEL_URI}; it is derived from docs/documentation-model.md.`,
               "",
               "Then:",
-              "1. Inspect the system — the source tree, or what the user has told you — and decide the document set before creating files: one markdown overview, one sequence diagram per significant interaction, and an event flow per event-driven subsystem.",
-              "2. Call `get_project_overview`; call `create_project` if the workspace has none.",
-              `3. Read ${SEQUENCE_DSL_URI} before the first diagram, and ${EVENT_FLOW_DSL_URI} before the first event flow.`,
-              "4. Create each document with `create_resource`, giving it a real title and a name that reads as an id (`refund-flow`, not `Untitled 2`).",
-              "5. Show failure paths with `alt`/`else` and explain non-obvious steps with notes.",
-              `6. Write the overview last, and link every document from it (\`[[Title]]\` or a stable resource:// id) — see ${MARKDOWN_URI}.`,
-              "7. Run `validate_project` and fix every error, then `audit_documentation` and address the findings.",
+              "1. Discover the source and existing documentation before authoring: list projects/resources, inspect outlines and content, and search semantic terms.",
+              "2. Classify needs as business flows, event contexts, Notes, or unsupported Conceptual/Database gaps. Do not force unsupported representations into available types.",
+              "3. Compare existing coverage and present a plan identifying existing, stale, missing, overlapping, and unsupported documentation.",
+              `4. Read ${SEQUENCE_DSL_URI} before a Sequence and ${EVENT_FLOW_DSL_URI} before an Event Flow; create only genuinely missing supported resources.`,
+              "5. Prefer Change Proposals for substantial updates to existing resources; use direct creation only for genuinely new resources under current permissions.",
+              "6. Show failure paths with `alt`/`else`, explain non-obvious steps with notes, validate, and inspect diffs before review.",
+              `7. Write the overview last, and link every document from it (\`[[Title]]\` or a stable resource:// id) — see ${MARKDOWN_URI}.`,
               "",
               "Report what you created, what you could not determine from the available information, and which links or diagrams still need a human's input.",
             ]
@@ -174,18 +176,19 @@ export function resolvePrompt(
           userMessage(
             [
               "Improve the documentation in this workspace.",
+              `Read ${DOCUMENTATION_MODEL_URI} before deciding whether a finding is a Sequence, Event Flow, Note, or unsupported Conceptual/Database gap.`,
               projectHint,
               arg(args, "focus") === undefined
                 ? ""
                 : `Concentrate on: ${arg(args, "focus")}.`,
               "",
               "Then:",
-              "1. Call `get_project_overview` and `audit_documentation` to see what exists and what is missing.",
-              "2. Fix every error first: broken links, invalid DSL, unknown participants.",
-              "3. For each warning and suggestion, either fix it or explain why it is intentional.",
-              "4. Read the documents that do exist and judge them as a reader would: does the overview explain the system and link its diagrams? Do the diagrams show failure paths? Do notes explain why a step happens?",
-              "5. Use `update_resource` to improve text in place, and `create_resource` only for genuinely new documents. Link anything that is unreferenced.",
-              `6. Re-read ${SEQUENCE_DSL_URI} if a diagram needs a construct you have not used.`,
+              "1. Call `get_project_overview`, `list_resources`, `search_documentation`, and `audit_documentation` to see what exists and what is missing.",
+              "2. Read existing resources before changing them; identify stale and overlapping coverage rather than silently creating duplicates.",
+              "3. Fix every error first: broken links, invalid DSL, unknown participants.",
+              "4. For each warning and suggestion, either fix it or explain why it is intentional; report unsupported structural/persistence gaps instead of misrepresenting them.",
+              "5. Prefer a Change Proposal for substantial updates to existing resources. Use `update_resource` only when the current workflow explicitly calls for direct mutation, and `create_resource` only for genuinely new resources.",
+              `6. Re-read ${SEQUENCE_DSL_URI} or ${EVENT_FLOW_DSL_URI} if a supported diagram needs a construct you have not used.`,
               "",
               "Report each change as before → after, and list anything that needs information you do not have.",
             ]
@@ -204,6 +207,7 @@ export function resolvePrompt(
           userMessage(
             [
               `Draw this interaction as a sequence diagram: ${flow}`,
+              `First read ${DOCUMENTATION_MODEL_URI}; confirm this is one business/application flow and search for an existing covering resource before creating anything.`,
               projectHint,
               "",
               `Read ${SEQUENCE_DSL_URI}, then call \`create_resource\` with \`kind: "diagram"\`.`,
@@ -231,16 +235,18 @@ export function resolvePrompt(
           userMessage(
             [
               `Model the event-driven architecture of ${system} as an event flow document.`,
+              `First read ${DOCUMENTATION_MODEL_URI}; inspect existing event documentation and plan a bounded causal context before creating anything.`,
               projectHint,
               "",
               `Read ${EVENT_FLOW_DSL_URI}, then call \`create_resource\` with \`kind: "event-flow"\`.`,
               "",
               "Requirements:",
-              "- A `title`, then an `event` declaration per fact other services react to, with useful metadata (`version`, `domain`, `schema`).",
+              "- A `title`, then an `event` declaration per fact other services react to, with useful metadata (`version`, `domain`, `schema`). Record external/internal/unknown provenance only when evidence supports it.",
               "- `broker` and one `topic`/`queue`/`stream` declaration per channel, with `on <broker>`.",
               "- `producer`/`consumer`/`service` for every service you name — an undeclared name is a diagnostic.",
               "- One `publishes` edge per producer and one `consumes` edge per consumer, naming the channel.",
               "- Make fan-out and cascades explicit rather than implied: every competing consumer gets its own line.",
+              "- Think through Event -> handler/consumer -> effects -> resulting events. Use current syntax only; put unsupported handler/effect details in honest annotations or report the gap.",
               "",
               "Then call `validate_project` and fix every error; the event-driven checks (an event with no producer, an unknown service, an unused channel) are exactly the review a reader would do.",
             ].join("\n"),

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { META_SERVER_INFO, type JsonRpcResponse } from "../protocol";
 import {
   DOCUMENTING_GUIDE_URI,
+  DOCUMENTATION_MODEL_URI,
   EVENT_FLOW_DSL_URI,
   MARKDOWN_URI,
   SEQUENCE_DSL_URI,
@@ -339,6 +340,7 @@ describe("McpServer", () => {
       MARKDOWN_URI,
       DOCUMENTING_GUIDE_URI,
       WORKFLOW_GUIDE_URI,
+      DOCUMENTATION_MODEL_URI,
     ]);
 
     const read = await request("resources/read", { uri: SEQUENCE_DSL_URI });

@@ -31,6 +31,9 @@ export const DOCUMENTING_GUIDE_URI =
   "sequencediagrams://guide/documenting-an-application";
 /** URI of the tool-workflow guide. */
 export const WORKFLOW_GUIDE_URI = "sequencediagrams://guide/tool-workflow";
+/** URI of the canonical documentation guidance derived from D01. */
+export const DOCUMENTATION_MODEL_URI =
+  "sequencediagrams://guide/documentation-model";
 
 /** The URI template for reading a project resource directly. */
 export const PROJECT_RESOURCE_TEMPLATE =
@@ -45,21 +48,76 @@ export const PROJECT_RESOURCE_TEMPLATE =
  * trust) rather than describing the transport.
  */
 export const SERVER_INSTRUCTIONS = [
-  "This server turns an application's behaviour into durable documentation: sequence diagrams for interactions, event flows for event-driven architectures, and markdown for the prose that ties them together. It is the same engine Software Docs Manager uses, so anything written here opens in the app unchanged.",
+  "This server turns an application's behaviour into durable documentation: sequence diagrams for interactions, event flows for event-driven architectures, and markdown for the prose that ties them together. The canonical documentation model is available at sequencediagrams://guide/documentation-model and is authoritative for representation choice; docs/documentation-model.md is its source.",
   "",
   "Work like this:",
-  "1. Call get_project_overview (or list_projects) before writing anything. It reports what already exists, which symbols are in play, and what is currently wrong.",
-  "2. Read a resource's DSL reference before authoring a new language construct: resources sequencediagrams://reference/sequence-dsl, sequencediagrams://reference/event-flow-dsl, and sequencediagrams://reference/markdown.",
-  "3. Create or update documents with create_resource and update_resource. Pass a title; the server prepends one when the text declares none.",
-  "4. Validate what you wrote with validate_source (ad-hoc text) or validate_resource, and fix every error before moving on. Warnings are worth a look: an unused participant or a channel nobody consumes usually means the model is incomplete.",
-  "5. Prefer linking documents together. A markdown overview that links each diagram with [[Title]] (or a relative link, or a stable resource:// id) is what makes the project navigable; audit_documentation lists what is not linked.",
+  "1. Discover first: call list_projects, get_project_overview, list_resources, search_documentation, and read_resource/get_outline before writing anything.",
+  "2. Classify each need: Sequence is one business/application flow; Event Flow is one connected asynchronous causal context; Markdown is a Note for cross-cutting rules and context. Conceptual (structure) and Database (persistence) are future, unsupported representations; report those gaps instead of misusing another type.",
+  "3. Compare existing semantic subjects, titles, paths, content, and metadata where the connected server exposes them. Update or propose against substantial overlap; create only genuinely missing supported resources.",
+  "4. Plan before mutation. Prefer Change Proposals for substantial updates to existing resources, and do not treat analysis as permission to mutate canonical documentation.",
+  "5. Read a resource's DSL reference before authoring (`sequencediagrams://reference/sequence-dsl`, `sequencediagrams://reference/event-flow-dsl`, or `sequencediagrams://reference/markdown`), use create_resource or update_resource only after the plan, validate proposed content with validate_source or validate_resource, inspect its diff/merge analysis where applicable, and use audit_documentation before review.",
   "",
   "Conventions that make the output good:",
-  "- A resource is one idea. Do not put every flow in one diagram.",
-  "- Name participants after real components (UserService, Postgres, Kafka), and declare them once per document.",
-  "- Use a stable id when you link: resource://diagram-checkout survives renaming the file.",
+  "- Evidence is observed, inferred, or unknown. Do not guess retries, transactions, delivery, idempotency, authorization, provenance, or failure behavior.",
+  "- Use source references when the current representation supports them; never invent locations.",
   "- Write for the next engineer: labels and notes should say why, not restate the arrow.",
 ].join("\n");
+
+/**
+ * Concise operational guidance derived from docs/documentation-model.md.
+ * Keep the full D01 specification in the repository rather than duplicating it
+ * in MCP; this resource is the agent-sized, discoverable layer.
+ */
+export function documentationModelText(): string {
+  return [
+    "# Canonical documentation guidance",
+    "",
+    "Authoritative source: `docs/documentation-model.md`. This resource is a concise operational summary, not a second specification.",
+    "",
+    "## Choose a representation",
+    "",
+    "| Knowledge | Representation | Current MCP support |",
+    "| --- | --- | --- |",
+    "| One recognizable business/application execution | Sequence | supported (`kind: diagram`, `.seq`) |",
+    "| Connected asynchronous causality/reaction | Event Flow | supported (`kind: event-flow`, `.eventseq`) |",
+    "| Cross-cutting rules, decisions, or context | Note | supported (`kind: note`, `.md`) |",
+    "| Structural/domain/architecture relationships | Conceptual | future; unsupported today |",
+    "| Data/persistence relationships | Database | future; unsupported today |",
+    "",
+    "If Conceptual or Database is the correct representation, report an unsupported documentation gap. Do not force structural knowledge into Event Flow or persistence knowledge into Sequence. Capture a genuinely cross-cutting textual concern as a Note only when that is useful and honest.",
+    "",
+    "## Sequence",
+    "",
+    "Use one diagram per recognizable business/application flow. Bound it by independent actor/system intent and meaningful outcome, not by a file, class, endpoint, method, or architectural layer. Before creating one, identify the trigger, outcome, participating responsibility boundaries, and whether an existing diagram already covers it.",
+    "",
+    "Use annotations for rules, invariants, authorization, contracts, returned data, transaction boundaries, concurrency, idempotency, and important failure behavior. Do not narrate obvious calls.",
+    "",
+    "## Event Flow",
+    "",
+    "Use one connected bounded event context, not one diagram per event or handler. Group events with the same domain capability, direct causal relationships, shared state transitions, strong producer/consumer continuity, or useful debugging continuity. Split semantically unrelated networks, not merely large graphs.",
+    "",
+    "Investigate the desired chain as `Event -> Handler/consumer -> Effects -> Resulting events`, even though the current DSL structurally supports events, producers, consumers/services, brokers, channels, publications, subscriptions, and open event metadata. Current projections derive fan-out, causal ordering, and cycle indication; they do not provide first-class handler, effect, provenance, or event-causation fields.",
+    "",
+    "For each important event, document evidence-supported provenance (external, internal, or unknown), publisher, consumer/handler, reads, writes, external effects, resulting events, cycles, fan-outs, missing consumers, and relevant retry/idempotency/order semantics. Do not invent absent behavior or unsupported syntax.",
+    "",
+    "## Notes",
+    "",
+    "Use Notes for authorization models, cross-flow invariants, transaction guarantees, recovery behavior, deployment constraints, idempotency strategy, external assumptions, and cross-cutting business rules. Keep information local to an interaction, event, handler, or element as a diagram annotation. Use standalone Notes for knowledge spanning resources or deserving independent discovery.",
+    "",
+    "## Discover before authoring",
+    "",
+    "1. Inspect the repository and architecture.",
+    "2. Discover business flows, event contexts, structural concepts, persistence boundaries, and cross-cutting rules.",
+    "3. Inspect existing project documentation with `list_resources`, `get_outline`, `read_resource`, and `search_documentation` by semantic terms, representation, title, path, and exposed metadata.",
+    "4. Compare coverage: existing, stale, missing, overlapping, and unsupported.",
+    "5. Present a plan before mutation. Update or propose against overlapping existing resources; create only a genuinely missing supported resource.",
+    "6. Validate content and inspect diffs/merge analysis before review.",
+    "",
+    "Treat claims as observed, inferred, or unknown. Important claims should be supported by source, configuration, schemas, tests, or authoritative documentation. Use trajectory/history when recent changes or provenance help explain apparent staleness; it is not required for every operation.",
+    "",
+    "Analysis does not grant mutation permission. Prefer Change Proposals for substantial updates to existing resources. Creating a genuinely missing resource uses the existing creation workflow; D02 does not invent proposals to create resources.",
+  ].join("\n");
+}
 
 /** Render one language's constructs as markdown. */
 function constructsToMarkdown(
@@ -316,6 +374,14 @@ export function staticResources(): ResourceDefinition[] {
         "What each tool does and a worked create-validate-audit loop.",
       mimeType: "text/markdown",
     },
+    {
+      uri: DOCUMENTATION_MODEL_URI,
+      name: "documentation-model",
+      title: "Canonical documentation guidance",
+      description:
+        "Agent-sized guidance derived from docs/documentation-model.md: representation choice, granularity, evidence, discovery, overlap, and proposal workflow.",
+      mimeType: "text/markdown",
+    },
   ];
 }
 
@@ -346,6 +412,8 @@ export function staticResourceText(uri: string): string | null {
       return documentingGuideText();
     case WORKFLOW_GUIDE_URI:
       return workflowGuideText();
+    case DOCUMENTATION_MODEL_URI:
+      return documentationModelText();
     default:
       return null;
   }

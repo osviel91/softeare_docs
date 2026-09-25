@@ -13,7 +13,7 @@ import { analyzeEventFlow } from "../../language/eventflow/parser";
 import { renderEventFlowDocument } from "../../renderer/pipeline/eventflow-to-svg";
 import { renderEventFlowTopologyDocument } from "../../renderer/pipeline/eventflow-to-topology-svg";
 import { renderEventFlowCausalDocument } from "../../renderer/pipeline/eventflow-to-causal-svg";
-import { downstreamCausalNeighbors, effectsForHandler, inputsForHandler, outputsForHandler, projectEventFlowToCausalView, upstreamCausalNeighbors, type CausalNodeId } from "../../domain/eventflow/causal-projection";
+import { downstreamCausalNeighbors, effectsForHandler, inputsForHandler, outputsForHandler, projectEventFlowToCausalView, upstreamCausalNeighbors, type CausalNodeId, type CausalMessage, type CausalHandler, type CausalEffect, type CausalFailure, type CausalRetry } from "../../domain/eventflow/causal-projection";
 import { projectEventFlowToCatalog } from "../../domain/eventflow/catalog-projection";
 import { projectEventFlowToTopology } from "../../domain/eventflow/topology-projection";
 import {
@@ -247,6 +247,13 @@ export default function EventFlowPreview({
               ))}
             </div>
           )}
+          {(catalog.failures?.length || catalog.retries?.length) ? (
+            <section className="event-catalog__recovery" aria-label="Failure and retry semantics">
+              <h2>Failure and retry semantics</h2>
+              {catalog.failures?.map((failure) => <p key={failure.nodeId}><button type="button" onClick={() => onNodeSelect?.(failure.nodeId)}>{failure.id}</button> on {failure.target}{failure.classification ? ` (${failure.classification})` : ""}</p>)}
+              {catalog.retries?.map((retry) => <p key={retry.nodeId}><button type="button" onClick={() => onNodeSelect?.(retry.nodeId)}>{retry.id}</button> for {retry.failureId}{retry.mechanism ? ` via ${retry.mechanism}` : " (mechanism unknown)"}{retry.exhaustion ? `; exhaustion: ${retry.exhaustion}` : "; exhaustion unknown"}</p>)}
+            </section>
+          ) : null}
         </div>
       </div>
     );
@@ -350,15 +357,19 @@ export default function EventFlowPreview({
   }
 
   if (view === "causal") {
-    const selected = causal.messages.find((item) => item.id === selectedCausalId)
+      const selected = causal.messages.find((item) => item.id === selectedCausalId)
       ?? causal.handlers.find((item) => item.id === selectedCausalId)
-      ?? causal.effects.find((item) => item.id === selectedCausalId);
+      ?? causal.effects.find((item) => item.id === selectedCausalId)
+      ?? (causal.failures ?? []).find((item) => item.id === selectedCausalId)
+      ?? (causal.retries ?? []).find((item) => item.id === selectedCausalId);
     const selectCausal = (id: string) => {
       const causalId = id as CausalNodeId;
       setSelectedCausalId(causalId);
       const item = causal.messages.find((entry) => entry.id === causalId)
         ?? causal.handlers.find((entry) => entry.id === causalId)
-        ?? causal.effects.find((entry) => entry.id === causalId);
+        ?? causal.effects.find((entry) => entry.id === causalId)
+        ?? (causal.failures ?? []).find((entry) => entry.id === causalId)
+        ?? (causal.retries ?? []).find((entry) => entry.id === causalId);
       const sourceId = item?.sourceNodeIds[0];
       if (sourceId) onNodeSelect?.(sourceId);
     };
@@ -366,7 +377,7 @@ export default function EventFlowPreview({
       <div className="preview" data-testid="event-flow-preview">
         {selector}
         <div className="event-causal" data-testid="event-causal">
-          {causal.messages.length + causal.handlers.length + causal.effects.length === 0 ? (
+          {causal.messages.length + causal.handlers.length + causal.effects.length + (causal.failures ?? []).length + (causal.retries ?? []).length === 0 ? (
             <p className="preview__empty" data-testid="event-causal-empty">
               Topology is documented, but explicit causal relationships are not. Add Handler-based causal documentation to investigate what handles and causes each event.
             </p>
@@ -431,14 +442,19 @@ export default function EventFlowPreview({
   );
 }
 
-function CausalDetails({ item, view, onSourceSelect }: { item: NonNullable<ReturnType<typeof projectEventFlowToCausalView>["messages"]>[number] | NonNullable<ReturnType<typeof projectEventFlowToCausalView>["handlers"]>[number] | NonNullable<ReturnType<typeof projectEventFlowToCausalView>["effects"]>[number]; view: ReturnType<typeof projectEventFlowToCausalView>; onSourceSelect?: (nodeId: string) => void }) {
+type CausalItem = CausalMessage | CausalHandler | CausalEffect | CausalFailure | CausalRetry;
+function CausalDetails({ item, view, onSourceSelect }: { item: CausalItem; view: ReturnType<typeof projectEventFlowToCausalView>; onSourceSelect?: (nodeId: string) => void }) {
   const source = item.sourceNodeIds[0];
-  const label = "displayName" in item ? item.displayName : "name" in item ? item.name : item.description;
+  const label = String("displayName" in item ? item.displayName : "name" in item ? item.name : "description" in item && item.description ? item.description : "failureId" in item ? item.failureId : "retryId" in item ? item.retryId : item.effectId);
   return (
     <aside className="event-causal__details" aria-label="Causal selection details">
-      <strong>{"displayName" in item ? "Handler" : "name" in item ? "Event" : "Effect"}</strong>
+      <strong>{"displayName" in item ? "Handler" : "name" in item ? "Event" : "failureId" in item ? "Failure" : "retryId" in item ? "Retry" : "Effect"}</strong>
       <h2>{label}</h2>
       {"provenance" in item && <p>Provenance: {item.provenance}</p>}
+      {"classification" in item && <p>Classification: {item.classification ?? "unknown"}</p>}
+      {"mechanism" in item && <p>Retry mechanism: {item.mechanism ?? "unknown"}</p>}
+      {"target" in item && <p>Retry target: {item.target ?? "unknown"}</p>}
+      {"exhaustion" in item && <p>Exhaustion: {item.exhaustion ?? "not documented"}</p>}
       {"initiation" in item && <p>Initiation: {item.initiation ?? "not documented"}</p>}
       {"service" in item && item.service && <p>Service: {item.service}</p>}
       {"kind" in item && item.kind && <p>Kind: {item.kind}</p>}

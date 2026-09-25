@@ -8,6 +8,8 @@ import {
   type HandlerInput,
   type HandlerOutput,
   type CausalInitiation,
+  type EventFlowFailure,
+  type EventFlowRetry,
 } from "./ast";
 
 export function handlersFor(flow: EventFlow, event: string): EventFlowHandler[] {
@@ -61,7 +63,12 @@ export type CausalInvariantCode =
   | "duplicate-effect"
   | "unknown-handler"
   | "unknown-event"
-  | "effect-without-handler";
+  | "effect-without-handler"
+  | "duplicate-failure"
+  | "duplicate-retry"
+  | "unknown-failure"
+  | "retry-without-context"
+  | "contradictory-retry";
 
 export interface CausalInvariantViolation {
   code: CausalInvariantCode;
@@ -71,7 +78,9 @@ export interface CausalInvariantViolation {
     | HandlerOutput
     | HandlerEffect
     | EventFlowHandler
-    | CausalInitiation;
+    | CausalInitiation
+    | EventFlowFailure
+    | EventFlowRetry;
 }
 
 /** Validate causal references without requiring a complete causal graph. */
@@ -147,6 +156,23 @@ export function validateEventFlowCausality(
         reference: initiation,
       });
     }
+  }
+  const failures = new Set<string>();
+  for (const failure of causal.failures ?? []) {
+    if (failures.has(failure.id)) violations.push({ code: "duplicate-failure", message: `Failure "${failure.id}" is declared more than once`, reference: failure });
+    failures.add(failure.id);
+    if (failure.target.kind === "handler" && !handlers.has(failure.target.id)) violations.push({ code: "unknown-handler", message: `Failure "${failure.id}" names unknown handler "${failure.target.id}"`, reference: failure });
+    if (failure.target.kind === "effect" && !effectIds.has(failure.target.id)) violations.push({ code: "effect-without-handler", message: `Failure "${failure.id}" names unknown effect "${failure.target.id}"`, reference: failure });
+    if (failure.target.kind === "message" && !eventNames.has(failure.target.id)) violations.push({ code: "unknown-event", message: `Failure "${failure.id}" names unknown message "${failure.target.id}"`, reference: failure });
+  }
+  const retries = new Set<string>();
+  for (const retry of causal.retries ?? []) {
+    if (retries.has(retry.id)) violations.push({ code: "duplicate-retry", message: `Retry "${retry.id}" is declared more than once`, reference: retry });
+    retries.add(retry.id);
+    if (!failures.has(retry.failureId)) violations.push({ code: "unknown-failure", message: `Retry "${retry.id}" references unknown failure "${retry.failureId}"`, reference: retry });
+    if (retry.exhaustion && !retry.mechanism && !retry.target && !retry.initiates) violations.push({ code: "retry-without-context", message: `Retry "${retry.id}" declares exhaustion without a retry context`, reference: retry });
+    if ((retry.mechanism === "broker" && retry.target === "same-execution") || (retry.mechanism === "handler" && retry.target === "same-delivery")) violations.push({ code: "contradictory-retry", message: `Retry "${retry.id}" combines mechanism "${retry.mechanism}" with target "${retry.target}"`, reference: retry });
+    if (retry.initiates && !eventNames.has(retry.initiates)) violations.push({ code: "unknown-event", message: `Retry "${retry.id}" initiates unknown message "${retry.initiates}"`, reference: retry });
   }
   return violations;
 }

@@ -185,6 +185,71 @@ export interface HandlerEffect {
   range?: SourceRange;
 }
 
+export type FailureClassification =
+  | "delivery"
+  | "processing"
+  | "external-dependency"
+  | "business"
+  | "timeout"
+  | "unknown";
+
+export type RetryMechanism =
+  | "broker"
+  | "handler"
+  | "application"
+  | "scheduler"
+  | "external"
+  | "unknown";
+
+export type RetryTarget = "same-delivery" | "same-execution" | "new-message";
+
+export type RetryBackoff = "constant" | "linear" | "exponential" | "unknown";
+
+export type RetryExhaustion =
+  | "dead-letter"
+  | "park"
+  | "discard"
+  | "manual"
+  | "terminal-failure"
+  | "unknown";
+
+export interface FailureTarget {
+  kind: "handler" | "effect" | "message";
+  id: string;
+}
+
+/** An explicitly documented operation failure, separate from its recovery. */
+export interface EventFlowFailure {
+  type: "failure";
+  id: string;
+  target: FailureTarget;
+  classification?: FailureClassification;
+  owner?: RetryMechanism;
+  description?: string;
+  details?: string;
+  metadata: EventMetadataEntry[];
+  range?: SourceRange;
+}
+
+/** A recovery relationship; it is not an ordinary causal message edge. */
+export interface EventFlowRetry {
+  type: "retry";
+  id: string;
+  failureId: string;
+  mechanism?: RetryMechanism;
+  target?: RetryTarget;
+  initiates?: string;
+  maxAttempts?: number;
+  delay?: string;
+  backoff?: RetryBackoff;
+  timeout?: string;
+  exhaustion?: RetryExhaustion;
+  description?: string;
+  details?: string;
+  metadata: EventMetadataEntry[];
+  range?: SourceRange;
+}
+
 /** Explicit root initiation, independent from message provenance. */
 export interface CausalInitiation {
   type: "initiation";
@@ -199,6 +264,8 @@ export interface EventFlowCausality {
   inputs: HandlerInput[];
   outputs: HandlerOutput[];
   effects: HandlerEffect[];
+  failures?: EventFlowFailure[];
+  retries?: EventFlowRetry[];
   initiations?: CausalInitiation[];
 }
 

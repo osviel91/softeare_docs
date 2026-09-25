@@ -1627,6 +1627,17 @@ export function createMcpTools(): McpTool[] {
         );
       },
     },
+    {
+      name: "find_retry_behavior",
+      title: "Find failure and retry behavior",
+      description: "Find documented failures and retries across a project's event flows. Filter by mechanism or return all evidence-backed semantics; unknown policy remains explicit.",
+      inputSchema: { projectId: projectId(), mechanism: z.enum(["broker", "handler", "application", "scheduler", "external", "unknown"]).optional() },
+      annotations: { ...READ_ONLY, title: "Find failure and retry behavior" },
+      requiredPermissions: ["project:search"],
+      async run(args, toolContext) {
+        return findRetryBehavior(toolContext, stringArg(args, "projectId"), typeof args.mechanism === "string" ? args.mechanism : undefined);
+      },
+    },
 
     {
       name: "validate_project",
@@ -1794,6 +1805,20 @@ async function findEventSides(
         : hits.map((hit) => `- ${hit.service} (${hit.resource})`).join("\n"),
     structured: { event: eventName, [side]: hits },
   };
+}
+
+async function findRetryBehavior(toolContext: ToolContext, projectIdValue: string, mechanism?: string): Promise<ToolOutcome> {
+  const resources = await toolContext.catalog.listResources(toolContext.context, projectIdValue);
+  const hits: Array<{ resource: string; failures: unknown[]; retries: unknown[]; unknownPolicy: boolean }> = [];
+  for (const resource of resources) {
+    if (resource.type !== "event-flow") continue;
+    const { content } = await toolContext.catalog.readResource(toolContext.context, projectIdValue, resource.id);
+    const { flow } = analyzeEventFlow(content);
+    const retries = (flow.causal?.retries ?? []).filter((retry) => mechanism === undefined || retry.mechanism === mechanism);
+    const failures = flow.causal?.failures ?? [];
+    if (retries.length || (mechanism === undefined && failures.length)) hits.push({ resource: resource.path, failures, retries, unknownPolicy: retries.some((retry) => !retry.mechanism || !retry.exhaustion) });
+  }
+  return { text: hits.length ? hits.map((hit) => `- ${hit.resource}: ${hit.retries.length} retries, ${hit.failures.length} failures${hit.unknownPolicy ? " (policy or exhaustion unknown)" : ""}`).join("\n") : "No documented failure or retry behavior found.", structured: { mechanism, flows: hits } };
 }
 
 /** Create or replace a document by path, with the revision contract enforced. */

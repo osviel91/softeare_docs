@@ -238,6 +238,25 @@ not; it does not infer relationships from `publishes` and `consumes`.
 
 ### Event annotations
 
+### Failure and retry semantics
+
+Failure, retry policy, retry mechanism, and causal recovery are separate facts.
+`failure` identifies an operation and its evidence-backed classification; `retry`
+identifies how recovery is initiated. `same-delivery` describes infrastructure
+redelivery, `same-execution` describes handler/runtime processing retry, and
+`initiates` points to a distinct application or scheduled message. A scheduled
+reconciliation loop is not a broker retry merely because it finds failed work.
+
+Policy fields such as attempt count, delay, backoff, timeout, and exhaustion are
+optional. Missing fields remain unknown. The model never infers DLQs, ordering,
+idempotency, delivery guarantees, ownership, or concurrency from a queue or from
+asynchronous messaging. Business failure may be documented without a retry, and
+terminal handling is documented only when evidence establishes it.
+
+Failure/recovery edges remain distinct from ordinary `causes` edges. This lets
+the Causal view show a handler failure and its recovery without hiding the real
+message and handler path used by explicit application retries.
+
 Add annotations or metadata when they materially affect understanding. Useful
 information includes:
 

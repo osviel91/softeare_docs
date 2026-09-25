@@ -6,6 +6,8 @@ import {
   type EventMetadataEntry,
   type EventPublication,
   type EventSubscription,
+  type EventFlowFailure,
+  type EventFlowRetry,
 } from "./ast";
 import { nodeIdOf, type AstNodeId } from "../diagram/node-id";
 
@@ -40,6 +42,8 @@ export interface CatalogEvent {
 export interface CatalogViewModel {
   title?: string;
   events: CatalogEvent[];
+  failures?: Array<{ id: string; target: string; classification?: string; owner?: string; nodeId: AstNodeId }>;
+  retries?: Array<{ id: string; failureId: string; mechanism?: string; target?: string; exhaustion?: string; nodeId: AstNodeId }>;
 }
 
 /** Keep catalog ordering declarative; unlike Flow, this never sorts causally. */
@@ -85,6 +89,8 @@ export function projectEventFlowToCatalog(flow: EventFlow): CatalogViewModel {
     subscriptions.set(subscription.event, entries);
   }
 
+  const failures = flow.causal?.failures ?? [];
+  const retries = flow.causal?.retries ?? [];
   return {
     title: flow.title?.value,
     events: [
@@ -112,7 +118,17 @@ export function projectEventFlowToCatalog(flow: EventFlow): CatalogViewModel {
         ),
       };
     }),
+    ...(failures.length ? { failures: failures.map(catalogFailure) } : {}),
+    ...(retries.length ? { retries: retries.map(catalogRetry) } : {}),
   };
+}
+
+function catalogFailure(item: EventFlowFailure) {
+  return { id: item.id, target: `${item.target.kind} ${item.target.id}`, classification: item.classification, owner: item.owner, nodeId: item.range ? nodeIdOf("failure", item.range) : nodeIdOf("event", emptyRange()) };
+}
+
+function catalogRetry(item: EventFlowRetry) {
+  return { id: item.id, failureId: item.failureId, mechanism: item.mechanism, target: item.target, exhaustion: item.exhaustion, nodeId: item.range ? nodeIdOf("retry", item.range) : nodeIdOf("event", emptyRange()) };
 }
 
 function relationshipForPublication(

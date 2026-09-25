@@ -7,8 +7,8 @@ export interface CausalRenderOptions {
 }
 
 const colors = {
-  light: { paper: "#fff", ink: "#0f172a", muted: "#64748b", line: "#94a3b8", message: "#e0f2fe", handler: "#ede9fe", effect: "#fef3c7", focus: "#0f766e", subdued: "#cbd5e1" },
-  dark: { paper: "#0f172a", ink: "#e2e8f0", muted: "#94a3b8", line: "#64748b", message: "#164e63", handler: "#4c1d95", effect: "#713f12", focus: "#5eead4", subdued: "#334155" },
+  light: { paper: "#fff", ink: "#0f172a", muted: "#64748b", line: "#94a3b8", message: "#e0f2fe", handler: "#ede9fe", effect: "#fef3c7", failure: "#fee2e2", retry: "#fce7f3", focus: "#0f766e", subdued: "#cbd5e1" },
+  dark: { paper: "#0f172a", ink: "#e2e8f0", muted: "#94a3b8", line: "#64748b", message: "#164e63", handler: "#4c1d95", effect: "#713f12", failure: "#7f1d1d", retry: "#831843", focus: "#5eead4", subdued: "#334155" },
 };
 
 function esc(value: string): string {
@@ -43,10 +43,12 @@ function focusSets(view: CausalViewModel, selected: CausalNodeId | null): { imme
   return { immediate, upstream, downstream };
 }
 
-function edgePath(edge: CausalEdge, from: { x: number; y: number; width: number; height: number }, to: { x: number; y: number; width: number; height: number }, index: number): string {
+function edgePath(edge: CausalEdge, from: { x: number; y: number; width: number; height: number }, to: { x: number; y: number; width: number; height: number }, index: number, effectCount = 1): string {
   const start = center(from); const end = center(to);
   if (edge.type === "HANDLER_HAS_EFFECT") {
-    return `M${start.x} ${from.y + from.height} V${to.y - 12} H${end.x} V${end.y}`;
+    const offset = effectCount > 1 ? (index - (effectCount - 1) / 2) * 16 : 0;
+    const lane = start.x + offset;
+    return `M${start.x} ${from.y + from.height} H${lane} V${to.y - 12} H${end.x} V${end.y}`;
   }
   const forward = to.x >= from.x;
   const startX = forward ? from.x + from.width : from.x;
@@ -60,29 +62,33 @@ export function causalCanvasSize(layout: CausalLayout) { return { width: layout.
 export function renderCausalToSvg(layout: CausalLayout, view: CausalViewModel, options: CausalRenderOptions = {}): string {
   const palette = colors[options.theme === "dark" ? "dark" : "light"];
   const focus = focusSets(view, options.selected ?? null);
+  const effectCount = layout.edges.filter(({ edge }) => edge.type === "HANDLER_HAS_EFFECT").length;
   const parts = [`<svg xmlns="http://www.w3.org/2000/svg" width="${layout.width}" height="${layout.height}" viewBox="0 0 ${layout.width} ${layout.height}" font-family="Inter, system-ui, sans-serif" role="img" aria-label="Causal event flow">`, `<rect width="100%" height="100%" fill="${palette.paper}"/>`, `<defs><marker id="causal-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="${palette.ink}"/></marker><marker id="causal-effect-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="none" stroke="${palette.ink}"/></marker></defs>`];
+  let effectIndex = 0;
   if (layout.title) parts.push(`<text x="28" y="24" fill="${palette.ink}" font-size="16" font-weight="700">${esc(layout.title)}</text>`);
   for (const [index, { edge, from, to }] of layout.edges.entries()) {
     const selected = options.selected ?? null;
     const connected = !selected || edge.from === selected || edge.to === selected || focus.immediate.has(edge.from) || focus.immediate.has(edge.to);
     const dim = Boolean(selected && !connected);
     const effect = edge.type === "HANDLER_HAS_EFFECT";
-    const dashed = effect ? ` stroke-dasharray="5 4"` : "";
-    const edgeClass = edge.type === "HANDLER_CAUSES_MESSAGE" ? " causes" : effect ? " effect" : " handled-by";
+    const retry = edge.type === "FAILURE_RETRIED" || edge.type.startsWith("RETRY_");
+    const dashed = effect || retry ? ` stroke-dasharray="5 4"` : "";
+    const edgeClass = edge.type === "HANDLER_CAUSES_MESSAGE" ? " causes" : effect ? " effect" : retry ? " retry" : edge.type === "ENTITY_FAILED" ? " failure" : " handled-by";
     const pathClass = selected && focus.upstream.has(edge.from) && focus.upstream.has(edge.to)
       ? " is-upstream"
       : selected && focus.downstream.has(edge.from) && focus.downstream.has(edge.to)
         ? " is-downstream"
         : "";
-    const label = edge.type === "MESSAGE_HANDLED_BY_HANDLER" ? "handled by" : edge.type === "HANDLER_CAUSES_MESSAGE" ? "causes" : "effect";
-    parts.push(`<g class="causal-edge${edgeClass}${pathClass}${dim ? " is-subdued" : ""}" data-edge-type="${edge.type}" aria-label="${label}"><path d="${edgePath(edge, from, to, index)}" fill="none" stroke="${dim ? palette.subdued : palette.line}" stroke-width="${dim ? 1 : edge.type === "HANDLER_CAUSES_MESSAGE" ? 2.2 : 1.8}"${pathClass ? ` stroke-dasharray="${pathClass.includes("upstream") ? "7 3" : "3 3"}"` : dashed} marker-end="url(#${effect ? "causal-effect-arrow" : "causal-arrow"})"/></g>`);
+    const label = edge.type === "MESSAGE_HANDLED_BY_HANDLER" ? "handled by" : edge.type === "HANDLER_CAUSES_MESSAGE" ? "causes" : edge.type === "ENTITY_FAILED" ? "fails" : retry ? "retry" : "effect";
+    const pathIndex = effect ? effectIndex++ : index;
+    parts.push(`<g class="causal-edge${edgeClass}${pathClass}${dim ? " is-subdued" : ""}" data-edge-type="${edge.type}" aria-label="${label}"><path d="${edgePath(edge, from, to, pathIndex, effectCount)}" fill="none" stroke="${dim ? palette.subdued : palette.line}" stroke-width="${dim ? 1 : edge.type === "HANDLER_CAUSES_MESSAGE" ? 2.2 : 1.8}"${pathClass ? ` stroke-dasharray="${pathClass.includes("upstream") ? "7 3" : "3 3"}"` : dashed} marker-end="url(#${effect ? "causal-effect-arrow" : "causal-arrow"})"/></g>`);
   }
   for (const node of layout.nodes) {
     const dim = Boolean(options.selected && node.id !== options.selected && !focus.immediate.has(node.id) && !focus.upstream.has(node.id) && !focus.downstream.has(node.id));
     const selected = options.selected === node.id;
-    const fill = node.type === "message" ? palette.message : node.type === "handler" ? palette.handler : palette.effect;
+    const fill = node.type === "message" ? palette.message : node.type === "handler" ? palette.handler : node.type === "effect" ? palette.effect : node.type === "failure" ? palette.failure : palette.retry;
     const message = node.type === "message" ? view.messages.find((item) => item.id === node.id) : undefined;
-    const radius = node.type === "message" ? 18 : node.type === "handler" ? 7 : 3;
+    const radius = node.type === "message" ? 18 : node.type === "handler" ? 7 : node.type === "failure" ? 10 : 3;
     const label = `${kindLabel(node.type, message?.kind)}: ${node.label}`;
     const focusClass = selected ? " is-selected" : focus.immediate.has(node.id) ? " is-causal-neighbor" : focus.upstream.has(node.id) ? " is-upstream" : focus.downstream.has(node.id) ? " is-downstream" : "";
     const focusStroke = selected || focus.immediate.has(node.id) ? palette.focus : palette.ink;

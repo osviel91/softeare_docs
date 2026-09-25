@@ -121,6 +121,16 @@ export function eventFlowNodes(flow: EventFlow): EventFlowNode[] {
       range: entry.range!,
       label: entry.id,
     })),
+    ...(flow.causal?.failures ?? []).map((entry) => ({
+      kind: "failure" as const,
+      range: entry.range!,
+      label: entry.id,
+    })),
+    ...(flow.causal?.retries ?? []).map((entry) => ({
+      kind: "retry" as const,
+      range: entry.range!,
+      label: entry.id,
+    })),
   ]) {
     if (!causal.range) continue;
     nodes.push({

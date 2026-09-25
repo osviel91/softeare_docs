@@ -290,6 +290,18 @@ export const EVENT_FLOW_CONSTRUCTS: DslConstruct[] = [
     example: "scheduled initiates ResendNonReceivedWebhookEventsCommand",
   },
   {
+    name: "Failure",
+    syntax: "failure <id> on handler|effect|message <id> { metadata }",
+    summary: "Records an evidence-backed failure separately from recovery. Classification and owner are optional; omission means the fact is not known.",
+    example: "failure delivery-failed on handler DeliveryHandler {\n  classification: processing\n  owner: handler\n}",
+  },
+  {
+    name: "Retry and recovery",
+    syntax: "retry <id> for <failure-id> { mechanism, target, policy, exhaustion }",
+    summary: "Describes recovery without collapsing it into ordinary causality. Use same-delivery for redelivery, same-execution for handler retry, and initiates for a distinct application or scheduled message.",
+    example: "retry webhook-recovery for delivery-failed {\n  mechanism: scheduler\n  target: new-message\n  initiates: ResendWebhookCommand\n}",
+  },
+  {
     name: "Comment",
     syntax: "# <text>",
     summary:

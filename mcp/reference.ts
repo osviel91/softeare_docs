@@ -176,7 +176,7 @@ export function eventFlowDslText(): string {
     [
       "The language for `*.eventseq` files: topology declarations describe events,",
       "services, channels, publications, and subscriptions; optional causal lines",
-      "explicitly connect events, handlers, effects, and resulting messages.",
+      "explicitly connect events, handlers, effects, resulting messages, failures, and typed recovery relationships.",
     ].join(" "),
     EVENT_FLOW_CONSTRUCTS,
   );
@@ -292,6 +292,8 @@ export function documentingGuideText(): string {
     "## 6. Keep it honest",
     "",
     'Update the document in the same change as the code. `find_references` answers "where is this component documented?", and renaming a participant through the app\'s semantic rename keeps every mention consistent. A diagram that disagrees with the system is worse than no diagram.',
+    "",
+    "For failures and retries, do not infer behavior from queues or asynchronous messaging. A broker redelivery, handler retry, explicit application message, and scheduled reconciliation are different semantics. Do not invent counts, delays, backoff, DLQs, ordering, idempotency, or guarantees; leave unknown fields absent. Document terminal handling only when evidence names it.",
   ].join("\n");
 }
 

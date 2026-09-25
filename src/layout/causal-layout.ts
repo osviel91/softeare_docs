@@ -8,7 +8,7 @@ import { estimateTextWidth, wrapText } from "./text";
 export interface CausalBox { x: number; y: number; width: number; height: number }
 export interface CausalNodeLayout {
   id: CausalNodeId;
-  type: "message" | "handler" | "effect";
+  type: "message" | "handler" | "effect" | "failure" | "retry";
   label: string;
   box: CausalBox;
   sourceNodeIds: string[];
@@ -55,6 +55,8 @@ export function layoutCausalView(view: CausalViewModel): CausalLayout {
   const main = [
     ...view.messages.map((item) => ({ id: item.id, type: "message" as const, label: item.name, sourceNodeIds: item.sourceNodeIds })),
     ...view.handlers.map((item) => ({ id: item.id, type: "handler" as const, label: item.displayName, sourceNodeIds: item.sourceNodeIds })),
+    ...(view.failures ?? []).map((item) => ({ id: item.id, type: "failure" as const, label: item.description ?? item.failureId, sourceNodeIds: item.sourceNodeIds })),
+    ...(view.retries ?? []).map((item) => ({ id: item.id, type: "retry" as const, label: item.description ?? item.retryId, sourceNodeIds: item.sourceNodeIds })),
   ];
   const rank = new Map<CausalNodeId, number>();
   const visiting = new Set<CausalNodeId>();

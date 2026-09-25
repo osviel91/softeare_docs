@@ -50,6 +50,14 @@ import type {
   CausalInitiation,
   CausalInitiationKind,
   MessageKind,
+  EventFlowFailure,
+  EventFlowRetry,
+  FailureClassification,
+  RetryMechanism,
+  RetryTarget,
+  RetryBackoff,
+  RetryExhaustion,
+  FailureTarget,
   EventPublication,
   EventSubscription,
   ServiceDeclaration,
@@ -109,6 +117,14 @@ export enum EventFlowDiagnosticCode {
   InvalidProvenance = "eventflow.invalid-provenance",
   InvalidMessageKind = "eventflow.invalid-message-kind",
   MalformedCausalRelationship = "eventflow.malformed-causal-relationship",
+  DuplicateFailure = "eventflow.duplicate-failure",
+  DuplicateRetry = "eventflow.duplicate-retry",
+  UnknownFailure = "eventflow.unknown-failure",
+  UnknownFailureTarget = "eventflow.unknown-failure-target",
+  InvalidFailureValue = "eventflow.invalid-failure-value",
+  InvalidRetryPolicy = "eventflow.invalid-retry-policy",
+  RetryWithoutContext = "eventflow.retry-without-context",
+  ContradictoryRetry = "eventflow.contradictory-retry",
 }
 
 /** How serious an event-flow diagnostic is. */
@@ -236,6 +252,11 @@ const INITIATION_KINDS = new Set<CausalInitiationKind>([
   "startup",
   "unknown",
 ]);
+const FAILURE_CLASSES = new Set<FailureClassification>(["delivery", "processing", "external-dependency", "business", "timeout", "unknown"]);
+const RETRY_MECHANISMS = new Set<RetryMechanism>(["broker", "handler", "application", "scheduler", "external", "unknown"]);
+const RETRY_TARGETS = new Set<RetryTarget>(["same-delivery", "same-execution", "new-message"]);
+const RETRY_BACKOFFS = new Set<RetryBackoff>(["constant", "linear", "exponential", "unknown"]);
+const RETRY_EXHAUSTIONS = new Set<RetryExhaustion>(["dead-letter", "park", "discard", "manual", "terminal-failure", "unknown"]);
 
 /**
  * Parse an event-flow document.
@@ -255,12 +276,14 @@ export function parseEventFlow(source: string): EventFlowParseResult {
   const inputs: HandlerInput[] = [];
   const outputs: HandlerOutput[] = [];
   const effects: HandlerEffect[] = [];
+  const failures: EventFlowFailure[] = [];
+  const retries: EventFlowRetry[] = [];
   const initiations: CausalInitiation[] = [];
   let title: EventFlowTitle | undefined;
 
   /** The event whose metadata block is open, if any. */
   let metadataTarget:
-    EventDeclaration | EventFlowHandler | HandlerEffect | null = null;
+    | EventDeclaration | EventFlowHandler | HandlerEffect | EventFlowFailure | EventFlowRetry | null = null;
   let metadataKeys = new Set<string>();
   let detailsLines: string[] | null = null;
   let detailsEntry: EventMetadataEntry | null = null;
@@ -376,6 +399,8 @@ export function parseEventFlow(source: string): EventFlowParseResult {
         if (target.type === "effect" && key.toLowerCase() === "kind") {
           target.kind = value;
         }
+        if (target.type === "failure") applyFailureMetadata(target, key, value, entry, diagnostics);
+        if (target.type === "retry") applyRetryMetadata(target, key, value, entry, diagnostics);
         metadataKeys.add(key.toLowerCase());
         target.range = {
           start: metadataTarget.range!.start,
@@ -568,7 +593,13 @@ export function parseEventFlow(source: string): EventFlowParseResult {
       } else if (causal.kind === "input") inputs.push(causal.value);
       else if (causal.kind === "output") outputs.push(causal.value);
       else if (causal.kind === "initiation") initiations.push(causal.value);
-      else {
+      else if (causal.kind === "failure") {
+        failures.push(causal.value);
+        if (causal.opensMetadata) { metadataTarget = causal.value; metadataKeys = new Set(); }
+      } else if (causal.kind === "retry") {
+        retries.push(causal.value);
+        if (causal.opensMetadata) { metadataTarget = causal.value; metadataKeys = new Set(); }
+      } else {
         effects.push(causal.value);
         if (causal.opensMetadata) {
           metadataTarget = causal.value;
@@ -608,8 +639,8 @@ export function parseEventFlow(source: string): EventFlowParseResult {
     flow: {
       title,
       statements,
-      ...(handlers.length || inputs.length || outputs.length || effects.length || initiations.length
-        ? { causal: { handlers, inputs, outputs, effects, initiations } }
+      ...(handlers.length || inputs.length || outputs.length || effects.length || initiations.length || failures.length || retries.length
+        ? { causal: { handlers, inputs, outputs, effects, initiations, failures, retries } }
         : {}),
     },
     diagnostics,
@@ -621,6 +652,8 @@ type CausalLine =
   | { kind: "input"; value: HandlerInput; opensMetadata: false }
   | { kind: "output"; value: HandlerOutput; opensMetadata: false }
   | { kind: "initiation"; value: CausalInitiation; opensMetadata: false }
+  | { kind: "failure"; value: EventFlowFailure; opensMetadata: boolean }
+  | { kind: "retry"; value: EventFlowRetry; opensMetadata: boolean }
   | { kind: "effect"; value: HandlerEffect; opensMetadata: boolean };
 
 /** Causal lines use explicit references; no topology or adjacency is consulted. */
@@ -629,6 +662,22 @@ function parseCausalLine(line: EventFlowLine): CausalLine | "malformed" | null {
   const values = words.map((word) => word.value.toLowerCase());
   const range = lineRange(line);
   const opensMetadata = line.tokens.some((token) => token.type === "braceOpen");
+
+  if (values[0] === "failure") {
+    const id = words[1];
+    const on = values.indexOf("on");
+    const targetKind = values[on + 1];
+    const targetId = words[on + 2];
+    if (!id || on < 0 || !targetId || !["handler", "effect", "message"].includes(targetKind ?? "")) return "malformed";
+    return { kind: "failure", opensMetadata, value: { type: "failure", id: id.value, target: { kind: targetKind as FailureTarget["kind"], id: targetId.value }, metadata: [], range } };
+  }
+  if (values[0] === "retry") {
+    const id = words[1];
+    const forIndex = values.indexOf("for");
+    const failure = words[forIndex + 1];
+    if (!id || forIndex < 0 || !failure) return "malformed";
+    return { kind: "retry", opensMetadata, value: { type: "retry", id: id.value, failureId: failure.value, metadata: [], range } };
+  }
 
   if (values[1] === "initiates" && words[2]) {
     const kind = values[0] as CausalInitiationKind;
@@ -722,7 +771,7 @@ function parseCausalLine(line: EventFlowLine): CausalLine | "malformed" | null {
   }
 
   if (
-    ["handler", "handled", "handles", "causes", "effect", "scheduled", "external", "manual", "startup", "unknown"].includes(
+    ["handler", "handled", "handles", "causes", "effect", "failure", "retry", "scheduled", "external", "manual", "startup", "unknown"].includes(
       values[0] ?? "",
     ) ||
     values.includes("handled")
@@ -757,6 +806,43 @@ function normalizeDetails(lines: string[]): string {
     .map((line) => line.match(/^\s*/)?.[0].length ?? 0);
   const indent = indents.length > 0 ? Math.min(...indents) : 0;
   return trimmed.map((line) => line.slice(indent)).join("\n");
+}
+
+function applyFailureMetadata(
+  target: EventFlowFailure,
+  key: string,
+  value: string,
+  entry: EventMetadataEntry,
+  diagnostics: EventFlowDiagnostic[],
+): void {
+  if (key.toLowerCase() === "classification") {
+    if (!FAILURE_CLASSES.has(value as FailureClassification)) diagnostics.push({ severity: "error", message: `Invalid failure classification "${value}"`, code: EventFlowDiagnosticCode.InvalidFailureValue, range: entry.range });
+    else target.classification = value as FailureClassification;
+  }
+  if (key.toLowerCase() === "owner") {
+    if (!RETRY_MECHANISMS.has(value as RetryMechanism)) diagnostics.push({ severity: "error", message: `Invalid failure owner "${value}"`, code: EventFlowDiagnosticCode.InvalidFailureValue, range: entry.range });
+    else target.owner = value as RetryMechanism;
+  }
+}
+
+function applyRetryMetadata(
+  target: EventFlowRetry,
+  key: string,
+  value: string,
+  entry: EventMetadataEntry,
+  diagnostics: EventFlowDiagnostic[],
+): void {
+  const invalid = (message: string) => diagnostics.push({ severity: "error", message, code: EventFlowDiagnosticCode.InvalidRetryPolicy, range: entry.range });
+  switch (key.toLowerCase()) {
+    case "mechanism": if (RETRY_MECHANISMS.has(value as RetryMechanism)) target.mechanism = value as RetryMechanism; else invalid(`Invalid retry mechanism "${value}"`); break;
+    case "target": if (RETRY_TARGETS.has(value as RetryTarget)) target.target = value as RetryTarget; else invalid(`Invalid retry target "${value}"`); break;
+    case "initiates": target.initiates = value; target.target = "new-message"; break;
+    case "max-attempts": { const count = Number(value); if (!Number.isInteger(count) || count < 1) invalid("max-attempts must be a positive integer"); else target.maxAttempts = count; break; }
+    case "delay": if (/^\d+(ms|s|m|h|d)$/.test(value)) target.delay = value; else invalid("delay must be a positive duration such as 250ms or 2s"); break;
+    case "backoff": if (RETRY_BACKOFFS.has(value as RetryBackoff)) target.backoff = value as RetryBackoff; else invalid(`Invalid retry backoff "${value}"`); break;
+    case "timeout": if (/^\d+(ms|s|m|h|d)$/.test(value)) target.timeout = value; else invalid("timeout must be a positive duration such as 250ms or 2s"); break;
+    case "exhaustion": if (RETRY_EXHAUSTIONS.has(value as RetryExhaustion)) target.exhaustion = value as RetryExhaustion; else invalid(`Invalid exhaustion behavior "${value}"`); break;
+  }
 }
 
 /**
@@ -955,6 +1041,11 @@ export function validateEventFlow(flow: EventFlow): EventFlowDiagnostic[] {
       "unknown-handler": EventFlowDiagnosticCode.UnknownHandler,
       "unknown-event": EventFlowDiagnosticCode.CausalUnknownEvent,
       "effect-without-handler": EventFlowDiagnosticCode.EffectWithoutHandler,
+       "duplicate-failure": EventFlowDiagnosticCode.DuplicateFailure,
+       "duplicate-retry": EventFlowDiagnosticCode.DuplicateRetry,
+       "unknown-failure": EventFlowDiagnosticCode.UnknownFailure,
+       "retry-without-context": EventFlowDiagnosticCode.RetryWithoutContext,
+       "contradictory-retry": EventFlowDiagnosticCode.ContradictoryRetry,
     }[violation.code];
     diagnostics.push({
       severity: "error",

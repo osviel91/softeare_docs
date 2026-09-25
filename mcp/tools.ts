@@ -23,6 +23,7 @@ import type {
 } from "./workspace";
 import type { OutlineNode } from "../src/domain/outline/outline";
 import type { JsonSchema, ToolDefinition } from "./protocol";
+import { analyzeEventFlow } from "../src/language/eventflow/parser";
 
 /** What a tool handler returns before it is wrapped in an MCP result. */
 export interface ToolOutcome {
@@ -249,6 +250,30 @@ export function createTools(): Tool[] {
           text,
           structured: { workspace: context.workspace.describe, projects },
         };
+      },
+    },
+
+    {
+      definition: {
+        name: "find_retry_behavior",
+        title: "Find failure and retry behavior",
+        description: "Find documented failure and retry semantics across event flows. It never infers retries from queues or asynchronous messaging and reports absent policy as unknown.",
+        inputSchema: objectSchema({ project: stringProp("Project id or name."), mechanism: enumProp(["broker", "handler", "application", "scheduler", "external", "unknown"], "Optional retry mechanism filter.") }),
+        annotations: { ...readOnly, title: "Find failure and retry behavior" },
+      },
+      async run(args, context) {
+        const project = await context.workspace.resolveProject(optionalString(args, "project"));
+        const wanted = optionalString(args, "mechanism");
+        const flows: unknown[] = [];
+        for (const resource of await context.workspace.listResources(project)) {
+          if (resource.type !== "event-flow") continue;
+          const { content } = await context.workspace.readResource(project, resource.id);
+          const { flow } = analyzeEventFlow(content);
+          const retries = (flow.causal?.retries ?? []).filter((retry) => wanted === undefined || retry.mechanism === wanted);
+          const failures = flow.causal?.failures ?? [];
+          if (retries.length || (wanted === undefined && failures.length)) flows.push({ resource: resource.path, failures, retries, unknownPolicy: retries.some((retry) => !retry.mechanism || !retry.exhaustion) });
+        }
+        return { text: flows.length ? flows.map((flow) => { const item = flow as { resource: string; failures: unknown[]; retries: unknown[]; unknownPolicy: boolean }; return `- ${item.resource}: ${item.retries.length} retries, ${item.failures.length} failures${item.unknownPolicy ? " (policy or exhaustion unknown)" : ""}`; }).join("\n") : "No documented failure or retry behavior found.", structured: { mechanism: wanted, flows } };
       },
     },
 

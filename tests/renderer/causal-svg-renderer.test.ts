@@ -61,6 +61,20 @@ describe("causal SVG presentation", () => {
     expect(svg).toContain("V");
   });
 
+  it("routes multiple effect edges through separate lanes", () => {
+    const svg = render([
+      "event Raised", "handler Persistence", "handler Registry",
+      "Raised handled by Persistence", "Raised handled by Registry",
+      "effect persist on Persistence: persist transaction",
+      "effect update on Registry: update registries",
+    ].join("\n"));
+    const paths = [...svg.matchAll(/data-edge-type="HANDLER_HAS_EFFECT"[^>]*><path d="([^"]+)"/g)];
+    const lanes = paths.map((path) => path[1]?.match(/^M[\d.]+ [\d.]+ H([\d.]+)/)?.[1]);
+
+    expect(paths).toHaveLength(2);
+    expect(new Set(lanes).size).toBe(2);
+  });
+
   it("wraps production identifiers at semantic boundaries without overflow", () => {
     const labels = [
       "ExportTransactionsProcessEndedEvent",

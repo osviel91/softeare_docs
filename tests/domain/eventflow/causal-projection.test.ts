@@ -161,6 +161,23 @@ describe("projectEventFlowToCausalView", () => {
     });
   });
 
+  it("keeps failure and retry edges distinct from ordinary causality", () => {
+    const view = project([
+      "event RetryCommand",
+      "handler H",
+      "failure processing-failed on handler H {",
+      "  classification: processing",
+      "}",
+      "retry same-work for processing-failed {",
+      "  mechanism: handler",
+      "  target: same-execution",
+      "}",
+    ].join("\n"));
+    expect(view.failures?.map((item) => item.failureId)).toEqual(["processing-failed"]);
+    expect(view.retries?.[0].target).toBe("same-execution");
+    expect(view.edges.map((edge) => edge.type)).toEqual(["ENTITY_FAILED", "FAILURE_RETRIED", "RETRY_TARGETS_HANDLER"]);
+  });
+
   it("preserves deterministic ordering and legacy empty behavior", () => {
     const source = "event B\nevent A\nhandler H\nA handled by H\nH causes B";
     expect(project(source)).toEqual(project(source));

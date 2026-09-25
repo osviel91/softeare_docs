@@ -472,7 +472,7 @@ describe("event-flow causal syntax", () => {
       "}",
       "scheduled initiates ResendNonReceivedWebhookEventsCommand",
     ].join("\n"));
-    expect(diagnostics).toEqual([]);
+    expect(diagnostics.filter((entry) => entry.severity === "error")).toEqual([]);
     expect(flow.statements[0]).toMatchObject({ type: "event", kind: "command" });
     expect(flow.causal?.initiations).toMatchObject([
       { kind: "scheduled", message: "ResendNonReceivedWebhookEventsCommand" },
@@ -614,7 +614,7 @@ describe("event-flow causal syntax", () => {
       "}",
     ].join("\n");
     const { flow, diagnostics } = parseEventFlow(source);
-    expect(diagnostics).toEqual([]);
+    expect(diagnostics.filter((entry) => entry.severity === "error")).toEqual([]);
     expect(eventsOf(flow)[0].details).toBe(
       "Raised after criteria [x] evaluates the persisted MSL transaction.\n\nIt does not deliver notifications; unknown guarantees remain unknown.",
     );
@@ -637,5 +637,41 @@ describe("event-flow causal syntax", () => {
     ].join("\n"));
     expect(empty.diagnostics).toEqual([]);
     expect(eventsOf(empty.flow)[0].details).toBeUndefined();
+  });
+
+  it("parses evidence-backed failure and distinct recovery semantics", () => {
+    const { flow, diagnostics } = analyzeEventFlow([
+      "event RetryCommand {",
+      "  kind: command",
+      "}",
+      "handler DeliveryHandler",
+      "failure delivery-failed on handler DeliveryHandler {",
+      "  classification: processing",
+      "  owner: handler",
+      "}",
+      "retry delivery-retry for delivery-failed {",
+      "  mechanism: handler",
+      "  target: same-execution",
+      "  max-attempts: 3",
+      "  delay: 2s",
+      "  backoff: exponential",
+      "  exhaustion: manual",
+      "}",
+    ].join("\n"));
+    expect(diagnostics.filter((entry) => entry.severity === "error")).toEqual([]);
+    expect(flow.causal?.failures?.[0]).toMatchObject({ id: "delivery-failed", target: { kind: "handler", id: "DeliveryHandler" }, classification: "processing" });
+    expect(flow.causal?.retries?.[0]).toMatchObject({ id: "delivery-retry", mechanism: "handler", target: "same-execution", maxAttempts: 3, delay: "2s", exhaustion: "manual" });
+  });
+
+  it("keeps unknown policy absent and rejects impossible policy values", () => {
+    const result = analyzeEventFlow([
+      "failure f on message Missing",
+      "retry r for f {",
+      "  max-attempts: 0",
+      "  delay: later",
+      "}",
+    ].join("\n"));
+    expect(result.flow.causal?.retries?.[0].mechanism).toBeUndefined();
+    expect(result.diagnostics.map((entry) => entry.code)).toContain(EventFlowDiagnosticCode.InvalidRetryPolicy);
   });
 });

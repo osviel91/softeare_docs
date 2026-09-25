@@ -63,7 +63,9 @@ export type AstNodeKind =
   | "handler"
   | "handler-input"
   | "handler-output"
-  | "effect";
+  | "effect"
+  | "failure"
+  | "retry";
 
 /**
  * A deterministic id for a node: `<kind>@<line>:<column>` (both 0-based).

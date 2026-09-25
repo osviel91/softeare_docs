@@ -89,6 +89,7 @@ describe("the remote MCP service over Streamable HTTP", () => {
     expect(names).toContain("search_project");
     expect(names).toContain("list_resource_relationships");
     expect(names).toContain("create_resource_relationship");
+    expect(names).toContain("find_retry_behavior");
     // A write tool must not claim to be read-only.
     const update = tools.find((tool) => tool.name === "update_resource");
     expect(update?.annotations?.readOnlyHint).toBe(false);
@@ -124,6 +125,8 @@ describe("the remote MCP service over Streamable HTTP", () => {
       "causes",
       "effect <id>",
       "provenance: external|internal|unknown",
+      "failure <id>",
+      "retry <id>",
     ]) {
       expect(guidance).toContain(phrase);
     }
@@ -147,6 +150,28 @@ describe("the remote MCP service over Streamable HTTP", () => {
       },
     });
     expect(created.isError).toBeFalsy();
+
+    const retryFlow = await client.callTool({
+      name: "upsert_event_flow",
+      arguments: {
+        projectId,
+        path: "retry.eventseq",
+        content: [
+          "event Input",
+          "handler HandleInput",
+          "failure processing-failed on handler HandleInput {",
+          "  classification: processing",
+          "}",
+          "retry processing-retry for processing-failed {",
+          "  mechanism: handler",
+          "  target: same-execution",
+          "}",
+        ].join("\n"),
+      },
+    });
+    expect(retryFlow.isError).toBeFalsy();
+    const discovered = await client.callTool({ name: "find_retry_behavior", arguments: { projectId } });
+    expect(structured(discovered).flows).toEqual(expect.arrayContaining([expect.objectContaining({ resource: "retry.eventseq" })]));
 
     const invalid = await client.callTool({
       name: "upsert_event_flow",

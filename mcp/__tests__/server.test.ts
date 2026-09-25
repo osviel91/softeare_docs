@@ -164,9 +164,10 @@ describe("McpServer", () => {
       resultType: string;
     };
     expect(result.resultType).toBe("complete");
-    expect(result.tools.length).toBe(19);
+    expect(result.tools.length).toBe(20);
     expect(result.tools.map((tool) => tool.name)).toEqual([
       "list_projects",
+      "find_retry_behavior",
       "list_resource_relationships",
       "create_resource_relationship",
       "create_project",

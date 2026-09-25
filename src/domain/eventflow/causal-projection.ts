@@ -9,6 +9,8 @@ import {
   type EventProvenance,
   type CausalInitiationKind,
   type HandlerEffect,
+  type EventFlowFailure,
+  type EventFlowRetry,
 } from "./ast";
 import { normalizeEventProvenance } from "./causality";
 import { nodeIdOf, type AstNodeId } from "../diagram/node-id";
@@ -16,12 +18,18 @@ import { nodeIdOf, type AstNodeId } from "../diagram/node-id";
 export type CausalMessageId = `message:${string}`;
 export type CausalHandlerId = `handler:${string}`;
 export type CausalEffectId = `effect:${string}`;
-export type CausalNodeId = CausalMessageId | CausalHandlerId | CausalEffectId;
+export type CausalFailureId = `failure:${string}`;
+export type CausalRetryId = `retry:${string}`;
+export type CausalNodeId = CausalMessageId | CausalHandlerId | CausalEffectId | CausalFailureId | CausalRetryId;
 
 export type CausalEdgeType =
   | "MESSAGE_HANDLED_BY_HANDLER"
   | "HANDLER_CAUSES_MESSAGE"
-  | "HANDLER_HAS_EFFECT";
+  | "HANDLER_HAS_EFFECT"
+  | "ENTITY_FAILED"
+  | "FAILURE_RETRIED"
+  | "RETRY_INITIATES_MESSAGE"
+  | "RETRY_TARGETS_HANDLER";
 
 export interface CausalTopologyContext {
   service: string;
@@ -69,6 +77,8 @@ export interface CausalEffect {
   handlerId: CausalHandlerId;
   sourceNodeIds: AstNodeId[];
 }
+export interface CausalFailure { id: CausalFailureId; failureId: string; target: string; classification?: string; owner?: string; description?: string; details?: string; metadata: EventMetadataEntry[]; sourceNodeIds: AstNodeId[]; }
+export interface CausalRetry { id: CausalRetryId; retryId: string; failureId: string; mechanism?: string; target?: string; initiates?: string; maxAttempts?: number; delay?: string; backoff?: string; timeout?: string; exhaustion?: string; description?: string; details?: string; metadata: EventMetadataEntry[]; sourceNodeIds: AstNodeId[]; }
 
 export interface CausalEdge {
   id: string;
@@ -89,6 +99,8 @@ export interface CausalViewModel {
   messages: CausalMessage[];
   handlers: CausalHandler[];
   effects: CausalEffect[];
+  failures?: CausalFailure[];
+  retries?: CausalRetry[];
   edges: CausalEdge[];
   components: CausalComponent[];
 }
@@ -104,6 +116,8 @@ export function handlerNodeId(id: string): CausalHandlerId {
 export function effectId(id: string): CausalEffectId {
   return `effect:${id}`;
 }
+export function failureId(id: string): CausalFailureId { return `failure:${id}`; }
+export function retryId(id: string): CausalRetryId { return `retry:${id}`; }
 
 /**
  * Project only authored causal facts. Publications and subscriptions are kept
@@ -117,6 +131,8 @@ export function projectEventFlowToCausalView(flow: EventFlow): CausalViewModel {
   const messages = new Map<string, CausalMessage>();
   const handlers = new Map<string, CausalHandler>();
   const effects = new Map<string, CausalEffect>();
+  const failures = new Map<string, CausalFailure>();
+  const retries = new Map<string, CausalRetry>();
   const edges: CausalEdge[] = [];
   const edgeKeys = new Set<string>();
 
@@ -203,14 +219,32 @@ export function projectEventFlowToCausalView(flow: EventFlow): CausalViewModel {
       "effect",
     );
   }
+  for (const failure of causal.failures ?? []) {
+    failures.set(failure.id, projectFailure(failure));
+    const target = failure.target.kind === "handler" ? handlerNodeId(failure.target.id) : failure.target.kind === "effect" ? effectId(failure.target.id) : messageId(failure.target.id);
+    addEdge(edges, edgeKeys, "ENTITY_FAILED", target, failureId(failure.id), failure.range, "failure");
+  }
+  for (const retry of causal.retries ?? []) {
+    retries.set(retry.id, projectRetry(retry));
+    addEdge(edges, edgeKeys, "FAILURE_RETRIED", failureId(retry.failureId), retryId(retry.id), retry.range, "retry");
+    if (retry.initiates) addEdge(edges, edgeKeys, "RETRY_INITIATES_MESSAGE", retryId(retry.id), messageId(retry.initiates), retry.range, "retry");
+    else if (retry.target) {
+      const failure = (causal.failures ?? []).find((item) => item.id === retry.failureId);
+      if (failure?.target.kind === "handler") addEdge(edges, edgeKeys, "RETRY_TARGETS_HANDLER", retryId(retry.id), handlerNodeId(failure.target.id), retry.range, "retry");
+    }
+  }
 
   const allMessages = [...messages.values()];
   const allHandlers = [...handlers.values()];
   const allEffects = [...effects.values()];
+  const allFailures = [...failures.values()];
+  const allRetries = [...retries.values()];
   const nodes = [
     ...allMessages.map((entry) => entry.id),
     ...allHandlers.map((entry) => entry.id),
     ...allEffects.map((entry) => entry.id),
+    ...allFailures.map((entry) => entry.id),
+    ...allRetries.map((entry) => entry.id),
   ];
   const incoming = new Set(edges.map((edge) => edge.to));
   for (const message of allMessages) message.causalRoot = !incoming.has(message.id);
@@ -220,6 +254,8 @@ export function projectEventFlowToCausalView(flow: EventFlow): CausalViewModel {
     messages: allMessages,
     handlers: allHandlers,
     effects: allEffects,
+    failures: [...failures.values()],
+    retries: [...retries.values()],
     edges,
     components: components(nodes, edges),
   };
@@ -299,6 +335,8 @@ function projectEffect(effect: HandlerEffect): CausalEffect {
     sourceNodeIds: effect.range ? [nodeIdOf("effect", effect.range)] : [],
   };
 }
+function projectFailure(failure: EventFlowFailure): CausalFailure { return { id: failureId(failure.id), failureId: failure.id, target: failure.target.id, classification: failure.classification, owner: failure.owner, description: failure.description, details: failure.details, metadata: failure.metadata, sourceNodeIds: failure.range ? [nodeIdOf("failure", failure.range)] : [] }; }
+function projectRetry(retry: EventFlowRetry): CausalRetry { return { id: retryId(retry.id), retryId: retry.id, failureId: retry.failureId, mechanism: retry.mechanism, target: retry.target, initiates: retry.initiates, maxAttempts: retry.maxAttempts, delay: retry.delay, backoff: retry.backoff, timeout: retry.timeout, exhaustion: retry.exhaustion, description: retry.description, details: retry.details, metadata: retry.metadata, sourceNodeIds: retry.range ? [nodeIdOf("retry", retry.range)] : [] }; }
 
 function topologyFor(flow: EventFlow, event: string): CausalMessage["topology"] {
   const channels = new Map(channelsOf(flow).map((channel) => [channel.name, channel]));
@@ -337,7 +375,7 @@ function addEdge(
   from: CausalNodeId,
   to: CausalNodeId,
   range: { start: { line: number; column: number }; end: { line: number; column: number } } | undefined,
-  kind: "handler-input" | "handler-output" | "effect",
+  kind: "handler-input" | "handler-output" | "effect" | "failure" | "retry",
 ): void {
   const key = `${type}\u0000${from}\u0000${to}`;
   if (keys.has(key)) return;

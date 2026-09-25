@@ -236,6 +236,20 @@ export function createFsProjectStorage(
       }
     },
 
+    async writeIfUnchanged(relative, expectedContent, content) {
+      try {
+        const normalized = normalizeResourcePath(relative);
+        const absolute = await resolveInsideRoot(root, normalized);
+        let current: string | null = null;
+        try { current = await readFile(absolute, "utf8"); } catch (error) { if (!isMissing(error)) throw error; }
+        if (current !== expectedContent) return err(new Error(`Stale sidecar revision for ${normalized}.`));
+        await mkdir(path.dirname(absolute), { recursive: true, mode: 0o700 });
+        await resolveInsideRoot(root, normalized);
+        await writeFileAtomically(absolute, content);
+        return ok({ path: normalized, type: resourceTypeOfName(normalized), content });
+      } catch (error) { return err(asError(error)); }
+    },
+
     async remove(relative: string): Promise<Result<void, Error>> {
       try {
         const normalized = normalizeResourcePath(relative);

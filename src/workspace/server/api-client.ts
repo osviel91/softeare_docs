@@ -28,6 +28,7 @@ import type { ResourceAuthorship } from "../../domain/workspace/resource-revisio
 import type { ResourceDiff } from "../../domain/diff/resource-diff";
 import type { ResourceTrajectoryKind } from "../../domain/workspace/resource-trajectory";
 import type { ResourceRelationship } from "../../domain/workspace/resource-relationship";
+import type { SemanticMessageIdentity } from "../../domain/workspace/metadata";
 
 /** The signed-in person, as `GET /api/me` reports them. */
 export interface AuthenticatedUser {
@@ -438,6 +439,19 @@ export class ServerApiClient {
       `/api/projects/${encodeURIComponent(projectId)}/resources`,
     );
     return body.resources ?? [];
+  }
+
+  async listSemanticMessages(projectId: string): Promise<SemanticMessageIdentity[]> {
+    const body = await this.request<{ messages: SemanticMessageIdentity[] }>("GET", `/api/projects/${encodeURIComponent(projectId)}/semantic-messages`);
+    return body.messages ?? [];
+  }
+
+  async updateSemanticMessages(
+    projectId: string,
+    messages: SemanticMessageIdentity[],
+    expectedManifestRevision: number,
+  ): Promise<{ messages: SemanticMessageIdentity[]; manifestRevision: number }> {
+    return this.request("PUT", `/api/projects/${encodeURIComponent(projectId)}/semantic-messages`, { messages, expectedManifestRevision });
   }
 
   async listResourceRelationships(

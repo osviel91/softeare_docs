@@ -80,6 +80,22 @@ and a negative-balance causal flow can share an explicit message identity withou
 claiming to be the same behavior. UpOne is different: its existing
 `complementary-view` relationship remains, and message bindings enrich it.
 
+Semantic identities are project-manifest mutations. The manifest has its own
+optimistic revision and is replaced atomically; server mutations require project
+update permission and emit the normal project audit event. Bindings remain source
+mutations: Sequence and Event Flow edits use ordinary resource revisions and
+change-proposal paths. Change Proposals currently model resource content and
+metadata, not standalone project-manifest edits, so identity registry changes are
+direct governed project mutations rather than silently pretending to be proposal
+changes.
+
+The UI exposes bound messages only when the selected rendered node has an explicit
+`messageRef`. Its compact inspector shows the kind, occurrence operation, other
+authoritative occurrences, and Event Flow representations; candidate name matches
+are deliberately omitted. Selecting a listed resource follows the existing
+workspace navigation path, so refresh/revalidation can surface the same persisted
+bindings without a browser reload.
+
 Similarly, `Merge Change Proposal.seq` can show execution, a proposal
 collaboration Event Flow can show asynchronous reactions, a future conceptual
 view can show proposal relationships, and a future Database view can show

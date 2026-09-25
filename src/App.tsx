@@ -35,6 +35,7 @@ import {
   SEQUENCE_SNIPPETS,
 } from "./features/editor/snippets";
 import Preview from "./features/preview/Preview";
+import SemanticMessageInspector from "./features/preview/SemanticMessageInspector";
 import Explorer, { type MenuPosition } from "./features/explorer/Explorer";
 import WorkspaceSwitcher, {
   type WorkspaceMode,
@@ -920,6 +921,19 @@ export default function App() {
       if (found) loadDiagram(found);
     },
     [allDiagrams, loadDiagram],
+  );
+
+  const openResourceById = useCallback(
+    (resourceId: string): void => {
+      const resource = index?.resources.find((entry) => entry.id === resourceId);
+      if (!resource) return;
+      const diagram = allDiagrams.find((entry) => resourceIdForFile(entry) === resource.id);
+      if (diagram) {
+        setView("code");
+        loadDiagram(diagram);
+      }
+    },
+    [index, allDiagrams, loadDiagram],
   );
 
   // Every resource a document may link to, in the shared shape the project-link
@@ -2973,31 +2987,37 @@ export default function App() {
                       onOpenResourceLink={openResourceLink}
                     />
                   ) : isEventFlow ? (
-                    <EventFlowPreview
-                      source={source}
-                      flow={eventFlow}
-                      view={eventFlowView}
-                      onViewChange={changeEventFlowView}
-                      onNodeSelect={onNodeSelect}
-                      activeNodeId={activeNodeId}
-                      maximized={previewMaximized}
-                      onToggleMaximize={() =>
-                        setPreviewMaximized((value) => !value)
-                      }
-                    />
+                    <>
+                      <EventFlowPreview
+                        source={source}
+                        flow={eventFlow}
+                        view={eventFlowView}
+                        onViewChange={changeEventFlowView}
+                        onNodeSelect={onNodeSelect}
+                        activeNodeId={activeNodeId}
+                        maximized={previewMaximized}
+                        onToggleMaximize={() =>
+                          setPreviewMaximized((value) => !value)
+                        }
+                      />
+                      <SemanticMessageInspector index={index} eventFlow={eventFlow} activeResourceId={activeResourceId} activeNodeId={activeNodeId} onOpenResource={openResourceById} />
+                    </>
                   ) : (
-                    <Preview
-                      source={renderedSource || source}
-                      autoUpdate={autoUpdate}
-                      isStale={isStale}
-                      onRender={() => setRenderedSource(source)}
-                      onNodeSelect={onNodeSelect}
-                      activeNodeId={activeNodeId}
-                      maximized={previewMaximized}
-                      onToggleMaximize={() =>
-                        setPreviewMaximized((value) => !value)
-                      }
-                    />
+                    <>
+                      <Preview
+                        source={renderedSource || source}
+                        autoUpdate={autoUpdate}
+                        isStale={isStale}
+                        onRender={() => setRenderedSource(source)}
+                        onNodeSelect={onNodeSelect}
+                        activeNodeId={activeNodeId}
+                        maximized={previewMaximized}
+                        onToggleMaximize={() =>
+                          setPreviewMaximized((value) => !value)
+                        }
+                      />
+                      <SemanticMessageInspector index={index} sequence={ast} activeResourceId={activeResourceId} activeNodeId={activeNodeId} onOpenResource={openResourceById} />
+                    </>
                   )}
                 </section>
               </>

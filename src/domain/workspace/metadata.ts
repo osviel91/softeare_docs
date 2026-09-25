@@ -87,6 +87,8 @@ export interface ProjectMetadata {
   resources: ResourceRecord[];
   relationships?: ResourceRelationship[];
   semanticMessages?: SemanticMessageIdentity[];
+  /** Optimistic-concurrency token for project.json mutations. */
+  manifestRevision?: number;
 }
 
 /** A file the metadata should describe, as the repository reports it. */
@@ -188,6 +190,9 @@ export function parseProjectMetadata(value: unknown): ProjectMetadata | null {
             typeof message.name === "string" && message.name !== "" &&
             (message.kind === "event" || message.kind === "command");
         }) }
+      : {}),
+    ...(typeof record.manifestRevision === "number" && Number.isInteger(record.manifestRevision) && record.manifestRevision >= 0
+      ? { manifestRevision: record.manifestRevision }
       : {}),
   };
 }
@@ -349,6 +354,9 @@ export function reconcileMetadata(
     ...(previous.semanticMessages === undefined
       ? {}
       : { semanticMessages: previous.semanticMessages }),
+    ...(previous.manifestRevision === undefined
+      ? {}
+      : { manifestRevision: previous.manifestRevision }),
   };
   return {
     metadata,

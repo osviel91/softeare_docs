@@ -58,6 +58,13 @@ export interface ProjectStorage {
    */
   write(path: string, content: string): Promise<Result<StoredResource, Error>>;
 
+  /** Atomically replace a sidecar only when its bytes are unchanged. */
+  writeIfUnchanged?(
+    path: string,
+    expectedContent: string | null,
+    content: string,
+  ): Promise<Result<StoredResource, Error>>;
+
   /** Remove a document. Removing one that is already gone succeeds. */
   remove(path: string): Promise<Result<void, Error>>;
 

@@ -153,7 +153,7 @@ async function main() {
     const names = (tools.result?.tools ?? []).map((tool) => tool.name);
     check(
       "tools/list returns the full catalog",
-      names.length === 23,
+      names.length === 27,
       `${names.length} tools`,
     );
     check(

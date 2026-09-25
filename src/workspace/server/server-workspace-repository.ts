@@ -30,7 +30,10 @@
  *   listing. Creating and listing *projects* is the switcher's job, so those
  *   methods refuse here, exactly as the server-side repository does.
  */
-import type { ProjectMetadata } from "../../domain/workspace/metadata";
+import type {
+  ProjectMetadata,
+  SemanticMessageIdentity,
+} from "../../domain/workspace/metadata";
 import {
   PROJECT_METADATA_FORMAT,
   PROJECT_METADATA_VERSION,
@@ -211,6 +214,14 @@ export class ServerWorkspaceRepository
     try {
       const resources = await this.client.listResources(this.projectId);
       const relationships = await this.client.listResourceRelationships(this.projectId);
+      let semanticMessages: SemanticMessageIdentity[] = [];
+      if (typeof this.client.listSemanticMessages === "function") {
+        try {
+          semanticMessages = await this.client.listSemanticMessages(this.projectId);
+        } catch (error) {
+          if (!(error instanceof ResourceNotFoundError)) throw error;
+        }
+      }
       return ok({
         format: PROJECT_METADATA_FORMAT,
         version: PROJECT_METADATA_VERSION,
@@ -220,6 +231,7 @@ export class ServerWorkspaceRepository
           type: resource.type,
         })),
         ...(relationships.length > 0 ? { relationships } : {}),
+        ...(semanticMessages.length > 0 ? { semanticMessages } : {}),
       });
     } catch (error) {
       return err(toError(error));

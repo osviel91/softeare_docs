@@ -24,7 +24,15 @@ beforeAll(async () => {
   harness = await startHarness();
   ownerId = await harness.aUser();
   projectId = await harness.aProject(ownerId);
-  token = (await harness.aToken(ownerId)).token;
+  token = (await harness.aToken(ownerId, [
+    "project:read",
+    "project:search",
+    "project:validate",
+    "project:update",
+    "resource:read",
+    "resource:write",
+    "diagram:render",
+  ])).token;
 });
 
 afterAll(async () => {
@@ -149,7 +157,7 @@ describe("the remote MCP service over Streamable HTTP", () => {
         ].join("\n"),
       },
     });
-    expect(created.isError).toBeFalsy();
+    expect(created.isError, JSON.stringify(created)).toBeFalsy();
 
     const retryFlow = await client.callTool({
       name: "upsert_event_flow",
@@ -187,6 +195,82 @@ describe("the remote MCP service over Streamable HTTP", () => {
         expect.objectContaining({ code: "eventflow.unknown-handler" }),
       ]),
     );
+    await client.close();
+  });
+
+  it("lets an external client create, bind, trace and validate semantic messages", async () => {
+    const client = await connect(token);
+    const sequence = await client.callTool({
+      name: "upsert_sequence_diagram",
+      arguments: {
+        projectId,
+        path: "semantic-trace.seq",
+        content: [
+          "participant Producer",
+          "participant Consumer",
+          "Producer ->> Consumer: Created",
+          "semantic event publish Created",
+          "Producer ->> Consumer: Created again",
+          "semantic event consume Created",
+        ].join("\n"),
+      },
+    });
+    const flow = await client.callTool({
+      name: "upsert_event_flow",
+      arguments: {
+        projectId,
+        path: "semantic-trace.eventseq",
+        content: "event Created\n\nevent Followup\nhandler CreatedHandler\nCreated handled by CreatedHandler\nCreatedHandler causes Followup\neffect persist-created on CreatedHandler kind state: Persist created\n",
+      },
+    });
+    expect(sequence.isError).toBeFalsy();
+    expect(flow.isError).toBeFalsy();
+
+    const created = await client.callTool({
+      name: "create_semantic_message",
+      arguments: { projectId, id: "semantic-created", name: "Created", kind: "event", expectedManifestRevision: 0 },
+    });
+    expect(created.isError, JSON.stringify(created)).toBeFalsy();
+
+    const sequenceResource = structured(sequence).resource as { id: string; revision: number };
+    const flowResource = structured(flow).resource as { id: string; revision: number };
+    const boundProducer = await client.callTool({
+      name: "bind_semantic_message",
+      arguments: { projectId, resource: sequenceResource.id, messageId: "semantic-created", name: "Created", step: 1, expectedRevision: sequenceResource.revision },
+    });
+    expect(boundProducer.isError).toBeFalsy();
+    const boundConsumer = await client.callTool({
+      name: "bind_semantic_message",
+      arguments: { projectId, resource: sequenceResource.id, messageId: "semantic-created", name: "Created", step: 2, expectedRevision: structured(boundProducer).resource.revision },
+    });
+    expect(boundConsumer.isError).toBeFalsy();
+    const boundFlow = await client.callTool({
+      name: "bind_semantic_message",
+      arguments: { projectId, resource: flowResource.id, messageId: "semantic-created", name: "Created", expectedRevision: flowResource.revision },
+    });
+    expect(boundFlow.isError).toBeFalsy();
+
+    const trace = await client.callTool({ name: "get_semantic_message", arguments: { projectId, messageId: "semantic-created" } });
+    expect(structured(trace).identity).toEqual(expect.objectContaining({ id: "semantic-created", kind: "event" }));
+    expect(structured(trace).occurrences).toHaveLength(2);
+    expect(structured(trace).eventFlowEntities).toHaveLength(1);
+    expect(structured(trace).downstream).toEqual(expect.arrayContaining([expect.objectContaining({ handler: "CreatedHandler", messages: ["Followup"] })]));
+    const candidates = await client.callTool({ name: "find_semantic_message_candidates", arguments: { projectId } });
+    expect(structured(candidates).candidates).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Created", authoritative: true })]));
+    const validation = await client.callTool({ name: "validate_project", arguments: { projectId } });
+    expect(validation.isError).toBeFalsy();
+    const protectedDelete = await client.callTool({ name: "delete_semantic_message", arguments: { projectId, messageId: "semantic-created", expectedManifestRevision: 1 } });
+    expect(protectedDelete.isError).toBe(true);
+    const resources = structured(await client.callTool({ name: "list_resources", arguments: { projectId } })).resources as Array<{ id: string; path: string; revision: number }>;
+    const sequenceCurrent = resources.find((resource) => resource.path === "semantic-trace.seq")!;
+    const flowCurrent = resources.find((resource) => resource.path === "semantic-trace.eventseq")!;
+    const unboundProducer = await client.callTool({ name: "unbind_semantic_message", arguments: { projectId, resource: sequenceCurrent.id, name: "Created", step: 1, expectedRevision: sequenceCurrent.revision } });
+    const unboundConsumer = await client.callTool({ name: "unbind_semantic_message", arguments: { projectId, resource: sequenceCurrent.id, name: "Created", step: 2, expectedRevision: structured(unboundProducer).resource.revision } });
+    const unboundFlow = await client.callTool({ name: "unbind_semantic_message", arguments: { projectId, resource: flowCurrent.id, name: "Created", expectedRevision: flowCurrent.revision } });
+    expect(unboundConsumer.isError).toBeFalsy();
+    expect(unboundFlow.isError).toBeFalsy();
+    const deleted = await client.callTool({ name: "delete_semantic_message", arguments: { projectId, messageId: "semantic-created", expectedManifestRevision: 1 } });
+    expect(deleted.isError).toBeFalsy();
     await client.close();
   });
 

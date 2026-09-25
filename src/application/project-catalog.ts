@@ -49,7 +49,15 @@ import {
 import type { JsonObject } from "../shared/json/json-value";
 import type { ResourceMetadata } from "../domain/workspace/resource-metadata";
 import type { ResourceRelationship } from "../domain/workspace/resource-relationship";
+import {
+  createEmptyMetadata,
+  parseProjectMetadata,
+  serializeProjectMetadata,
+  type ProjectMetadata,
+  type SemanticMessageIdentity,
+} from "../domain/workspace/metadata";
 import { validateResourceRelationship } from "../domain/workspace/resource-relationship";
+import { isOk } from "../shared/result/result";
 
 /**
  * A resource as the API and MCP surface it: identity, path, type, revision.
@@ -217,6 +225,17 @@ export interface ProjectCatalog {
     projectId: string,
     relationship: ResourceRelationship,
   ): Promise<ResourceRelationship>;
+
+  listSemanticMessages(
+    context: ApplicationContext,
+    projectId: string,
+  ): Promise<SemanticMessageIdentity[]>;
+  updateSemanticMessages(
+    context: ApplicationContext,
+    projectId: string,
+    messages: SemanticMessageIdentity[],
+    expectedManifestRevision: number,
+  ): Promise<{ messages: SemanticMessageIdentity[]; manifestRevision: number }>;
 
   /** One resource's record. */
   getResource(
@@ -407,6 +426,18 @@ export function createProjectCatalog(
       context.principal.subjectUserId,
     );
     if (role === null) throw notFound(`No workspace with id ${workspaceId}.`);
+  };
+
+  const readManifest = async (
+    projectId: string,
+  ): Promise<ProjectMetadata & { raw: string | null }> => {
+    const stored = await storage(projectId).read("project.json");
+    if (!isOk(stored)) throw new ApplicationError("internal", stored.error.message);
+    const raw = stored.value?.content ?? null;
+    if (raw === null) return { ...createEmptyMetadata(), raw };
+    let parsed: unknown;
+    try { parsed = JSON.parse(raw); } catch { throw new ApplicationError("invalid", "The project manifest is not valid JSON."); }
+    return { ...(parseProjectMetadata(parsed) ?? createEmptyMetadata()), raw };
   };
 
   const writeAudit = async (
@@ -623,6 +654,36 @@ export function createProjectCatalog(
         }
         throw invalid(error instanceof Error ? error.message : "Invalid resource relationship.");
       }
+      },
+
+    async listSemanticMessages(context, projectId) {
+      await requirePermission(context, projectId, "project:read");
+      const metadata = await readManifest(projectId);
+      return metadata.semanticMessages ?? [];
+    },
+
+    async updateSemanticMessages(context, projectId, messages, expectedManifestRevision) {
+      await requirePermission(context, projectId, "project:update");
+      const current = await readManifest(projectId);
+      const revision = current.manifestRevision ?? 0;
+      if (revision !== expectedManifestRevision) {
+        throw new ApplicationError("conflict", `The project manifest changed; expected revision ${expectedManifestRevision}, current revision ${revision}.`);
+      }
+      const { raw, ...metadata } = current;
+      const next: ProjectMetadata = {
+        ...metadata,
+        semanticMessages: messages,
+        manifestRevision: revision + 1,
+      };
+      const nextRevision = revision + 1;
+      const store = storage(projectId);
+      if (!store.writeIfUnchanged) {
+        throw new ApplicationError("internal", "This deployment cannot safely mutate the project manifest.");
+      }
+      const written = await store.writeIfUnchanged("project.json", raw, serializeProjectMetadata(next));
+      if (!isOk(written)) throw new ApplicationError("conflict", written.error.message);
+      await writeAudit(context, { action: "project.updated", projectId, detail: { kind: "semantic-message-registry", manifestRevision: nextRevision } });
+      return { messages, manifestRevision: nextRevision };
     },
 
     async getResource(context, projectId, resourceId) {

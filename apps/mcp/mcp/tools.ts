@@ -46,6 +46,7 @@ import { invalid, notFound } from "../../../src/application/errors";
 import { analyze } from "../../../src/language/analyze";
 import { diagramTitle } from "../../../src/language/diagram-title";
 import { analyzeEventFlow } from "../../../src/language/eventflow/parser";
+import { effectsFor, handlersFor, resultingEventsFor } from "../../../src/domain/eventflow/causality";
 import {
   eventsOf,
   publicationsOf,
@@ -57,6 +58,7 @@ import { buildProjectIndex } from "../../../src/domain/project/project-index";
 import { analyzeResource } from "../../../src/domain/project/resource-analysis";
 import { validateProject } from "../../../src/domain/project/validate";
 import { semanticMessagesOf } from "../../../src/domain/diagram/semantic-messages";
+import { semanticMessageCandidates, traceSemanticMessage } from "../../../src/domain/project/semantic-message-trace";
 import {
   createEmptyMetadata,
   type ProjectMetadata,
@@ -347,6 +349,76 @@ function metadataFrom(
       type: resource.type,
     })),
   };
+}
+
+async function semanticIndex(
+  toolContext: ToolContext,
+  projectIdValue: string,
+): Promise<{ index: ReturnType<typeof buildProjectIndex>; resources: Awaited<ReturnType<ProjectCatalog["listResources"]>> }> {
+  const resources = await toolContext.catalog.listResources(toolContext.context, projectIdValue);
+  const semanticMessages = await toolContext.catalog.listSemanticMessages(toolContext.context, projectIdValue);
+  const metadata = { ...metadataFrom(resources), semanticMessages };
+  const analyses = [];
+  for (const resource of resources.slice(0, MAX_INDEXED_DOCUMENTS)) {
+    const { content } = await toolContext.catalog.readResource(toolContext.context, projectIdValue, resource.id);
+    analyses.push(analyzeResource({ id: resource.id, projectId: projectIdValue, path: resource.path, type: resource.type, title: resource.path }, content));
+  }
+  const perResource = analyses.flatMap((analysis) => analysis.diagnostics);
+  const index = buildProjectIndex(projectIdValue, analyses, metadata, (core) => validateProject(core, perResource, metadata));
+  return { index, resources };
+}
+
+function occurrenceLine(
+  source: string,
+  name: string,
+  step: number | undefined,
+): { line: number; kind: "event" | "command" } {
+  const ast = analyze(source).ast;
+  const occurrences = ast ? semanticMessagesOf(ast).filter((entry) => entry.name === name) : [];
+  const occurrence = step === undefined
+    ? occurrences.length === 1 ? occurrences[0] : undefined
+    : occurrences.find((entry) => entry.step === step);
+  if (!occurrence) throw invalid(`No unique Sequence semantic occurrence "${name}"${step === undefined ? "" : ` at step ${step}`}.`);
+  return { line: occurrence.range.start.line + 1, kind: occurrence.kind };
+}
+
+function eventLine(
+  source: string,
+  name: string,
+): { line: number; kind: "event" | "command" } {
+  const parsed = analyzeEventFlow(source);
+  const event = eventsOf(parsed.flow).find((entry) => entry.name === name);
+  if (!event) throw invalid(`No Event Flow message entity "${name}" exists.`);
+  return { line: event.range.start.line, kind: event.kind ?? "event" };
+}
+
+function bindSemanticReference(
+  source: string,
+  type: string,
+  name: string,
+  step: number | undefined,
+  id: string,
+  expectedKind: "event" | "command",
+): string {
+  const lines = source.split("\n");
+  const target = type === "event-flow" ? eventLine(source, name) : occurrenceLine(source, name, step);
+  if (target.kind !== expectedKind) throw invalid(`Cannot bind ${expectedKind} identity to ${target.kind} occurrence.`);
+  if (lines[target.line].includes("messageRef")) throw invalid("The semantic occurrence is already bound.");
+  lines[target.line] += ` messageRef ${id}`;
+  return lines.join("\n");
+}
+
+function unbindSemanticReference(
+  source: string,
+  type: string,
+  name: string,
+  step: number | undefined,
+): string {
+  const lines = source.split("\n");
+  const target = type === "event-flow" ? eventLine(source, name) : occurrenceLine(source, name, step);
+  if (!lines[target.line].includes("messageRef")) throw invalid("The semantic occurrence is not bound.");
+  lines[target.line] = lines[target.line].replace(/\s+messageRef\s+\S+/, "");
+  return lines.join("\n");
 }
 
 /** The search documents for a project, reading each resource's text. */
@@ -1551,6 +1623,154 @@ export function createMcpTools(): McpTool[] {
       },
     },
 
+    {
+      name: "list_semantic_messages",
+      title: "List semantic message identities",
+      description: "List explicit project-scoped semantic message identities and their stable display data. Equal names without explicit references remain candidates only.",
+      inputSchema: { projectId: projectId() },
+      annotations: { ...READ_ONLY, title: "List semantic message identities" },
+      requiredPermissions: ["project:read"],
+      async run(args, toolContext) {
+        const messages = await toolContext.catalog.listSemanticMessages(toolContext.context, stringArg(args, "projectId"));
+        return { text: messages.length ? JSON.stringify(messages) : "No semantic message identities.", structured: { messages } };
+      },
+    },
+    {
+      name: "get_semantic_message",
+      title: "Get semantic message trace",
+      description: "Inspect one explicit semantic message identity, its authoritative Sequence occurrences, and Event Flow representations. Names are never used as identity.",
+      inputSchema: { projectId: projectId(), messageId: z.string().min(1) },
+      annotations: { ...READ_ONLY, title: "Get semantic message trace" },
+      requiredPermissions: ["project:search"],
+      async run(args, toolContext) {
+        const id = stringArg(args, "projectId");
+        const indexed = await semanticIndex(toolContext, id);
+        const trace = traceSemanticMessage(indexed.index, stringArg(args, "messageId"));
+        const downstream = [];
+        for (const entity of trace.eventFlowEntities) {
+          const resource = await toolContext.catalog.readResource(toolContext.context, id, entity.resourceId);
+          const flow = analyzeEventFlow(resource.content).flow;
+          for (const handler of handlersFor(flow, entity.name)) {
+            downstream.push({ resourceId: entity.resourceId, handler: handler.id, messages: resultingEventsFor(flow, handler.id), effects: effectsFor(flow, handler.id) });
+          }
+        }
+        const result = { ...trace, downstream };
+        return { text: JSON.stringify(result), structured: result };
+      },
+    },
+    {
+      name: "list_semantic_occurrences",
+      title: "List semantic message occurrences",
+      description: "List structured Sequence occurrences and Event Flow message entities, including whether each has an authoritative explicit binding.",
+      inputSchema: { projectId: projectId() },
+      annotations: { ...READ_ONLY, title: "List semantic message occurrences" },
+      requiredPermissions: ["project:search"],
+      async run(args, toolContext) {
+        const { index } = await semanticIndex(toolContext, stringArg(args, "projectId"));
+        const occurrences = index.semanticOccurrences ?? [];
+        const eventFlowMessages = index.eventFlowMessages ?? [];
+        return { text: JSON.stringify({ occurrences, eventFlowMessages }), structured: { occurrences, eventFlowMessages } };
+      },
+    },
+    {
+      name: "find_semantic_message_candidates",
+      title: "Find semantic message candidates",
+      description: "Find normalized exact-name candidate matches across Sequence and Event Flow resources without mutating bindings or treating candidates as authoritative.",
+      inputSchema: { projectId: projectId() },
+      annotations: { ...READ_ONLY, title: "Find semantic message candidates" },
+      requiredPermissions: ["project:search"],
+      async run(args, toolContext) {
+        const candidates = semanticMessageCandidates((await semanticIndex(toolContext, stringArg(args, "projectId"))).index);
+        return { text: JSON.stringify(candidates), structured: { candidates } };
+      },
+    },
+    {
+      name: "create_semantic_message",
+      title: "Create semantic message identity",
+      description: "Create an explicit project-scoped event or command identity. This operation never infers bindings from equal names.",
+      inputSchema: { projectId: projectId(), id: z.string().min(1), name: z.string().min(1), kind: z.enum(["event", "command"]), expectedManifestRevision: z.number().int().min(0).optional() },
+      annotations: { ...WRITE, title: "Create semantic message identity" },
+      requiredPermissions: ["project:update"],
+      async run(args, toolContext) {
+        const id = stringArg(args, "projectId");
+        const messages = await toolContext.catalog.listSemanticMessages(toolContext.context, id);
+        const message = { id: stringArg(args, "id"), name: stringArg(args, "name"), kind: args.kind as "event" | "command" };
+        if (messages.some((entry) => entry.id === message.id)) throw invalid(`Semantic message "${message.id}" already exists.`);
+        const result = await toolContext.catalog.updateSemanticMessages(toolContext.context, id, [...messages, message], numberArg(args, "expectedManifestRevision") ?? 0);
+        return { text: `Created semantic message ${message.id}.`, structured: { message, manifestRevision: result.manifestRevision } };
+      },
+    },
+    {
+      name: "delete_semantic_message",
+      title: "Delete semantic message identity",
+      description: "Delete an explicit identity only when no Sequence or Event Flow source still references it; this never silently destroys traceability.",
+      inputSchema: { projectId: projectId(), messageId: z.string().min(1), expectedManifestRevision: z.number().int().min(0).optional() },
+      annotations: { ...DELETE, title: "Delete semantic message identity" },
+      requiredPermissions: ["project:update"],
+      async run(args, toolContext) {
+        const id = stringArg(args, "projectId");
+        const messageId = stringArg(args, "messageId");
+        const { index } = await semanticIndex(toolContext, id);
+        const trace = traceSemanticMessage(index, messageId);
+        if (!trace.identity) throw notFound(`No semantic message "${messageId}" exists.`);
+        if (trace.occurrences.length || trace.eventFlowEntities.length) throw invalid(`Semantic message "${messageId}" is still referenced.`);
+        const messages = (await toolContext.catalog.listSemanticMessages(toolContext.context, id)).filter((entry) => entry.id !== messageId);
+        const result = await toolContext.catalog.updateSemanticMessages(toolContext.context, id, messages, numberArg(args, "expectedManifestRevision") ?? 0);
+        return { text: `Deleted semantic message ${messageId}.`, structured: { messageId, manifestRevision: result.manifestRevision } };
+      },
+    },
+    {
+      name: "update_semantic_message",
+      title: "Rename semantic message identity",
+      description: "Update the display name of an existing semantic identity without changing its stable id or bindings.",
+      inputSchema: { projectId: projectId(), messageId: z.string().min(1), name: z.string().min(1), expectedManifestRevision: z.number().int().min(0).optional() },
+      annotations: { ...WRITE, title: "Rename semantic message identity" },
+      requiredPermissions: ["project:update"],
+      async run(args, toolContext) {
+        const id = stringArg(args, "projectId");
+        const messageId = stringArg(args, "messageId");
+        const messages = await toolContext.catalog.listSemanticMessages(toolContext.context, id);
+        const existing = messages.find((entry) => entry.id === messageId);
+        if (!existing) throw notFound(`No semantic message "${messageId}" exists.`);
+        const next = messages.map((entry) => entry.id === messageId ? { ...entry, name: stringArg(args, "name") } : entry);
+        const result = await toolContext.catalog.updateSemanticMessages(toolContext.context, id, next, numberArg(args, "expectedManifestRevision") ?? 0);
+        return { text: `Renamed semantic message ${messageId}.`, structured: { message: next.find((entry) => entry.id === messageId), manifestRevision: result.manifestRevision } };
+      },
+    },
+    {
+      name: "bind_semantic_message",
+      title: "Bind semantic message occurrence",
+      description: "Bind one exact Sequence occurrence or Event Flow event entity to an existing identity through the normal resource revision path.",
+      inputSchema: { projectId: projectId(), resource: resourceReference(), messageId: z.string().min(1), name: z.string().min(1), step: z.number().int().min(1).optional(), expectedRevision: z.number().int().min(1) },
+      annotations: { ...WRITE, title: "Bind semantic message occurrence" },
+      requiredPermissions: ["resource:update"],
+      async run(args, toolContext) {
+        const id = stringArg(args, "projectId");
+        const identity = (await toolContext.catalog.listSemanticMessages(toolContext.context, id)).find((entry) => entry.id === stringArg(args, "messageId"));
+        if (!identity) throw notFound(`No semantic message "${stringArg(args, "messageId")}" exists.`);
+        const resource = await resolveResource(toolContext, id, stringArg(args, "resource"));
+        const read = await toolContext.catalog.readResource(toolContext.context, id, resource.id);
+        const next = bindSemanticReference(read.content, resource.type, stringArg(args, "name"), numberArg(args, "step"), identity.id, identity.kind);
+        const updated = await toolContext.catalog.updateResource(toolContext.context, id, resource.id, { content: next, expectedRevision: numberArg(args, "expectedRevision")! });
+        return { text: `Bound ${stringArg(args, "name")} to ${identity.id}.`, structured: { resource: updated, messageId: identity.id } };
+      },
+    },
+    {
+      name: "unbind_semantic_message",
+      title: "Unbind semantic message occurrence",
+      description: "Remove one explicit messageRef from a Sequence occurrence or Event Flow event entity through the normal resource revision path.",
+      inputSchema: { projectId: projectId(), resource: resourceReference(), name: z.string().min(1), step: z.number().int().min(1).optional(), expectedRevision: z.number().int().min(1) },
+      annotations: { ...WRITE, title: "Unbind semantic message occurrence" },
+      requiredPermissions: ["resource:update"],
+      async run(args, toolContext) {
+        const id = stringArg(args, "projectId");
+        const resource = await resolveResource(toolContext, id, stringArg(args, "resource"));
+        const read = await toolContext.catalog.readResource(toolContext.context, id, resource.id);
+        const next = unbindSemanticReference(read.content, resource.type, stringArg(args, "name"), numberArg(args, "step"));
+        const updated = await toolContext.catalog.updateResource(toolContext.context, id, resource.id, { content: next, expectedRevision: numberArg(args, "expectedRevision")! });
+        return { text: `Unbound ${stringArg(args, "name")}.`, structured: { resource: updated } };
+      },
+    },
     {
       name: "get_event_catalog",
       title: "Get the event catalog",

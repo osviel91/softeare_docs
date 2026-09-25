@@ -24,8 +24,10 @@ import type {
 import type { OutlineNode } from "../src/domain/outline/outline";
 import type { JsonSchema, ToolDefinition } from "./protocol";
 import { analyzeEventFlow } from "../src/language/eventflow/parser";
+import { effectsFor, handlersFor, resultingEventsFor } from "../src/domain/eventflow/causality";
 import { analyze } from "../src/language/analyze";
 import { semanticMessagesOf } from "../src/domain/diagram/semantic-messages";
+import { semanticMessageCandidates, traceSemanticMessage } from "../src/domain/project/semantic-message-trace";
 
 /** What a tool handler returns before it is wrapped in an MCP result. */
 export interface ToolOutcome {
@@ -944,6 +946,57 @@ export function createTools(): Tool[] {
 
     {
       definition: {
+        name: "list_semantic_occurrences",
+        title: "List semantic message occurrences",
+        description: "List structured Sequence occurrences and Event Flow message entities with explicit authoritative bindings.",
+        inputSchema: objectSchema({ project: stringProp("Project id or name.") }),
+        annotations: { ...readOnly, title: "List semantic message occurrences" },
+      },
+      async run(args, context) {
+        const project = await context.workspace.resolveProject(optionalString(args, "project"));
+        const index = await context.workspace.index(project);
+        const occurrences = index.semanticOccurrences ?? [];
+        const eventFlowMessages = index.eventFlowMessages ?? [];
+        return { text: JSON.stringify({ occurrences, eventFlowMessages }), structured: { occurrences, eventFlowMessages } };
+      },
+    },
+    {
+      definition: {
+        name: "find_semantic_message_candidates",
+        title: "Find semantic message candidates",
+        description: "Find exact-name semantic message candidates without mutating state or treating names as authoritative identity.",
+        inputSchema: objectSchema({ project: stringProp("Project id or name.") }),
+        annotations: { ...readOnly, title: "Find semantic message candidates" },
+      },
+      async run(args, context) {
+        const project = await context.workspace.resolveProject(optionalString(args, "project"));
+        const candidates = semanticMessageCandidates(await context.workspace.index(project));
+        return { text: JSON.stringify(candidates), structured: { candidates } };
+      },
+    },
+    {
+      definition: {
+        name: "get_semantic_message",
+        title: "Get semantic message trace",
+        description: "Inspect an explicit semantic message identity and its authoritative Sequence and Event Flow bindings.",
+        inputSchema: objectSchema({ project: stringProp("Project id or name."), messageId: stringProp("Stable semantic message id.") }, ["messageId"]),
+        annotations: { ...readOnly, title: "Get semantic message trace" },
+      },
+      async run(args, context) {
+        const project = await context.workspace.resolveProject(optionalString(args, "project"));
+        const trace = traceSemanticMessage(await context.workspace.index(project), requiredString(args, "messageId"));
+        const downstream = [];
+        for (const entity of trace.eventFlowEntities) {
+          const resource = await context.workspace.readResource(project, entity.resourceId);
+          const flow = analyzeEventFlow(resource.content).flow;
+          for (const handler of handlersFor(flow, entity.name)) downstream.push({ resourceId: entity.resourceId, handler: handler.id, messages: resultingEventsFor(flow, handler.id), effects: effectsFor(flow, handler.id) });
+        }
+        const result = { ...trace, downstream };
+        return { text: JSON.stringify(result), structured: result };
+      },
+    },
+    {
+      definition: {
         name: "list_semantic_messages",
         title: "List semantic message identities",
         description: "List explicit project-scoped semantic message identities. Equal names without bindings remain candidates, not identity.",
@@ -1005,6 +1058,35 @@ export function createTools(): Tool[] {
         }
         const result = await context.workspace.updateResource(project, resource.id, { content: lines.join("\n") });
         return { text: `Bound ${name} to ${identity.id}.`, structured: { resource: resource.id, messageId: identity.id, result } };
+      },
+    },
+    {
+      definition: {
+        name: "unbind_semantic_message",
+        title: "Unbind semantic message occurrence",
+        description: "Remove one explicit messageRef from a Sequence occurrence or Event Flow entity without deleting the shared identity.",
+        inputSchema: objectSchema({ project: stringProp("Project id or name."), resource: stringProp("Resource id or path."), name: stringProp("Semantic message name."), step: numberProp("1-based Sequence message step; omit for Event Flow.") }, ["resource", "name"]),
+        annotations: { ...write, title: "Unbind semantic message occurrence" },
+      },
+      async run(args, context) {
+        const project = await context.workspace.resolveProject(optionalString(args, "project"));
+        const resource = context.workspace.resolveResource(await context.workspace.index(project), requiredString(args, "resource"));
+        const current = await context.workspace.readResource(project, resource.id);
+        const lines = current.content.split("\n");
+        const name = requiredString(args, "name");
+        if (resource.type === "event-flow") {
+          const line = lines.findIndex((entry) => /^\s*event\s+\S+/.test(entry) && entry.trim().split(/\s+/)[1] === name);
+          if (line < 0) throw new Error(`No Event Flow event "${name}" found.`);
+          lines[line] = lines[line].replace(/\s+messageRef\s+\S+/, "");
+        } else {
+          const ast = analyze(current.content).ast;
+          const step = args.step === undefined ? undefined : Number(args.step);
+          const occurrence = ast && step !== undefined ? semanticMessagesOf(ast).find((entry) => entry.name === name && entry.step === step) : undefined;
+          if (!occurrence) throw new Error("Sequence unbinding requires an exact semantic name and step.");
+          lines[occurrence.range.start.line + 1] = lines[occurrence.range.start.line + 1].replace(/\s+messageRef\s+\S+/, "");
+        }
+        const result = await context.workspace.updateResource(project, resource.id, { content: lines.join("\n") });
+        return { text: `Unbound ${name}.`, structured: { resource: resource.id, result } };
       },
     },
     {

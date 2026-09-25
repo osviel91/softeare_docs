@@ -576,6 +576,29 @@ export function createRouter(dependencies: AppDependencies): Router {
     }),
   );
 
+  router.get("/api/projects/:projectId/semantic-messages", async (request, params) =>
+    guarded(correlationId(request), async () => {
+      const context = await contextOf(request);
+      return json(200, { messages: await catalog.listSemanticMessages(context, params.projectId) });
+    }),
+  );
+
+  router.put("/api/projects/:projectId/semantic-messages", async (request, params) =>
+    guarded(correlationId(request), async () => {
+      const context = await contextOf(request);
+      const body = parseJsonBody(request.body);
+      if (!Array.isArray(body.messages)) return errorResponse(422, "invalid", "messages must be an array.");
+      const messages = body.messages.map((value) => {
+        if (typeof value !== "object" || value === null) throw invalid("Each semantic message must be an object.");
+        const item = value as Record<string, unknown>;
+        if (typeof item.id !== "string" || typeof item.name !== "string" || (item.kind !== "event" && item.kind !== "command")) throw invalid("Each semantic message requires id, name and kind.");
+        return { id: item.id, name: item.name, kind: item.kind } as const;
+      });
+      const expected = typeof body.expectedManifestRevision === "number" ? body.expectedManifestRevision : 0;
+      return json(200, await catalog.updateSemanticMessages(context, params.projectId, messages, expected));
+    }),
+  );
+
   router.get("/api/projects/:projectId/relationships", async (request, params) =>
     guarded(correlationId(request), async () => {
       const context = await contextOf(request);

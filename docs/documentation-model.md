@@ -33,7 +33,8 @@ render, search, or persist them as dedicated diagram types.
 
 ## Representation Selection
 
-Use this decision tree:
+Use these questions to choose the first useful view; Sequence and Event Flow are
+orthogonal projections, not mutually exclusive classifications:
 
 1. A business or use-case execution: **Sequence**.
 2. Asynchronous reactions and causal event chains: **Event Flow**.
@@ -41,12 +42,23 @@ Use this decision tree:
 4. Persistence schema and data relationships: **Database**.
 5. A cross-cutting rule, decision, or context: **Note**.
 
-Multiple views are appropriate when they answer different questions. For
-example, `Merge Change Proposal.seq` can show execution, a proposal
+Multiple views are appropriate when they answer different questions. A business
+Sequence may include asynchronous messages when they are part of the ordered
+collaboration, while an Event Flow can separately preserve the meaningful causal
+chain behind those messages. Sequence answers execution, time, and component
+collaboration; Event Flow answers asynchronous causality, message provenance,
+handler responsibility, caused messages, and effects. For example, the UpOne
+fan-out from `UpOneTransactionRaisedEvent` through multiple handlers, commands,
+and persistence effects can remain a useful ordered Sequence and also be
+documented as an Event Flow when that evidence forms a meaningful causal
+context. Do not mechanically duplicate every Sequence as an Event Flow; add the
+second view only when real asynchronous causal structure is present.
+
+Similarly, `Merge Change Proposal.seq` can show execution, a proposal
 collaboration Event Flow can show asynchronous reactions, a future conceptual
 view can show proposal relationships, and a future Database view can show
-persistence. They complement one another; they are not duplicate accounts of
-the same fact.
+persistence. These views complement one another; they are not duplicate
+accounts of the same fact.
 
 ### Assessment guidance
 
@@ -254,12 +266,13 @@ An Event Flow should support investigation. A reader should be able to ask:
 
 ## Current Event Flow Capability Gap Analysis
 
-The current `.eventseq` model is intentionally a flat relation model. It has
-`event`, `broker`, `topic`/`queue`/`stream`, `producer`/`consumer`/`service`,
-publication, subscription, and event metadata declarations. Publications and
-subscriptions are edges; causal ordering and cycles are derived in the Flow
-projection. The topology projection also groups mediated producer-to-consumer
-connections by event and preserves source node IDs.
+The current `.eventseq` model supports the legacy topology relation model plus
+an optional explicit causal aggregate. It has `event`, `broker`,
+`topic`/`queue`/`stream`, `producer`/`consumer`/`service`, publication,
+subscription, event metadata, named handlers, handler inputs and outputs, and
+handler-owned effects. Publications and subscriptions remain topology edges;
+causal ordering and cycles are derived in the Flow projection, while the Causal
+projection and investigation view use only explicit handler facts.
 
 | Canonical need                                                           | Current status                           | Assessment                                                                                                                |
 | ------------------------------------------------------------------------ | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
@@ -275,8 +288,8 @@ connections by event and preserves source node IDs.
 | Produced events as explicit handler results                              | Supported                                | Explicit handler-output edges preserve independent fan-out branches                                                       |
 | Failure events, retries, idempotency, ordering, delivery semantics       | Expressible through annotations/metadata | No validation or structured semantics; unsupported claims must remain unknown                                             |
 | Correlation and causation identifiers                                    | Expressible through annotations/metadata | No dedicated event or edge fields                                                                                         |
-| Explicit event-to-handler-to-effect graph                                | Supported                                | Explicit `handler`, `handled by`, `causes`, and `effect` lines populate the causal aggregate; no causal visualization yet |
-| Trace exploration, fan-out investigation, missing-consumer investigation | Requires future visualization only       | Existing projections expose facts and cycles, but no dedicated trace UI or investigation interaction exists               |
+| Explicit event-to-handler-to-effect graph                                | Supported                                | Explicit `handler`, `handled by`, `causes`, and `effect` lines populate the causal aggregate |
+| Trace exploration, fan-out investigation, missing-consumer investigation | Partially supported                      | The Causal investigation view exposes explicit paths and fan-out; topology-only flows remain intentionally non-causal |
 
 This gap analysis is descriptive, not an implementation plan. D01 does not
 change the DSL, AST, persistence, MCP surface, or renderer. Later evolution

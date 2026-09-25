@@ -95,6 +95,74 @@ describe("the remote MCP service over Streamable HTTP", () => {
     await client.close();
   });
 
+  it("lets an external client discover and author causal Event Flow syntax", async () => {
+    const client = await connect(token);
+    expect(client.getInstructions()).toContain(
+      "unsupported representation gap, not an automatic Markdown conversion",
+    );
+    expect(client.getInstructions()).toContain(
+      "genuinely a useful cross-cutting Note",
+    );
+    expect(client.getInstructions()).toContain(
+      "orthogonal projections, not mutually exclusive classifications",
+    );
+    expect(client.getInstructions()).toContain(
+      "Do not mechanically duplicate every Sequence",
+    );
+    const listed = await client.listResources();
+    const reference = listed.resources.find((entry) =>
+      entry.uri.endsWith("/reference/event-flow-dsl"),
+    );
+    expect(reference).toBeDefined();
+    const referenceRead = await client.readResource({ uri: reference!.uri });
+    const guidance = (referenceRead.contents[0] as { text: string }).text;
+    for (const phrase of [
+      "handler <id>",
+      "handled by",
+      "causes",
+      "effect <id>",
+      "provenance: external|internal|unknown",
+    ]) {
+      expect(guidance).toContain(phrase);
+    }
+
+    const created = await client.callTool({
+      name: "upsert_event_flow",
+      arguments: {
+        projectId,
+        path: "causal.eventseq",
+        content: [
+          "title Minimal causal flow",
+          "event Input {",
+          "  provenance: external",
+          "}",
+          "event Output",
+          "handler HandleInput",
+          "Input handled by HandleInput",
+          "effect persist-input on HandleInput kind state-update: Persist input",
+          "HandleInput causes Output",
+        ].join("\n"),
+      },
+    });
+    expect(created.isError).toBeFalsy();
+
+    const invalid = await client.callTool({
+      name: "upsert_event_flow",
+      arguments: {
+        projectId,
+        path: "invalid-causal.eventseq",
+        content: "event Input\nInput handled by MissingHandler",
+      },
+    });
+    expect(invalid.isError).toBe(true);
+    expect(structured(invalid).error.details.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "eventflow.unknown-handler" }),
+      ]),
+    );
+    await client.close();
+  });
+
   it("creates a project when the credential has project:create", async () => {
     const bootstrapOwner = await harness.aUser("Bootstrap owner");
     const bootstrapToken = (

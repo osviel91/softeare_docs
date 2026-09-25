@@ -44,6 +44,7 @@ import type { McpConfig } from "../config";
 import type { Observability } from "../observability";
 import { createMcpTools, type McpTool, type ToolContext } from "./tools";
 import { describeMcpError, toMcpError } from "./errors";
+import { EVENT_FLOW_DSL_URI, registerMcpReferences } from "./reference";
 
 /** The server's advertised name. */
 export const MCP_SERVER_NAME = "sequencediagrams-mcp";
@@ -56,7 +57,7 @@ export const MCP_SERVER_VERSION = packageJson.version;
  * Written for a machine caller: it names the bearer scheme, says what a project
  * contains, insists on reading before writing, and explains the revision
  * contract in the terms a tool result uses. It deliberately does not reproduce
- * the DSL grammar — that is what resources and the documentation tools are for.
+ * the DSL grammar — that is what the Event Flow reference resource is for.
  */
 export const MCP_INSTRUCTIONS = `This server exposes Software Docs Manager projects to an external agent. Every request is authenticated with a personal access token as \`Authorization: Bearer sdm_pat_…\`; there are no anonymous tools.
 
@@ -66,12 +67,14 @@ Work in this order:
 1. list_projects — the project ids every other tool addresses. If it is empty and the credential has project:create, call create_project.
 2. get_project_index or list_resources — see what exists and what your token may do; these responses include semantic metadata when present.
 3. read_diagram, read_documentation or read_resource — get the text, semantic metadata and current revision. Use get_resource_metadata when you need metadata without reading the contents; search_project also returns matched descriptions and tags.
-4. Prefer the semantic tools for writing: upsert_sequence_diagram, upsert_event_flow and upsert_documentation parse and validate before they persist, and apply the revision for you. Use create_resource/update_resource only when you need raw control.
+4. Read ${EVENT_FLOW_DSL_URI} before authoring an Event Flow. Prefer the semantic tools for writing: upsert_sequence_diagram, upsert_event_flow and upsert_documentation parse and validate before they persist, and apply the revision for you. Use create_resource/update_resource only when you need raw control.
 5. Every write names the revision it read as \`expectedRevision\`. A stale value is refused with a conflict: re-read, then retry at the new revision. Never invent a revision.
 6. Resource descriptions and tags are documentary metadata. Use get_resource_metadata to inspect them or update_resource_metadata to replace them without changing text; an empty metadata object clears them.
 7. After changing a diagram, call validate_project to see problems.
 
-Event Flow represents asynchronous/event-driven causal behavior. HTTP requests, synchronous calls, reverse-proxy routing, cron invocation, logs/telemetry, and infrastructure topology do not establish an Event Flow by themselves. A project may legitimately contain no Event Flow documentation. Do not force synchronous or structural behavior into Event Flow. When real asynchronous behavior exists, use Event -> Handler -> Effects -> Resulting Events as an investigation heuristic, not a mandatory shape. You may conclude: "No asynchronous event context was observed."
+Sequence and Event Flow are orthogonal projections, not mutually exclusive classifications. A Sequence may preserve ordered component collaboration that includes asynchronous messages; add an Event Flow when the same evidence exposes a meaningful causal chain with message provenance, handler responsibility, caused messages, and effects. Do not mechanically duplicate every Sequence. Event Flow represents asynchronous/event-driven causal behavior. HTTP requests, synchronous calls, reverse-proxy routing, cron invocation, logs/telemetry, and infrastructure topology do not establish an Event Flow by themselves. A project may legitimately contain no Event Flow documentation. Do not force synchronous or structural behavior into Event Flow. When real asynchronous behavior exists, use Event -> Handler -> Effects -> Resulting Events as an investigation heuristic, not a mandatory shape. You may conclude: "No asynchronous event context was observed."
+
+Event Flow causal authoring is explicit: declare "event Name", declare "handler Handler [in Service]", connect inputs with "Event handled by Handler", record outputs with "Handler causes ResultingMessage", and record non-message consequences with "effect effect-id on Handler [kind kind]: Description". Event metadata belongs inside the event block, including evidence-supported "provenance: external|internal|unknown"; cross-cutting rules and context belong in Markdown. Conceptual and Database knowledge remains an unsupported representation gap, not an automatic Markdown conversion; use Markdown only when the knowledge is genuinely a useful cross-cutting Note.
 
 Assessment guidance: INCOMPLETE means the representation and semantic boundary are correct but important knowledge is missing. MISREPRESENTED means the representation's semantics do not match observed behavior; synchronous HTTP routing represented as asynchronous Event Flow is MISREPRESENTED, not merely incomplete.
 
@@ -262,6 +265,7 @@ export function createMcpServerForPrincipal(
   }
 
   registerResources(server, { context, catalog, config });
+  registerMcpReferences(server);
 
   return { server, visibleTools };
 }

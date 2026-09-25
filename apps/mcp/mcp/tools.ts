@@ -1320,7 +1320,7 @@ export function createMcpTools(): McpTool[] {
       name: "upsert_event_flow",
       title: "Create or replace an event flow",
       description:
-        "Create or replace an event-flow document. Like upsert_sequence_diagram, the text is validated before it is persisted and the operation is idempotent.",
+        "Create or replace an event-flow document. Use explicit causal lines: `handler H [in Service]`, `Event handled by H`, `H causes ResultingMessage`, and `effect id on H [kind kind]: Description`; event metadata such as `provenance: external|internal|unknown` belongs inside the event block. The complete text is validated, including causal references, before it is persisted; validation errors include diagnostics and nothing is written. The operation is idempotent.",
       inputSchema: {
         projectId: projectId(),
         path: z
@@ -1347,7 +1347,13 @@ export function createMcpTools(): McpTool[] {
             `The event flow was not written: ${errors.length} error(s).\n${errors
               .map((diagnostic) => `- ${diagnostic.message}`)
               .join("\n")}`,
-            { kind: "validation_failed" },
+            {
+              kind: "validation_failed",
+              diagnostics: errors.map((diagnostic) => ({
+                message: diagnostic.message,
+                code: String(diagnostic.code),
+              })),
+            },
           );
         }
         return upsertByPath(toolContext, {

@@ -136,6 +136,9 @@ describe("MCP reference resources", () => {
       "No asynchronous event context was observed",
       "MISREPRESENTED",
       "INCOMPLETE",
+      "orthogonal projections",
+      "UpOneTransactionRaisedEvent",
+      "Do not mechanically duplicate every Sequence",
     ]) {
       expect(guidance).toContain(phrase);
     }

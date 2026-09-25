@@ -10,6 +10,7 @@ export const TOPOLOGY_NODE_HEIGHT = 42;
 export const TOPOLOGY_COLUMN_GAP = 100;
 export const TOPOLOGY_ROW_GAP = 28;
 export const TOPOLOGY_EDGE_LABEL_HEIGHT = 22;
+export const TOPOLOGY_SELF_LOOP_WIDTH = 96;
 
 export interface TopologyNodeLayout {
   name: string;
@@ -137,7 +138,10 @@ export function layoutTopology(topology: TopologyViewModel): TopologyLayout {
     width:
       TOPOLOGY_MARGIN * 2 +
       rankCount * TOPOLOGY_NODE_WIDTH +
-      Math.max(0, rankCount - 1) * TOPOLOGY_COLUMN_GAP,
+      Math.max(0, rankCount - 1) * TOPOLOGY_COLUMN_GAP +
+      (edges.some((edge) => edge.source === edge.target)
+        ? TOPOLOGY_SELF_LOOP_WIDTH
+        : 0),
     height:
       TOPOLOGY_MARGIN * 2 +
       maxRows * TOPOLOGY_NODE_HEIGHT +

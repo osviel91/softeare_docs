@@ -14,6 +14,7 @@ import {
   layoutEventFlow as layoutFlow,
 } from "../../src/layout/eventflow-layout";
 import { parseEventFlow } from "../../src/language/eventflow/parser";
+import { wrapText } from "../../src/layout/text";
 
 /** Parse source into the flow the layout engine consumes. */
 function flowFrom(source: string): EventFlow {
@@ -421,5 +422,23 @@ describe("layoutEventFlow — determinism", () => {
   it("produces the same layout from the same AST twice", () => {
     const flow = flowFrom(CYCLE);
     expect(layoutEventFlow(flow)).toEqual(layoutEventFlow(flow));
+  });
+});
+
+describe("identifier label wrapping", () => {
+  it.each([
+    ["ExportTransactionsProcessEndedEvent", ["Export Transactions", "Process Ended Event"]],
+    ["ExportConsumptionProcessEndedEvent", ["Export Consumption", "Process Ended Event"]],
+    ["CorporateBalanceExportEndedHandler", ["Corporate Balance", "Export Ended Handler"]],
+    ["ResendNonReceivedWebhookEventsCommand", ["Resend Non Received", "Webhook Events Command"]],
+  ])("keeps semantic boundaries for %s", (label, expected) => {
+    expect(wrapText(label, 236, 13)).toEqual(expected);
+  });
+
+  it("still wraps natural-language labels on whitespace first", () => {
+    expect(wrapText("A useful description with enough words", 180, 13)).toEqual([
+      "A useful description",
+      "with enough words",
+    ]);
   });
 });

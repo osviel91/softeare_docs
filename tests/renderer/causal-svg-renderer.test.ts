@@ -3,6 +3,7 @@ import { parseEventFlow } from "../../src/language/eventflow/parser";
 import { projectEventFlowToCausalView, handlerNodeId, type CausalNodeId } from "../../src/domain/eventflow/causal-projection";
 import { layoutCausalView } from "../../src/layout/causal-layout";
 import { renderCausalToSvg } from "../../src/renderer/svg/causal-svg-renderer";
+import { estimateTextWidth } from "../../src/layout/text";
 
 function render(source: string, selected?: string) {
   const view = projectEventFlowToCausalView(parseEventFlow(source).flow);
@@ -58,5 +59,40 @@ describe("causal SVG presentation", () => {
     expect(svg).toContain("is-downstream");
     expect(svg).toContain("data-focus-detail");
     expect(svg).toContain("V");
+  });
+
+  it("wraps production identifiers at semantic boundaries without overflow", () => {
+    const labels = [
+      "ExportTransactionsProcessEndedEvent",
+      "ExportConsumptionProcessEndedEvent",
+      "CorporateBalanceExportEndedHandler",
+      "ResendNonReceivedWebhookEventsCommand",
+    ];
+    const source = [
+      ...labels.filter((label) => !label.endsWith("Handler")).map((label) => `event ${label}`),
+      `handler CorporateBalanceExportEndedHandler`,
+      ...labels.filter((label) => label.endsWith("Event")).map((label) => `${label} handled by CorporateBalanceExportEndedHandler`),
+    ].join("\n");
+    const view = projectEventFlowToCausalView(parseEventFlow(source).flow);
+    const layout = layoutCausalView(view);
+    const expectedLines: Record<string, string[]> = {
+      ExportTransactionsProcessEndedEvent: ["Export Transactions", "Process Ended Event"],
+      ExportConsumptionProcessEndedEvent: ["Export Consumption", "Process Ended Event"],
+      CorporateBalanceExportEndedHandler: ["Corporate Balance", "Export Ended Handler"],
+      ResendNonReceivedWebhookEventsCommand: ["Resend Non Received", "Webhook Events Command"],
+    };
+
+    for (const label of labels) {
+      const node = layout.nodes.find((item) => item.label === label);
+      expect(node).toBeDefined();
+      expect(node?.lines).toEqual(expectedLines[label]);
+      for (const line of node?.lines ?? []) {
+        expect(estimateTextWidth(line) + 24).toBeLessThanOrEqual(node!.box.width);
+      }
+    }
+    expect(layout.nodes.find((node) => node.label === labels[0])?.lines).toEqual([
+      "Export Transactions",
+      "Process Ended Event",
+    ]);
   });
 });

@@ -2,6 +2,7 @@ import type {
   TopologyLayout,
   TopologyNodeLayout,
 } from "../../layout/topology-layout";
+import { TOPOLOGY_SELF_LOOP_WIDTH } from "../../layout/topology-layout";
 
 export interface TopologyRenderOptions {
   theme?: "light" | "dark";
@@ -62,14 +63,15 @@ function edge(
   const startY = source.y + source.height / 2;
   const endX = target.x;
   const endY = target.y + target.height / 2;
-  const bend = source === target ? 34 : Math.max(28, (endX - startX) / 2);
+  const selfLoop = source === target;
+  const bend = selfLoop ? TOPOLOGY_SELF_LOOP_WIDTH : Math.max(28, (endX - startX) / 2);
   const path =
-    source === target
+    selfLoop
       ? `M ${startX} ${startY} C ${startX + bend} ${startY - 34}, ${startX + bend} ${startY + 34}, ${startX} ${startY + 10}`
       : `M ${startX} ${startY} C ${startX + bend} ${startY}, ${endX - bend} ${endY}, ${endX} ${endY}`;
   const label = `${connection.events.length} event${connection.events.length === 1 ? "" : "s"}`;
-  const labelX = (startX + endX) / 2;
-  const labelY = (startY + endY) / 2 - 5;
+  const labelX = selfLoop ? startX + bend + 8 : (startX + endX) / 2;
+  const labelY = selfLoop ? startY + 4 : (startY + endY) / 2 - 5;
   return `<g class="topology-edge" data-connection-id="${escapeXml(connection.id)}" aria-label="${escapeXml(connection.producer)} to ${escapeXml(connection.consumer)}: ${escapeXml(label)}"><path d="${path}" fill="none" stroke="${colors.edge}" stroke-width="2" marker-end="url(#topology-arrow)"/><text x="${labelX}" y="${labelY}" text-anchor="middle" font-size="11" fill="${colors.muted}">${escapeXml(label)}</text></g>`;
 }
 

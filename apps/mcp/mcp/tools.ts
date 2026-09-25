@@ -339,6 +339,7 @@ function metadataFrom(
     path: string;
     type: ResourceRecord["type"];
   }>,
+  semanticMessages: ProjectMetadata["semanticMessages"] = [],
 ): ProjectMetadata {
   const metadata = createEmptyMetadata();
   return {
@@ -348,6 +349,7 @@ function metadataFrom(
       path: resource.path,
       type: resource.type,
     })),
+    semanticMessages,
   };
 }
 
@@ -355,11 +357,13 @@ async function semanticIndex(
   toolContext: ToolContext,
   projectIdValue: string,
 ): Promise<{ index: ReturnType<typeof buildProjectIndex>; resources: Awaited<ReturnType<ProjectCatalog["listResources"]>> }> {
+  throwIfAborted(toolContext.signal);
   const resources = await toolContext.catalog.listResources(toolContext.context, projectIdValue);
   const semanticMessages = await toolContext.catalog.listSemanticMessages(toolContext.context, projectIdValue);
   const metadata = { ...metadataFrom(resources), semanticMessages };
   const analyses = [];
   for (const resource of resources.slice(0, MAX_INDEXED_DOCUMENTS)) {
+    throwIfAborted(toolContext.signal);
     const { content } = await toolContext.catalog.readResource(toolContext.context, projectIdValue, resource.id);
     analyses.push(analyzeResource({ id: resource.id, projectId: projectIdValue, path: resource.path, type: resource.type, title: resource.path }, content));
   }
@@ -1880,38 +1884,7 @@ export function createMcpTools(): McpTool[] {
       async run(args, toolContext) {
         throwIfAborted(toolContext.signal);
         const id = stringArg(args, "projectId");
-        const resources = await toolContext.catalog.listResources(
-          toolContext.context,
-          id,
-        );
-        const metadata = metadataFrom(resources);
-        const analyses = [];
-        for (const resource of resources.slice(0, MAX_INDEXED_DOCUMENTS)) {
-          throwIfAborted(toolContext.signal);
-          const { content } = await toolContext.catalog.readResource(
-            toolContext.context,
-            id,
-            resource.id,
-          );
-          analyses.push(
-            analyzeResource(
-              {
-                id: resource.id,
-                projectId: id,
-                path: resource.path,
-                type: resource.type,
-                title: resource.path,
-              },
-              content,
-            ),
-          );
-        }
-        const perResource = analyses.flatMap(
-          (analysis) => analysis.diagnostics,
-        );
-        const index = buildProjectIndex(id, analyses, metadata, (core) =>
-          validateProject(core, perResource, metadata),
-        );
+        const { index } = await semanticIndex(toolContext, id);
         const wanted = args.severity;
         const filtered =
           typeof wanted === "string"

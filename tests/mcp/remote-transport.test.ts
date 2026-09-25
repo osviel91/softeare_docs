@@ -250,15 +250,35 @@ describe("the remote MCP service over Streamable HTTP", () => {
     });
     expect(boundFlow.isError).toBeFalsy();
 
+    const listedMessages = await client.callTool({ name: "list_semantic_messages", arguments: { projectId } });
+    expect(structured(listedMessages).messages).toEqual([
+      { id: "semantic-created", name: "Created", kind: "event" },
+    ]);
     const trace = await client.callTool({ name: "get_semantic_message", arguments: { projectId, messageId: "semantic-created" } });
     expect(structured(trace).identity).toEqual(expect.objectContaining({ id: "semantic-created", kind: "event" }));
     expect(structured(trace).occurrences).toHaveLength(2);
     expect(structured(trace).eventFlowEntities).toHaveLength(1);
+    expect(structured(trace).eventFlowEntities[0]).toEqual(expect.objectContaining({ messageRef: "semantic-created", name: "Created" }));
     expect(structured(trace).downstream).toEqual(expect.arrayContaining([expect.objectContaining({ handler: "CreatedHandler", messages: ["Followup"] })]));
     const candidates = await client.callTool({ name: "find_semantic_message_candidates", arguments: { projectId } });
     expect(structured(candidates).candidates).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Created", authoritative: true })]));
     const validation = await client.callTool({ name: "validate_project", arguments: { projectId } });
     expect(validation.isError).toBeFalsy();
+    expect(structured(validation).diagnostics).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: "project.dangling-semantic-message-ref" }),
+    ]));
+    const refreshed = await connect(token);
+    const persisted = await refreshed.callTool({ name: "list_semantic_messages", arguments: { projectId } });
+    expect(structured(persisted).messages).toEqual([
+      { id: "semantic-created", name: "Created", kind: "event" },
+    ]);
+    const persistedTrace = await refreshed.callTool({ name: "get_semantic_message", arguments: { projectId, messageId: "semantic-created" } });
+    expect(structured(persistedTrace).eventFlowEntities).toHaveLength(1);
+    const persistedValidation = await refreshed.callTool({ name: "validate_project", arguments: { projectId } });
+    expect(structured(persistedValidation).diagnostics).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: "project.dangling-semantic-message-ref" }),
+    ]));
+    await refreshed.close();
     const protectedDelete = await client.callTool({ name: "delete_semantic_message", arguments: { projectId, messageId: "semantic-created", expectedManifestRevision: 1 } });
     expect(protectedDelete.isError).toBe(true);
     const resources = structured(await client.callTool({ name: "list_resources", arguments: { projectId } })).resources as Array<{ id: string; path: string; revision: number }>;

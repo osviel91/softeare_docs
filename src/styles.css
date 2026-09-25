@@ -171,6 +171,27 @@ body {
   font-size: 10px;
   text-align: center;
 }
+.workspaces__group-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.workspaces__reload {
+  padding: 3px 6px;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+}
+.workspaces__reload:hover,
+.workspaces__reload:focus-visible {
+  color: var(--text);
+  border-color: var(--accent);
+}
 .proposal-review {
   width: 100%;
   max-width: none;
@@ -1969,6 +1990,26 @@ body {
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-pop);
 }
+.event-topology__details-toggle {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  z-index: 2;
+  padding: 6px 9px;
+  color: var(--text-muted);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-card);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+}
+.event-topology__details-toggle:hover,
+.event-topology__details-toggle:focus-visible {
+  color: var(--text);
+  border-color: var(--accent);
+}
 
 .event-topology__connection + .event-topology__connection {
   margin-top: 12px;
@@ -2924,8 +2965,8 @@ body {
    ========================================================================== */
 .preview__notes {
   position: absolute;
-  top: 10px;
-  right: 10px;
+  bottom: 14px;
+  left: 14px;
   z-index: 2;
   display: flex;
   align-items: center;

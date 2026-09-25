@@ -103,6 +103,8 @@ export interface WorkspaceHook {
   noteMarkdown: string;
   /** True while the initial load or any action is in flight. */
   isLoading: boolean;
+  /** Re-read the selected project without replacing the current selection. */
+  refresh(): Promise<{ diagrams: DiagramFile[]; notes: NoteFile[] }>;
   /** The last error surfaced by the repository, or `null`. */
   error: Error | null;
   /**
@@ -1344,6 +1346,57 @@ export function useWorkspace(
     setAllNotes(merge);
   }, []);
 
+  const refresh = useCallback(async (): Promise<{
+    diagrams: DiagramFile[];
+    notes: NoteFile[];
+  }> => {
+    if (!selectedProjectId) return { diagrams: [], notes: [] };
+    const projectId = selectedProjectId;
+    const [diagramResult, noteResult] = await Promise.all([
+      repo.listDiagramFiles(projectId),
+      repo.listNoteFiles(projectId),
+    ]);
+    const nextDiagrams = isOk(diagramResult) ? diagramResult.value : [];
+    const nextNotes = isOk(noteResult) ? noteResult.value : [];
+    setDiagrams(nextDiagrams);
+    setNotes(nextNotes);
+    setAllDiagrams((current) => [
+      ...current.filter((file) => file.projectId !== projectId),
+      ...nextDiagrams,
+    ]);
+    setAllNotes((current) => [
+      ...current.filter((file) => file.projectId !== projectId),
+      ...nextNotes,
+    ]);
+    const diagram = nextDiagrams.find((file) => file.id === selectedDiagramId);
+    const note = nextNotes.find((file) => file.id === selectedNoteId);
+    if (diagram) {
+      setSelectedDiagramId(diagram.id);
+      setSelectedNoteId(null);
+      setSource(diagram.source);
+    } else if (note) {
+      setSelectedNoteId(note.id);
+      setSelectedDiagramId(null);
+      setNoteMarkdown(note.markdown);
+    } else if (nextDiagrams[0]) {
+      setSelectedDiagramId(nextDiagrams[0].id);
+      setSelectedNoteId(null);
+      setSource(nextDiagrams[0].source);
+    } else if (nextNotes[0]) {
+      setSelectedNoteId(nextNotes[0].id);
+      setSelectedDiagramId(null);
+      setNoteMarkdown(nextNotes[0].markdown);
+    } else {
+      setSelectedDiagramId(null);
+      setSelectedNoteId(null);
+      setSource("");
+      setNoteMarkdown("");
+    }
+    if (!isOk(diagramResult)) setError(diagramResult.error);
+    if (!isOk(noteResult)) setError(noteResult.error);
+    return { diagrams: nextDiagrams, notes: nextNotes };
+  }, [repo, selectedDiagramId, selectedNoteId, selectedProjectId]);
+
   // The explorer and its search never see paths the user removed from the app.
   // Filtering happens here, during render, so every consumer agrees on what is
   // visible and a hide shows up immediately.
@@ -1382,6 +1435,7 @@ export function useWorkspace(
     source,
     noteMarkdown,
     isLoading,
+    refresh,
     error,
     metadata,
     resourceIdForFile,

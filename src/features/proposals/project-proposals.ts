@@ -57,6 +57,7 @@ export async function loadProjectProposals(
 export function useProjectProposalCount(
   client: ServerApiClient,
   projectId: string | null,
+  refreshKey = 0,
 ): number {
   const [count, setCount] = useState(0);
   useEffect(() => {
@@ -78,7 +79,7 @@ export function useProjectProposalCount(
     return () => {
       active = false;
     };
-  }, [client, projectId]);
+  }, [client, projectId, refreshKey]);
   return count;
 }
 
@@ -86,6 +87,7 @@ export function useResourceProposalCount(
   client: ServerApiClient,
   projectId: string | null,
   resourceId: string | null,
+  refreshKey = 0,
 ): number {
   const [count, setCount] = useState(0);
   useEffect(() => {
@@ -106,13 +108,14 @@ export function useResourceProposalCount(
     return () => {
       active = false;
     };
-  }, [client, projectId, resourceId]);
+  }, [client, projectId, resourceId, refreshKey]);
   return count;
 }
 
 export function useProjectResourceProposalCounts(
   client: ServerApiClient,
   projectId: string | null,
+  refreshKey = 0,
 ): Record<string, number> {
   const [counts, setCounts] = useState<Record<string, number>>({});
   useEffect(() => {
@@ -137,6 +140,6 @@ export function useProjectResourceProposalCounts(
     return () => {
       active = false;
     };
-  }, [client, projectId]);
+  }, [client, projectId, refreshKey]);
   return counts;
 }

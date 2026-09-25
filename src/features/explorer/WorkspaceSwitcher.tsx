@@ -77,6 +77,17 @@ export default function WorkspaceSwitcher({
               <span aria-hidden="true">{serverExpanded ? "▾" : "▸"}</span>
             </button>
           </span>
+          {onReloadServerProjects && (
+            <button
+              type="button"
+              className="workspaces__reload"
+              data-testid="workspace-server-refresh"
+              onClick={onReloadServerProjects}
+              title="Refresh server workspace data"
+            >
+              ↻ Refresh
+            </button>
+          )}
         </h3>
 
         {serverExpanded && (

@@ -321,6 +321,27 @@ describe("App — authenticated browser", () => {
     );
   });
 
+  it("refreshes externally changed server data without reloading the page", async () => {
+    await openServerProject();
+    const editor = screen.getByTestId("dsl-textarea");
+    const before = state.calls.length;
+    const resource = state.resources.get("r1");
+    if (!resource) throw new Error("missing test resource");
+    resource.content = "title Updated by agent";
+    resource.revision += 1;
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("workspace-server-refresh"));
+    });
+
+    await waitFor(() => expect(editor).toHaveValue("title Updated by agent"));
+    expect(state.calls.length).toBeGreaterThan(before);
+    expect(screen.getByTestId("workspace-server-project")).toHaveAttribute(
+      "aria-current",
+      "true",
+    );
+  });
+
   it("saves an edit with the revision it last read", async () => {
     await openServerProject();
 

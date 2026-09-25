@@ -90,6 +90,7 @@ import { useTabs } from "./features/tabs/use-tabs";
 import {
   closeTab as closeTabInSet,
   getActiveTab,
+  isDirty,
   tabDocumentOfDiagram,
   tabDocumentOfNote,
   type TabDocument,
@@ -450,6 +451,7 @@ export default function App() {
   const [proposalReviewOpen, setProposalReviewOpen] = useState(false);
   const [reviewProposalId, setReviewProposalId] = useState<string | null>(null);
   const [reviewReadOnly, setReviewReadOnly] = useState(false);
+  const [proposalRefreshKey, setProposalRefreshKey] = useState(0);
 
   const resizePane = useCallback(
     (pane: "explorer" | "editor", clientX: number): void => {
@@ -601,6 +603,7 @@ export default function App() {
     selectedNote,
     isLoading,
     error,
+    refresh: refreshWorkspace,
     loadDiagram,
     loadNote,
     createProject,
@@ -657,6 +660,25 @@ export default function App() {
     closeTab,
     updateActiveSource,
   } = tabsHook;
+
+  const syncServerWorkspace = useCallback(async (): Promise<void> => {
+    if (workspaceMode !== "server" || !server.active) return;
+    await server.refresh();
+    const refreshed = await refreshWorkspace();
+    if (tabsHook.activeTab && isDirty(tabsHook.activeTab)) return;
+    const diagram = refreshed.diagrams.find((file) => file.id === selectedDiagramId);
+    const note = refreshed.notes.find((file) => file.id === selectedNoteId);
+    if (diagram) tabsHook.applyExternalDiagram(diagram);
+    if (note) tabsHook.applyExternalNote(note);
+  }, [refreshWorkspace, selectedDiagramId, selectedNoteId, server, tabsHook, workspaceMode]);
+
+  useEffect(() => {
+    const revalidate = () => {
+      void syncServerWorkspace();
+    };
+    window.addEventListener("focus", revalidate);
+    return () => window.removeEventListener("focus", revalidate);
+  }, [syncServerWorkspace]);
 
   const metadataWritable =
     workspaceMode !== "server" || server.active?.writable === true;
@@ -1251,15 +1273,18 @@ export default function App() {
   const openProposalCount = useProjectProposalCount(
     apiClient,
     canReviewProjectProposals ? selectedProjectId : null,
+    proposalRefreshKey,
   );
   const openProposalCounts = useProjectResourceProposalCounts(
     apiClient,
     canReviewProjectProposals ? selectedProjectId : null,
+    proposalRefreshKey,
   );
   const resourceProposalCount = useResourceProposalCount(
     apiClient,
     canReviewProposals ? selectedProjectId : null,
     canReviewProposals ? activeResourceId : null,
+    proposalRefreshKey,
   );
 
   // Which language the active document is written in. A project holds three, and
@@ -1278,6 +1303,8 @@ export default function App() {
     [isEventFlow, source],
   );
   const eventFlow = eventFlowAnalysis?.flow ?? null;
+  const canExportActiveDiagram =
+    !noteMode && (isEventFlow ? eventFlow !== null : ast !== null && isValid(ast));
 
   // Causal is the investigation default only when entering a new causal flow;
   // a later view click remains the user's choice while that document is open.
@@ -2604,7 +2631,7 @@ export default function App() {
                       }}
                       onSelectServerWorkspace={setSelectedServerWorkspaceId}
                       onReloadServerProjects={() => {
-                        void server.refresh();
+                        void syncServerWorkspace();
                       }}
                     />
                   }
@@ -2698,7 +2725,11 @@ export default function App() {
                    }}
                    canMerge={metadataWritable}
                    readOnly={reviewReadOnly}
-                />
+                   onMerged={() => {
+                     setProposalRefreshKey((key) => key + 1);
+                     void syncServerWorkspace();
+                   }}
+                 />
               ) : view === "changes" && canReviewProjectProposals ? (
                 <ChangesInbox
                   client={apiClient}
@@ -2909,6 +2940,7 @@ export default function App() {
                           }
                         : undefined
                     }
+                    onExport={canExportActiveDiagram ? () => setExportDiagramOpen(true) : undefined}
                   />
                   <Editor
                     value={source}

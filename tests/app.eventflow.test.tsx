@@ -229,6 +229,10 @@ describe("App — event flows", () => {
     expect(screen.getByTestId("event-topology")).toHaveTextContent(
       "PaymentRequested",
     );
+    fireEvent.click(screen.getByRole("button", { name: "Hide details" }));
+    expect(screen.queryByLabelText("Topology relationships")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Show details" }));
+    expect(screen.getByLabelText("Topology relationships")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Flow" }));
     expect(screen.getByTestId("preview-svg")).toBeInTheDocument();
     expect(editor).toHaveValue(source);

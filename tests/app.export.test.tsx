@@ -95,6 +95,10 @@ describe("App — export", () => {
       expect(screen.getByTestId("dsl-textarea")).toBeInTheDocument();
     });
 
+    fireEvent.click(screen.getByTestId("resource-export-action"));
+    expect(screen.getByTestId("export-dialog")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("export-cancel"));
+
     await runCommand("Export Diagram");
     await waitFor(() => {
       expect(screen.getByTestId("export-dialog")).toBeInTheDocument();

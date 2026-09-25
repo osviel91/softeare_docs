@@ -44,6 +44,7 @@ export function ProposalReviewPanel({
   onBack,
   canMerge,
   readOnly = false,
+  onMerged,
 }: {
   client: ServerApiClient;
   projectId: string;
@@ -52,6 +53,7 @@ export function ProposalReviewPanel({
   onBack: () => void;
   canMerge: boolean;
   readOnly?: boolean;
+  onMerged?: () => void;
 }) {
   const [proposals, setProposals] = useState<ServerChangeProposal[]>([]);
   const [selected, setSelected] = useState<ServerChangeProposal | null>(null);
@@ -78,6 +80,7 @@ export function ProposalReviewPanel({
         items.filter((item) => item.id !== result.proposal.id),
       );
       setCurrent(result.resource);
+      onMerged?.();
     } catch (caught) {
       setError(mergeErrorMessage(caught));
     }

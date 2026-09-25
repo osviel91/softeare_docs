@@ -54,9 +54,14 @@ export interface EventDeclaration {
   name: string;
   /** The first `description` metadata value, normalized for consumers. */
   description?: string;
+  /** Optional evidence-based boundary provenance; omitted means undocumented. */
+  provenance?: EventProvenance;
   metadata: EventMetadataEntry[];
   range: SourceRange;
 }
+
+/** Normalized provenance for an event at the documented system boundary. */
+export type EventProvenance = "external" | "internal" | "unknown";
 
 /** A `broker <Name>` declaration: the infrastructure events travel through. */
 export interface BrokerDeclaration {
@@ -123,6 +128,52 @@ export interface EventSubscription {
   range: SourceRange;
 }
 
+/** A named application responsibility, distinct from the service that hosts it. */
+export interface EventFlowHandler {
+  type: "handler";
+  id: string;
+  service?: string;
+  description?: string;
+  metadata: EventMetadataEntry[];
+  /** Optional until a future source syntax can provide a source span. */
+  range?: SourceRange;
+}
+
+/** Explicit causal input: this handler handles this event/message. */
+export interface HandlerInput {
+  type: "handler-input";
+  handlerId: string;
+  event: string;
+  range?: SourceRange;
+}
+
+/** Explicit causal output: this handler causes this event/message. */
+export interface HandlerOutput {
+  type: "handler-output";
+  handlerId: string;
+  event: string;
+  range?: SourceRange;
+}
+
+/** A meaningful non-event consequence owned by one handler. */
+export interface HandlerEffect {
+  type: "effect";
+  id: string;
+  handlerId: string;
+  kind?: string;
+  description: string;
+  metadata: EventMetadataEntry[];
+  range?: SourceRange;
+}
+
+/** Optional causal facts kept separate from publication/subscription topology. */
+export interface EventFlowCausality {
+  handlers: EventFlowHandler[];
+  inputs: HandlerInput[];
+  outputs: HandlerOutput[];
+  effects: HandlerEffect[];
+}
+
 /** A title, e.g. `title Order Processing`. */
 export interface EventFlowTitle {
   value: string;
@@ -143,6 +194,8 @@ export interface EventFlow {
   title?: EventFlowTitle;
   /** Statements in source order, which is the order undeclared things appear in. */
   statements: EventFlowStatement[];
+  /** Explicit causal facts; legacy flows omit this without changing meaning. */
+  causal?: EventFlowCausality;
 }
 
 /** Every event declaration in a document, in source order. */

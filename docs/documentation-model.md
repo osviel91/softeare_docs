@@ -153,16 +153,24 @@ unknown or omit the claim.
 
 ### Handlers and causal semantics
 
-Handlers or consumers are useful semantic concepts in the desired model. When
+Handlers or consumers are separate semantic concepts in the causal model. When
 real asynchronous behavior exists, a reader should be able to discover who
-consumes an important event, where it is handled, what the handler does, what
-side effects occur, and what events can result. A broker or channel is
-infrastructure context, not a substitute for handler responsibility.
+consumes an important event, which handler is responsible, what effects occur,
+and what events can result. A broker or channel is infrastructure context, not
+a substitute for handler responsibility. The model preserves incomplete
+knowledge and does not infer a handler from a consuming service.
 
-The current representation can show services consuming events and can derive
-event-to-event ordering when a service consumes one event and publishes
-another. It cannot yet distinguish a named handler from its service or attach
-effects and resulting-event edges as structured concepts.
+The domain representation is an optional causal aggregate alongside the legacy
+topology relations: `Event -> Handler -> Effects / Resulting Events`. Handler
+inputs and outputs are explicit, so fan-out branches do not create cross-product
+edges. Effects have an identity, optional kind, description, and open metadata;
+they are not coupled to a database, HTTP client, mail system, or other
+technology. Commands and events are both message names in this phase.
+
+Legacy projections still show services consuming and publishing events, while
+the domain model now also carries explicit named handlers, effects, and
+handler-specific resulting-event edges. No existing projection infers those
+causal facts or changes its legacy appearance.
 
 ### Event annotations
 
@@ -221,13 +229,13 @@ connections by event and preserves source node IDs.
 | Derived causal ordering and cycle indication                             | Supported                                | Flow projection derives order and marks residual cycles                                                                 |
 | Source traceability                                                      | Supported                                | Source ranges and stable node IDs cover declarations and edges; metadata entries belong to their event node             |
 | Broker/channel topology                                                  | Supported                                | Channel kind and optional broker are represented and projected                                                          |
-| Provenance: external versus internal                                     | Expressible through annotations/metadata | No dedicated field; document only when evidence supports it, using a consistent project vocabulary in metadata or Notes |
-| Handler identity and handler location                                    | Expressible through annotations/metadata | A consumer service can stand for a handler at current granularity, but named handler semantics are not structured       |
-| Handler preconditions, reads, writes, and business effects               | Expressible through annotations/metadata | Event metadata is open, but effects are not first-class and should not be implied by topology                           |
-| Produced events as explicit handler results                              | Requires domain/DSL evolution            | Current publication edges identify producers but not the handler causality that caused them                             |
+| Provenance: external versus internal                                     | Supported                                | Optional normalized event field; unknown is explicit and no naming inference is performed                              |
+| Handler identity and handler location                                    | Supported                                | Causal handlers have stable identity and optional hosting service; topology subscriptions remain independent            |
+| Handler preconditions, reads, writes, and business effects               | Partially supported                      | Effects are first-class with open metadata; later phases may add richer structured semantics                           |
+| Produced events as explicit handler results                              | Supported                                | Explicit handler-output edges preserve independent fan-out branches                                                   |
 | Failure events, retries, idempotency, ordering, delivery semantics       | Expressible through annotations/metadata | No validation or structured semantics; unsupported claims must remain unknown                                           |
 | Correlation and causation identifiers                                    | Expressible through annotations/metadata | No dedicated event or edge fields                                                                                       |
-| Explicit event-to-handler-to-effect graph                                | Requires domain/DSL evolution            | Current projections derive event-to-event links through shared services, which can over-approximate causality           |
+| Explicit event-to-handler-to-effect graph                                | Supported                                | Domain-only causal aggregate and pure queries; no new authoring syntax or projection/UI in this phase                  |
 | Trace exploration, fan-out investigation, missing-consumer investigation | Requires future visualization only       | Existing projections expose facts and cycles, but no dedicated trace UI or investigation interaction exists             |
 
 This gap analysis is descriptive, not an implementation plan. D01 does not

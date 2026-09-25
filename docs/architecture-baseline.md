@@ -95,6 +95,16 @@ SVG`.
   projections and are not separately persisted resources. Topology edges
   represent mediated publication/subscription relationships; channels and
   brokers remain context rather than graph nodes.
+- Topology and causality are separate semantic facts. Legacy publications and
+  subscriptions remain topology only; optional causal facts use
+  `Event -> Handler -> Effects / Resulting Events`. A handler has its own stable
+  identity and may optionally name its hosting service. Multiple handlers can
+  consume one event, and each handler keeps its own independent outputs.
+- Causal facts may be incomplete: an event can have no known handler, a handler
+  can have no known output, and an effect can terminate a documented branch.
+  Event provenance is optional and normalized to `external`, `internal`, or
+  `unknown`; it is never inferred from names. Commands and events share the
+  message-name slot until a later syntax decision requires a distinction.
 
 ### Resource Dimensions
 

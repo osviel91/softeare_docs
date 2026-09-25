@@ -105,7 +105,10 @@ function leafNode(
 /** The label of a message: its text, or `A → B` when it declares none. */
 function messageLabel(message: MessageNode): string {
   const text = message.label.trim();
-  return text === "" ? `${message.from} \u2192 ${message.to}` : text;
+  const base = text === "" ? `${message.from} \u2192 ${message.to}` : text;
+  return message.semantics
+    ? `${base} [${message.semantics.kind} ${message.semantics.operation}: ${message.semantics.name}]`
+    : base;
 }
 
 /** The label of an activation: `act: API` / `deact: API`, matching the DSL. */

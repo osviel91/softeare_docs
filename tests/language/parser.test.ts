@@ -81,6 +81,63 @@ describe("parse — valid input", () => {
     expect(statement).toMatchObject({ from: "A", to: "B", label: "" });
   });
 
+  it("parses evidence-backed event and command occurrences without changing steps", () => {
+    const { ast, diagnostics } = parse(`participant Transaction
+participant Handler
+Transaction -->> Handler: MslTransactionCreatedEvent
+semantic event publish MslTransactionCreatedEvent
+Handler -> Handler: Handle MslTransactionCreatedEvent
+semantic event consume MslTransactionCreatedEvent
+Handler -> Handler: SendEmailCommand
+semantic command dispatch SendEmailCommand`);
+    expect(diagnostics).toEqual([]);
+    const diagram = ast!;
+    expect(diagram.statements).toHaveLength(3);
+    expect(diagram.statements[0]).toMatchObject({
+      type: "message",
+      semantics: {
+        name: "MslTransactionCreatedEvent",
+        kind: "event",
+        operation: "publish",
+      },
+    });
+    expect(diagram.statements[1]).toMatchObject({
+      semantics: { kind: "event", operation: "consume" },
+    });
+    expect(diagram.statements[2]).toMatchObject({
+      semantics: { kind: "command", operation: "dispatch" },
+    });
+  });
+
+  it("rejects orphan semantic metadata and keeps legacy input valid", () => {
+    const orphan = parse("semantic event publish Something");
+    expect(orphan.diagnostics.map((entry) => entry.code)).toContain(
+      DiagnosticCode.MalformedSemanticMessage,
+    );
+    expect(parse(LOGIN_EXAMPLE).diagnostics).toEqual([]);
+  });
+
+  it("keeps semantic occurrences inside fragments and self-messages numbered", () => {
+    const { ast, diagnostics } = parse(`participant A
+loop retry
+  A -> A: RetryCommand
+  semantic command dispatch RetryCommand
+end
+A -> A: DoneEvent
+semantic event publish DoneEvent`);
+    expect(diagnostics).toEqual([]);
+    expect(ast!.statements[0].type).toBe("loop");
+    const loop = ast!.statements[0];
+    if (loop.type === "loop") {
+      expect(loop.statements[0]).toMatchObject({
+        semantics: { kind: "command", operation: "dispatch" },
+      });
+    }
+    expect(ast!.statements[1]).toMatchObject({
+      semantics: { kind: "event", operation: "publish" },
+    });
+  });
+
   it("keeps a long label intact", () => {
     const longLabel = "x".repeat(200);
     const { ast } = parse(`participant A\nparticipant B\nA -> B: ${longLabel}`);

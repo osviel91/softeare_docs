@@ -56,6 +56,7 @@ import { eventFlowSourceToSvg } from "../../../src/renderer/pipeline/eventflow-t
 import { buildProjectIndex } from "../../../src/domain/project/project-index";
 import { analyzeResource } from "../../../src/domain/project/resource-analysis";
 import { validateProject } from "../../../src/domain/project/validate";
+import { semanticMessagesOf } from "../../../src/domain/diagram/semantic-messages";
 import {
   createEmptyMetadata,
   type ProjectMetadata,
@@ -1314,6 +1315,7 @@ export function createMcpTools(): McpTool[] {
             title: diagramTitle(content) ?? null,
             participants: (ast?.participants ?? []).map((p) => p.id),
             statements: ast?.statements.length ?? 0,
+            semanticMessages: ast ? semanticMessagesOf(ast) : [],
             diagnostics: diagnostics.map((diagnostic) => ({
               severity: diagnostic.severity,
               message: diagnostic.message,

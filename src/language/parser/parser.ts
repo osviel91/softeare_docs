@@ -41,6 +41,8 @@ import type {
   CriticalBranch,
   LineStyle,
   MessageNode,
+  SequenceMessageKind,
+  SequenceMessageOperation,
   NoteNode,
   NotePlacement,
   ParBranch,
@@ -198,6 +200,10 @@ class Parser {
         const message = this.parseMessage();
         if (message) out.push(...message.statements);
         else this.skipToEol();
+        return;
+      }
+      case TokenType.Semantic: {
+        this.parseSemanticMessage(out);
         return;
       }
       case TokenType.Activate:
@@ -707,6 +713,62 @@ class Parser {
     };
     statements.push(message);
     return { statements };
+  }
+
+  /** Attach explicit architectural meaning to the immediately preceding message. */
+  private parseSemanticMessage(out: Statement[]): void {
+    const semantic = this.advance();
+    const previous = out.at(-1);
+    if (!previous || previous.type !== "message") {
+      this.errorHere(
+        '"semantic" must immediately follow a message',
+        DiagnosticCode.MalformedSemanticMessage,
+      );
+      this.skipToEol();
+      return;
+    }
+    if (previous.semantics) {
+      this.errorHere(
+        "A message may declare semantic metadata only once",
+        DiagnosticCode.MalformedSemanticMessage,
+      );
+      this.skipToEol();
+      return;
+    }
+
+    const kindToken = this.peek();
+    const operationToken = this.peekAt(1);
+    const nameToken = this.peekAt(2);
+    const kind = kindToken?.value;
+    const operation = operationToken?.value;
+    if (
+      (kind !== "event" && kind !== "command") ||
+      (operation !== "publish" && operation !== "consume" && operation !== "dispatch") ||
+      !nameToken ||
+      nameToken.type !== TokenType.Identifier
+    ) {
+      this.errorHere(
+        "Expected: semantic event|command publish|consume|dispatch <message-name>",
+        DiagnosticCode.MalformedSemanticMessage,
+      );
+      this.skipToEol();
+      return;
+    }
+    this.advance();
+    this.advance();
+    this.advance();
+    if (this.peek()?.type !== TokenType.Eol && !this.atEnd()) {
+      this.errorHere(
+        "Unexpected text after semantic message metadata",
+        DiagnosticCode.MalformedSemanticMessage,
+      );
+    }
+    previous.semantics = {
+      name: nameToken.value,
+      kind: kind as SequenceMessageKind,
+      operation: operation as SequenceMessageOperation,
+      range: span(semantic.start, this.previousEnd()),
+    };
   }
 
   /** Parse a single-block fragment (`loop`, `opt`, `break`). */

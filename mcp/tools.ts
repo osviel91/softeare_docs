@@ -24,6 +24,8 @@ import type {
 import type { OutlineNode } from "../src/domain/outline/outline";
 import type { JsonSchema, ToolDefinition } from "./protocol";
 import { analyzeEventFlow } from "../src/language/eventflow/parser";
+import { analyze } from "../src/language/analyze";
+import { semanticMessagesOf } from "../src/domain/diagram/semantic-messages";
 
 /** What a tool handler returns before it is wrapped in an MCP result. */
 export interface ToolOutcome {
@@ -456,9 +458,11 @@ export function createTools(): Tool[] {
           project,
           requiredString(args, "resource"),
         );
+        const parsed = resource.type === "sequence-diagram" ? analyze(content).ast : null;
+        const semanticMessages = parsed ? semanticMessagesOf(parsed) : undefined;
         return {
           text: `${resource.path} [${resource.type}] id=${resource.id} title="${resource.title}"\n\n${content}`,
-          structured: { resource, content },
+          structured: { resource, content, ...(semanticMessages ? { semanticMessages } : {}) },
         };
       },
     },

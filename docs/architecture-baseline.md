@@ -78,6 +78,20 @@ architecture.
   from the project index. Rendering reads the resource through the workspace
   service before selecting the language-specific renderer.
 
+### Sequence Message Semantics
+
+- Sequence messages may carry optional evidence-backed local semantics: `event`
+  or `command`, with `publish`, `consume`, or `dispatch`.
+- The parser stores semantics on the message AST; labels and notes are not parsed
+  for semantics. Layout transports metadata without changing rows or numbering,
+  and SVG renders a restrained text badge.
+- A semantic occurrence has a display name and reserved future `messageRef`, but
+  no D03.11.1 cross-resource identity. Equal names never create links.
+- D03.7 complementary-view relationships remain limited to execution and causal
+  projections of the same complete behavior. An MSL Sequence producing an event
+  and an unrelated downstream Event Flow consuming it are not complementary
+  views; D03.11.2 will provide message-mediated binding.
+
 ### Event Flow Views
 
 - The Event Flow pipeline is `source → parser/analyzer → EventFlow semantic

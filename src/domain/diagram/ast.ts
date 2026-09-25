@@ -65,6 +65,22 @@ export type LineStyle = "solid" | "dashed";
  */
 export type ArrowStyle = "none" | "arrow" | "open" | "cross" | "bidirectional";
 
+/** The architectural message kinds shared with Event Flow. */
+export type SequenceMessageKind = "event" | "command";
+
+/** The local role of an architectural message occurrence in a Sequence. */
+export type SequenceMessageOperation = "publish" | "consume" | "dispatch";
+
+/** Structured architectural meaning attached to one Sequence interaction. */
+export interface SequenceMessageSemantics {
+  name: string;
+  kind: SequenceMessageKind;
+  operation: SequenceMessageOperation;
+  /** Reserved for D03.11.2; local names are never cross-resource identity. */
+  messageRef?: string;
+  range: SourceRange;
+}
+
 /** A message between two participants, e.g. `User ->> API: Login`. */
 export interface MessageNode {
   type: "message";
@@ -78,6 +94,8 @@ export interface MessageNode {
   to: ParticipantId;
   /** The label shown with the arrow (may be empty). */
   label: string;
+  /** Optional evidence-backed architectural message occurrence. */
+  semantics?: SequenceMessageSemantics;
   /** Source span covering the whole message. */
   range: SourceRange;
 }

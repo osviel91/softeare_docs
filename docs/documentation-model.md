@@ -132,6 +132,33 @@ workspace, membership, and permissions” and “Invariant: workspace belongs to
 the requesting tenant.” Avoid notes such as “Calls the repository” when the
 message already says that.
 
+### Architectural Message Occurrences
+
+A Sequence interaction remains an ordinary call unless source evidence establishes
+that it is an architectural message. When evidence does establish that fact, add
+structured metadata immediately after the interaction:
+
+```text
+Transaction -->> Handler: MslTransactionCreatedEvent
+semantic event publish MslTransactionCreatedEvent
+```
+
+The supported kinds are `event` and `command`; the supported operations are
+`publish`, `consume`, and `dispatch`. The local message name is display/discovery
+data, not identity. Do not infer semantics from suffixes, participant names,
+queue presence, or equal names in another resource.
+
+An occurrence that publishes `MslTransactionCreatedEvent` and a later occurrence
+that consumes it are separate local occurrences. They are not automatically a
+D03.7 complementary-view relationship. MSL Transaction Ingestion may produce
+that event while Negative Ledger Balance Notification is an Event Flow entered
+by the event and continuing to downstream consequences. That is message-mediated
+traceability, not two projections of one complete behavior.
+
+D03.11.2 can add stable semantic message identity through the reserved occurrence
+reference, then bind Sequence occurrences and Event Flow entities. D03.11.1
+deliberately provides no implicit links or name-based identity.
+
 ## Event Flows
 
 ### Contract

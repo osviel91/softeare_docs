@@ -422,6 +422,7 @@ export function layoutDiagram(diagram: SequenceDiagram): DiagramLayout {
       lineStyle: statement.lineStyle,
       arrowStyle: statement.arrowStyle,
       label: statement.label,
+      semantics: statement.semantics,
       labelLines: wrapText(
         statement.label,
         Math.max(80, Math.abs((participants[fromIndex ?? 0]?.x ?? MARGIN_X) - (participants[toIndex ?? 0]?.x ?? MARGIN_X)) - 28),

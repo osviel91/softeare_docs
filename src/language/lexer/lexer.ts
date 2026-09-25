@@ -51,6 +51,8 @@ export enum TokenType {
   Break = "break",
   /** `end` keyword, closing a fragment or a multiline note. */
   End = "end",
+  /** `semantic` metadata attached to the preceding message. */
+  Semantic = "semantic",
   /** An unquoted identifier, e.g. `User` or `API`. */
   Identifier = "identifier",
   /**
@@ -367,6 +369,8 @@ function classifyKeyword(word: string): TokenType {
       return TokenType.Break;
     case "end":
       return TokenType.End;
+    case "semantic":
+      return TokenType.Semantic;
     default:
       return TokenType.Identifier;
   }

@@ -173,6 +173,11 @@ export function hoverAt(request: HoverRequest): HoverInfo | null {
         rows.unshift({ label: "Source", value: statement.from });
         rows.splice(1, 0, { label: "Target", value: statement.to });
       }
+      if (statement.semantics) {
+        rows.push({ label: "Message", value: statement.semantics.name });
+        rows.push({ label: "Operation", value: statement.semantics.operation });
+        rows.push({ label: "Kind", value: statement.semantics.kind });
+      }
       return { title: `${statement.from} → ${statement.to}`, rows };
     }
     case "activation":

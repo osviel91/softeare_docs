@@ -49,6 +49,8 @@ export enum DiagnosticCode {
   MalformedSpanningNote = "seq.malformed-spanning-note",
   /** A `note on <n>` names a message number the diagram does not have. */
   UnknownMessageNumber = "seq.unknown-message-number",
+  /** A semantic message metadata line is malformed or has no preceding message. */
+  MalformedSemanticMessage = "seq.malformed-semantic-message",
 }
 
 /** A single diagnostic message with optional source location. */

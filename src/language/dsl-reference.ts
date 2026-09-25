@@ -71,6 +71,14 @@ export const DSL_CONSTRUCTS: DslConstruct[] = [
       "A ->> B: Request\nB --> A: Reply\nA -) Queue: Publish event\nA -x B: Failed",
   },
   {
+    name: "Semantic message",
+    syntax: "semantic event|command publish|consume|dispatch <message-name>",
+    summary:
+      "Adds explicit, evidence-backed architectural meaning to the immediately preceding interaction. The name is local occurrence data, not cross-resource identity; ordinary calls remain ordinary messages.",
+    example:
+      "Transaction -->> Handler: MslTransactionCreatedEvent\nsemantic event publish MslTransactionCreatedEvent",
+  },
+  {
     name: "Note",
     syntax: "note left|right of <participant> : <text>",
     summary:

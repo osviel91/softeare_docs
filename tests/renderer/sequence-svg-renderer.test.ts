@@ -97,6 +97,19 @@ describe("renderDiagramToSvg — structure", () => {
     );
   });
 
+  it("renders semantic message metadata as a restrained text affordance", () => {
+    const layout = sampleLayout();
+    layout.messages[0].semantics = {
+      name: "ExportCorporateBalanceProcessEndedEvent",
+      kind: "event",
+      operation: "publish",
+      range: { start: { line: 0, column: 0 }, end: { line: 0, column: 1 } },
+    };
+    const svg = renderDiagramToSvg(layout);
+    expect(svg).toContain('class="semantic-message-badge"');
+    expect(svg).toContain("EVENT · publish");
+  });
+
   it("never parses source text — it only consumes the layout", () => {
     // The renderer has no parser dependency; feed it a layout directly.
     const svg = renderDiagramToSvg(sampleLayout());

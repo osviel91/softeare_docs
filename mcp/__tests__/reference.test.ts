@@ -104,6 +104,8 @@ describe("MCP reference resources", () => {
     }
     expect(SERVER_INSTRUCTIONS).toContain(SEQUENCE_DSL_URI);
     expect(SERVER_INSTRUCTIONS).toContain(DOCUMENTATION_MODEL_URI);
+    expect(SERVER_INSTRUCTIONS).toContain("semantic event|command");
+    expect(SERVER_INSTRUCTIONS).toContain("Equal names are not identity");
   });
 
   it("does not reference tools outside the stdio catalog", () => {

@@ -7,6 +7,7 @@ import type {
   ArrowStyle,
   LineStyle,
   ParticipantType,
+  SequenceMessageSemantics,
 } from "../domain/diagram/ast";
 import type { AstNodeId } from "../domain/diagram/node-id";
 
@@ -186,6 +187,7 @@ export interface MessageLayout {
   label: string;
   /** Wrapped label lines for long message labels. */
   labelLines?: string[];
+  semantics?: SequenceMessageSemantics;
   /** Vertical center line of this message row. */
   y: number;
   /** X coordinate of the arrow tail (on the sender's lifeline). */

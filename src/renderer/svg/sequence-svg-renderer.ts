@@ -332,8 +332,28 @@ function renderSelfMessage(
   const label = msg.label
     ? `<text x="${(right + SELF_MESSAGE_LABEL_GAP).toFixed(2)}" y="${(top + loop.height / 2 - (lines.length - 1) * 7 + 4).toFixed(2)}" font-size="12" fill="${palette.label}">${lines.map((line, index) => `<tspan x="${(right + SELF_MESSAGE_LABEL_GAP).toFixed(2)}" dy="${index === 0 ? 0 : 14}">${escapeXml(line)}</tspan>`).join("")}</text>`
     : "";
+  const semantic = renderSemanticBadge(
+    msg,
+    right + SELF_MESSAGE_LABEL_GAP,
+    top + loop.height / 2 + 18,
+    "start",
+    palette,
+  );
 
-  return `${path}${head}${renderSequenceBadge(msg, number, palette)}${label}`;
+  return `${path}${head}${renderSequenceBadge(msg, number, palette)}${label}${semantic}`;
+}
+
+/** A restrained text-labelled affordance; semantics never rely on colour alone. */
+function renderSemanticBadge(
+  msg: MessageLayout,
+  x: number,
+  y: number,
+  anchor: "middle" | "start",
+  palette: RenderPalette,
+): string {
+  if (!msg.semantics) return "";
+  const text = `${msg.semantics.kind.toUpperCase()} · ${msg.semantics.operation}`;
+  return `<text class="semantic-message-badge" x="${x.toFixed(2)}" y="${y.toFixed(2)}" text-anchor="${anchor}" font-size="9" font-weight="600" fill="${palette.label}">${escapeXml(text)}</text>`;
 }
 
 /**
@@ -388,11 +408,18 @@ function renderMessage(
   const label = msg.label
     ? `<text x="${labelX}" y="${(msg.y - 6 - (lines.length - 1) * 14).toFixed(2)}" text-anchor="middle" font-size="12" fill="${palette.label}">${lines.map((line, index) => `<tspan x="${labelX}" dy="${index === 0 ? 0 : 14}">${escapeXml(line)}</tspan>`).join("")}</text>`
     : "";
+  const semantic = renderSemanticBadge(
+    msg,
+    Number(labelX),
+    msg.y + 14,
+    "middle",
+    palette,
+  );
 
   // The group is the addressable unit for review decoration: one wrapper covers
   // the arrow, its heads, the step badge, and the label. It changes no drawing
   // geometry and is independent of `data-node-id`, which stays source-derived.
-  return `<g class="sequence-message" data-sequence-message="${number}">${line}${head}${renderSequenceBadge(msg, number, palette)}${label}</g>`;
+  return `<g class="sequence-message" data-sequence-message="${number}">${line}${head}${renderSequenceBadge(msg, number, palette)}${label}${semantic}</g>`;
 }
 
 /** Size of the dog-ear fold on a note's top-right corner, in pixels. */

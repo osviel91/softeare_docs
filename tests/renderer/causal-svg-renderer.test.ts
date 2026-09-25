@@ -43,4 +43,20 @@ describe("causal SVG presentation", () => {
     expect(svg).toContain('data-causal-id="handler:H1"');
     expect(svg).toContain('class="causal-node is-subdued"');
   });
+
+  it("renders wrapped labels and explicit focus-path classes", () => {
+    const source = [
+      "event VeryLongMessageNameThatShouldWrapAcrossSeveralLines",
+      "event Downstream",
+      "handler VeryLongHandlerNameThatShouldWrapToo",
+      "VeryLongMessageNameThatShouldWrapAcrossSeveralLines handled by VeryLongHandlerNameThatShouldWrapToo",
+      "VeryLongHandlerNameThatShouldWrapToo causes Downstream",
+    ].join("\n");
+    const svg = render(source, "message:VeryLongMessageNameThatShouldWrapAcrossSeveralLines");
+    expect(svg).toContain("<tspan");
+    expect(svg).toContain("is-causal-neighbor");
+    expect(svg).toContain("is-downstream");
+    expect(svg).toContain("data-focus-detail");
+    expect(svg).toContain("V");
+  });
 });

@@ -158,6 +158,20 @@ describe("layoutDiagram — participant placement", () => {
     expect(layout.participants[0].width).toBeGreaterThan(72);
   });
 
+  it("wraps long participant labels without unbounded widths", () => {
+    const layout = layoutDiagram(diagram({
+      participants: [{
+        type: "participant",
+        participantType: "participant",
+        id: "A",
+        label: "A".repeat(100),
+        range: { start: { line: 0, column: 0 }, end: { line: 0, column: 1 } },
+      }],
+    }));
+    expect(layout.participants[0].width).toBeLessThanOrEqual(180);
+    expect(layout.participants[0].labelLines?.length).toBeGreaterThan(1);
+  });
+
   it("separates long participant headers and keeps them within the canvas", () => {
     const layout = layoutDiagram(
       diagram({

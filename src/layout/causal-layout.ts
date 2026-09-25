@@ -3,6 +3,7 @@ import type {
   CausalNodeId,
   CausalViewModel,
 } from "../domain/eventflow/causal-projection";
+import { estimateTextWidth, wrapText } from "./text";
 
 export interface CausalBox { x: number; y: number; width: number; height: number }
 export interface CausalNodeLayout {
@@ -11,6 +12,7 @@ export interface CausalNodeLayout {
   label: string;
   box: CausalBox;
   sourceNodeIds: string[];
+  lines: string[];
 }
 export interface CausalEdgeLayout { edge: CausalEdge; from: CausalBox; to: CausalBox }
 export interface CausalLayout {
@@ -24,11 +26,28 @@ export interface CausalLayout {
 const GAP_X = 72;
 const GAP_Y = 28;
 const MARGIN = 28;
-const NODE_HEIGHT = 42;
-const EFFECT_HEIGHT = 32;
+const NODE_MIN_WIDTH = 180;
+const NODE_MAX_WIDTH = 260;
+const NODE_LINE_HEIGHT = 15;
+const NODE_PADDING_Y = 14;
+const EFFECT_MIN_WIDTH = 170;
+const EFFECT_MAX_WIDTH = 250;
+const EFFECT_LINE_HEIGHT = 14;
+const EFFECT_PADDING_Y = 12;
 
 function width(label: string, type: CausalNodeLayout["type"]): number {
-  return Math.max(type === "effect" ? 150 : 170, label.length * 7 + 28);
+  return Math.min(
+    type === "effect" ? EFFECT_MAX_WIDTH : NODE_MAX_WIDTH,
+    Math.max(type === "effect" ? EFFECT_MIN_WIDTH : NODE_MIN_WIDTH, estimateTextWidth(label) + 28),
+  );
+}
+
+function nodeGeometry(label: string, type: CausalNodeLayout["type"]): { width: number; height: number; lines: string[] } {
+  const boxWidth = width(label, type);
+  const lines = wrapText(label, boxWidth - 24, type === "effect" ? 12 : 13);
+  const lineHeight = type === "effect" ? EFFECT_LINE_HEIGHT : NODE_LINE_HEIGHT;
+  const padding = type === "effect" ? EFFECT_PADDING_Y : NODE_PADDING_Y;
+  return { width: boxWidth, height: padding + lineHeight * Math.max(1, lines.length) + (type === "effect" ? 18 : 18), lines };
 }
 
 /** Pure, finite, deterministic geometry for explicit causal relationships. */
@@ -64,12 +83,12 @@ export function layoutCausalView(view: CausalViewModel): CausalLayout {
   let x = MARGIN;
   let maxY = MARGIN;
   for (const column of [...columns.keys()].sort((a, b) => a - b).map((key) => columns.get(key)!)) {
-    const columnWidth = Math.max(...column.map((item) => width(item.label, item.type)));
+    const columnWidth = Math.max(...column.map((item) => nodeGeometry(item.label, item.type).width));
     let y = MARGIN + (view.title ? 28 : 0);
     for (const item of column) {
-      const height = NODE_HEIGHT;
-      boxes.set(item.id, { x, y, width: columnWidth, height });
-      y += height + GAP_Y;
+      const geometry = nodeGeometry(item.label, item.type);
+      boxes.set(item.id, { x, y, width: columnWidth, height: geometry.height });
+      y += geometry.height + GAP_Y;
     }
     maxY = Math.max(maxY, y - GAP_Y + MARGIN);
     x += columnWidth + GAP_X;
@@ -80,8 +99,9 @@ export function layoutCausalView(view: CausalViewModel): CausalLayout {
   for (const effect of effects) {
     const handler = boxes.get(view.effects.find((item) => item.id === effect.id)!.handlerId);
     if (!handler) continue;
-    const box = { x: handler.x + (handler.width - width(effect.label, "effect")) / 2, y: handler.y + handler.height + GAP_Y, width: width(effect.label, "effect"), height: EFFECT_HEIGHT };
-    while ([...boxes.values()].some((other) => overlaps(box, other))) box.y += EFFECT_HEIGHT + GAP_Y;
+    const geometry = nodeGeometry(effect.label, "effect");
+    const box = { x: handler.x + (handler.width - geometry.width) / 2, y: handler.y + handler.height + GAP_Y, width: geometry.width, height: geometry.height };
+    while ([...boxes.values()].some((other) => overlaps(box, other))) box.y += geometry.height + GAP_Y;
     boxes.set(effect.id, box);
     maxY = Math.max(maxY, box.y + box.height + MARGIN);
   }
@@ -90,7 +110,7 @@ export function layoutCausalView(view: CausalViewModel): CausalLayout {
     width: Math.max(MARGIN * 2, x - GAP_X + MARGIN, ...[...boxes.values()].map((box) => box.x + box.width + MARGIN)),
     height: Math.max(MARGIN * 2, maxY),
     ...(view.title === undefined ? {} : { title: view.title }),
-    nodes: all.map((item) => ({ ...item, box: boxes.get(item.id)! })),
+    nodes: all.map((item) => ({ ...item, box: boxes.get(item.id)!, lines: nodeGeometry(item.label, item.type).lines })),
     edges: view.edges.flatMap((edge) => {
       const from = boxes.get(edge.from);
       const to = boxes.get(edge.to);

@@ -8,6 +8,10 @@ function layout(source: string) {
 }
 
 describe("layoutCausalView", () => {
+  function overlaps(a: { x: number; y: number; width: number; height: number }, b: { x: number; y: number; width: number; height: number }) {
+    return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+  }
+
   it("is deterministic and gives every semantic node unique geometry", () => {
     const source = [
       "event A", "event B", "handler H", "A handled by H", "H causes B",
@@ -38,5 +42,31 @@ describe("layoutCausalView", () => {
     const effect = result.nodes.find((node) => node.id === "effect:save")!;
     expect(effect.box.y).toBeGreaterThan(handler.box.y + handler.box.height);
     expect(effect.box.x).toBeGreaterThanOrEqual(handler.box.x - effect.box.width);
+  });
+
+  it.each([
+    ["UpOne fan-out", ["event Raised", "event SaveCommand", "event AddAccountCommand", "event AddCorporateAccountCommand", "handler Transactions", "handler Accounts", "Raised handled by Transactions", "Raised handled by Accounts", "Transactions causes SaveCommand", "Accounts causes AddAccountCommand", "Accounts causes AddCorporateAccountCommand", "effect save on Transactions: save transaction", "effect account on Accounts: update account"]],
+    ["negative balance", ["event Created", "event ThresholdExceeded", "event SendEmailCommand {", "  kind: command", "}", "handler Criteria", "handler Notification", "Created handled by Criteria", "Criteria causes ThresholdExceeded", "ThresholdExceeded handled by Notification", "Notification causes SendEmailCommand", "effect ledger on Criteria: read ledger", "effect mail on Notification: send email"]],
+    ["export fan-in", ["event A", "event B", "event C", "event Complete", "handler HA", "handler HB", "handler HC", "A handled by HA", "B handled by HB", "C handled by HC", "HA causes Complete", "HB causes Complete", "HC causes Complete"]],
+    ["webhook retry", ["event RetryCommand {", "  kind: command", "  provenance: internal", "}", "event Retried", "handler Retry", "scheduled initiates RetryCommand", "RetryCommand handled by Retry", "Retry causes Retried", "effect find on Retry: find entries", "effect mark on Retry: mark retry success or failure"]],
+  ])("keeps %s readable as a general graph", (_name, lines) => {
+    const result = layout(lines.join("\n"));
+    for (let left = 0; left < result.nodes.length; left++) {
+      for (let right = left + 1; right < result.nodes.length; right++) {
+        expect(overlaps(result.nodes[left].box, result.nodes[right].box)).toBe(false);
+      }
+    }
+    expect(result.nodes.every((node) => node.lines.length > 0)).toBe(true);
+    expect(result.edges.every((edge) => result.nodes.some((node) => node.id === edge.edge.from) && result.nodes.some((node) => node.id === edge.edge.to))).toBe(true);
+  });
+
+  it("wraps long labels within bounded node geometry", () => {
+    const result = layout([
+      "event VeryLongMessageNameThatShouldWrapAcrossSeveralLines",
+      "handler VeryLongHandlerNameThatShouldWrapToo",
+      "VeryLongMessageNameThatShouldWrapAcrossSeveralLines handled by VeryLongHandlerNameThatShouldWrapToo",
+    ].join("\n"));
+    expect(result.nodes.some((node) => node.lines.length > 1)).toBe(true);
+    expect(Math.max(...result.nodes.map((node) => node.box.width))).toBeLessThanOrEqual(260);
   });
 });

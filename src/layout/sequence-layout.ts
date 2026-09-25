@@ -25,6 +25,7 @@ import type {
   Statement,
 } from "../domain/diagram/ast";
 import { nodeIdOf } from "../domain/diagram/node-id";
+import { wrapText } from "./text";
 import {
   ACTIVATION_MIN_HEIGHT,
   ACTIVATION_NEST_OFFSET,
@@ -76,7 +77,7 @@ function estimateLabelWidth(label: string): number {
 
 /** Compute the participant box width for a label, bounded by a minimum. */
 function participantBoxWidth(label: string): number {
-  return Math.max(MIN_PARTICIPANT_WIDTH, estimateLabelWidth(label) + 16);
+  return Math.min(180, Math.max(MIN_PARTICIPANT_WIDTH, estimateLabelWidth(label) + 16));
 }
 
 /** The longest line of a (possibly multiline) note, in characters. */
@@ -90,12 +91,12 @@ function longestLine(text: string): number {
 function noteWidth(text: string): number {
   const longest = longestLine(text);
   if (longest === 0) return NOTE_MIN_WIDTH;
-  return Math.max(NOTE_MIN_WIDTH, longest * 7 + 16);
+  return Math.min(240, Math.max(NOTE_MIN_WIDTH, longest * 7 + 16));
 }
 
 /** Height of a note box, growing one line at a time for multiline text. */
 function noteHeight(text: string): number {
-  const lines = text.split("\n").length;
+  const lines = wrapText(text, noteWidth(text) - 16, 12).length;
   return NOTE_HEIGHT + Math.max(0, lines - 1) * NOTE_LINE_HEIGHT;
 }
 
@@ -202,6 +203,7 @@ function layoutNotes(
     stacked.set(anchorKey, stackIndex + 1);
 
     const textWidth = noteWidth(note.text);
+    const labelLines = wrapText(note.text, textWidth - 16, 12);
     const height = noteHeight(note.text);
     let anchorX: number;
     let width: number;
@@ -256,6 +258,7 @@ function layoutNotes(
       participants: note.participants,
       messageNumber: note.messageNumber,
       text: note.text,
+      labelLines,
       anchorX,
       anchorY,
       x,
@@ -349,19 +352,26 @@ export function layoutDiagram(diagram: SequenceDiagram): DiagramLayout {
   const hasActor = diagram.participants.some(
     (p) => p.participantType === "actor",
   );
-  const bandHeight = hasActor ? ACTOR_HEIGHT : PARTICIPANT_BOX_HEIGHT;
+  const participantLines = diagram.participants.map((p) =>
+    wrapText(p.label, participantBoxWidth(p.label) - 16, 13),
+  );
+  const labelBandHeight = Math.max(
+    PARTICIPANT_BOX_HEIGHT,
+    ...participantLines.map((lines) => lines.length * 15 + 9),
+  );
+  const bandHeight = hasActor ? Math.max(ACTOR_HEIGHT, labelBandHeight) : labelBandHeight;
   const titleHeight = diagram.title ? TITLE_HEIGHT : 0;
   /** Top edge of the participant band. */
   const bandTop = titleHeight + bandHeight;
   /** Y where every dashed lifeline starts. */
   const lifelineTop = bandTop + bandHeight;
   /** Vertical centering offset for name boxes when an actor forces a tall band. */
-  const boxOffset = hasActor ? (bandHeight - PARTICIPANT_BOX_HEIGHT) / 2 : 0;
+  const boxOffset = hasActor ? (bandHeight - labelBandHeight) / 2 : 0;
 
   const n = diagram.participants.length;
   const headerGap = PARTICIPANT_SPACING - MIN_PARTICIPANT_WIDTH;
   const participants: ParticipantLayout[] = [];
-  for (const p of diagram.participants) {
+  for (const [index, p] of diagram.participants.entries()) {
     const width = participantBoxWidth(p.label);
     const previous = participants.at(-1);
     const x = previous
@@ -375,6 +385,8 @@ export function layoutDiagram(diagram: SequenceDiagram): DiagramLayout {
       topY: bandTop + (p.participantType === "actor" ? 0 : boxOffset),
       lifelineTop,
       width,
+      labelLines: participantLines[index],
+      boxHeight: labelBandHeight,
       bottomY: 0, // filled in after the body is placed
       nodeId: nodeIdOf("participant", p.range),
     });
@@ -410,6 +422,11 @@ export function layoutDiagram(diagram: SequenceDiagram): DiagramLayout {
       lineStyle: statement.lineStyle,
       arrowStyle: statement.arrowStyle,
       label: statement.label,
+      labelLines: wrapText(
+        statement.label,
+        Math.max(80, Math.abs((participants[fromIndex ?? 0]?.x ?? MARGIN_X) - (participants[toIndex ?? 0]?.x ?? MARGIN_X)) - 28),
+        12,
+      ),
       y,
       // Missing endpoints are a semantic error handled by the validator;
       // layout defensively falls back to the margin and still records the

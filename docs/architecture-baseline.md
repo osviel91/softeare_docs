@@ -86,8 +86,8 @@ architecture.
   continues through `FlowViewModel → Flow layout → Flow renderer → SVG`; Catalog
   is a source-ordered document projection rendered by the browser UI; Topology
   continues through `TopologyViewModel → Topology layout → Topology renderer →
-  SVG`; Causal continues through `CausalViewModel` and has no layout or renderer
-  yet.
+  SVG`; Causal continues through `CausalViewModel → Causal layout → Causal SVG
+  renderer → SVG`.
 - The semantic model contains documented-system facts such as events, services,
   channels, brokers, publications, subscriptions, and event metadata. The
   `FlowViewModel` contains the row view's presentation decisions, but no pixel
@@ -122,6 +122,25 @@ architecture.
   known causal predecessor and does not imply external provenance. Effects remain
   owned by their handler; handlers with no known output remain terminal/partial.
   Legacy topology-only flows have an empty causal view.
+
+### Diagram visual responsibilities
+
+- Causal is an investigation projection: message nodes identify command/event
+  kind, provenance, and explicit initiation; handler nodes identify the
+  responsibility; effects are subordinate supporting consequences. Edge labels
+  distinguish handled-by, causes, and effect relationships.
+- Causal selection marks the selected node, immediate causal neighbors, and
+  transitive upstream/downstream paths using only authored causal edges.
+  Topology context never creates a causal highlight or edge. Camera state stays
+  in `DiagramViewport`, so selection does not reset pan, zoom, fit, or minimap
+  behavior.
+- Causal layout uses bounded deterministic text wrapping, non-overlapping node
+  rectangles, orthogonal causal connectors, and stacked effect groups. Cycles
+  and disconnected components remain finite and are not presented as inferred
+  causal order.
+- Sequence remains the temporal/collaboration projection. Its layout preserves
+  source order and lifelines while wrapping participant, message, and note text
+  inside bounded drawing geometry; it does not adopt Causal's graph hierarchy.
 
 ### Resource Dimensions
 

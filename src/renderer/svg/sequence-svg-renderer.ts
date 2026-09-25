@@ -197,8 +197,11 @@ function renderParticipant(
 ): string {
   const boxWidth = p.width;
   const boxX = p.x - boxWidth / 2;
-  const box = `<rect x="${boxX.toFixed(2)}" y="${p.topY.toFixed(2)}" width="${boxWidth}" height="${PARTICIPANT_BOX_HEIGHT}" rx="4" fill="${palette.participantFill}" stroke="${palette.line}" stroke-width="${STROKE_WIDTH}"${nodeIdAttribute(p.nodeId)}/>`;
-  const label = `<text x="${p.x.toFixed(2)}" y="${(p.topY + PARTICIPANT_BOX_HEIGHT / 2 + 4).toFixed(2)}" text-anchor="middle" font-size="13" fill="${palette.ink}">${escapeXml(p.label)}</text>`;
+  const boxHeight = p.boxHeight ?? PARTICIPANT_BOX_HEIGHT;
+  const lines = p.labelLines ?? [p.label];
+  const box = `<rect x="${boxX.toFixed(2)}" y="${p.topY.toFixed(2)}" width="${boxWidth}" height="${boxHeight}" rx="4" fill="${palette.participantFill}" stroke="${palette.line}" stroke-width="${STROKE_WIDTH}"${nodeIdAttribute(p.nodeId)}/>`;
+  const firstY = p.topY + boxHeight / 2 - (lines.length - 1) * 7.5 + 4;
+  const label = `<text x="${p.x.toFixed(2)}" y="${firstY.toFixed(2)}" text-anchor="middle" font-size="13" fill="${palette.ink}">${lines.map((line, index) => `<tspan x="${p.x.toFixed(2)}" dy="${index === 0 ? 0 : 15}">${escapeXml(line)}</tspan>`).join("")}</text>`;
   const line = `<line x1="${p.x.toFixed(2)}" y1="${p.lifelineTop.toFixed(2)}" x2="${p.x.toFixed(2)}" y2="${p.bottomY.toFixed(2)}" stroke="${palette.line}" stroke-width="${STROKE_WIDTH}" stroke-dasharray="4 3"/>`;
   return `<g class="participant" data-participant-id="${escapeXml(p.id)}" data-participant-label="${escapeXml(p.label)}" draggable="true">${box}${label}${line}</g>`;
 }
@@ -224,7 +227,8 @@ function renderActor(p: ParticipantLayout, palette: RenderPalette): string {
     `<line x1="${(cx - 8).toFixed(2)}" y1="${bodyMid.toFixed(2)}" x2="${(cx + 8).toFixed(2)}" y2="${bodyMid.toFixed(2)}" stroke="${palette.line}" stroke-width="${STROKE_WIDTH}"/>` +
     `<line x1="${cx.toFixed(2)}" y1="${bodyBottom.toFixed(2)}" x2="${(cx - 6).toFixed(2)}" y2="${top + ACTOR_FIGURE_HEIGHT + 2}" stroke="${palette.line}" stroke-width="${STROKE_WIDTH}"/>` +
     `<line x1="${cx.toFixed(2)}" y1="${bodyBottom.toFixed(2)}" x2="${(cx + 6).toFixed(2)}" y2="${top + ACTOR_FIGURE_HEIGHT + 2}" stroke="${palette.line}" stroke-width="${STROKE_WIDTH}"/>`;
-  const label = `<text x="${cx.toFixed(2)}" y="${(top + ACTOR_FIGURE_HEIGHT + 15).toFixed(2)}" text-anchor="middle" font-size="13" fill="${palette.ink}">${escapeXml(p.label)}</text>`;
+  const lines = p.labelLines ?? [p.label];
+  const label = `<text x="${cx.toFixed(2)}" y="${(top + ACTOR_FIGURE_HEIGHT + 15).toFixed(2)}" text-anchor="middle" font-size="13" fill="${palette.ink}">${lines.map((line, index) => `<tspan x="${cx.toFixed(2)}" dy="${index === 0 ? 0 : 15}">${escapeXml(line)}</tspan>`).join("")}</text>`;
   const line = `<line x1="${cx.toFixed(2)}" y1="${p.lifelineTop.toFixed(2)}" x2="${cx.toFixed(2)}" y2="${p.bottomY.toFixed(2)}" stroke="${palette.line}" stroke-width="${STROKE_WIDTH}" stroke-dasharray="4 3"/>`;
   return `<g class="participant participant--actor" data-participant-id="${escapeXml(p.id)}" data-participant-label="${escapeXml(p.label)}" data-participant-type="actor" draggable="true"${nodeIdAttribute(p.nodeId)}>${figure}${label}${line}</g>`;
 }
@@ -324,8 +328,9 @@ function renderSelfMessage(
 
   // The label sits beside the loop, vertically centered on it, rather than
   // above an arrow that no longer runs horizontally.
+  const lines = msg.labelLines ?? [msg.label];
   const label = msg.label
-    ? `<text x="${(right + SELF_MESSAGE_LABEL_GAP).toFixed(2)}" y="${(top + loop.height / 2 + 4).toFixed(2)}" font-size="12" fill="${palette.label}">${escapeXml(msg.label)}</text>`
+    ? `<text x="${(right + SELF_MESSAGE_LABEL_GAP).toFixed(2)}" y="${(top + loop.height / 2 - (lines.length - 1) * 7 + 4).toFixed(2)}" font-size="12" fill="${palette.label}">${lines.map((line, index) => `<tspan x="${(right + SELF_MESSAGE_LABEL_GAP).toFixed(2)}" dy="${index === 0 ? 0 : 14}">${escapeXml(line)}</tspan>`).join("")}</text>`
     : "";
 
   return `${path}${head}${renderSequenceBadge(msg, number, palette)}${label}`;
@@ -379,8 +384,9 @@ function renderMessage(
   );
 
   const labelX = ((msg.startX + msg.endX) / 2).toFixed(2);
+  const lines = msg.labelLines ?? [msg.label];
   const label = msg.label
-    ? `<text x="${labelX}" y="${(msg.y - 6).toFixed(2)}" text-anchor="middle" font-size="12" fill="${palette.label}">${escapeXml(msg.label)}</text>`
+    ? `<text x="${labelX}" y="${(msg.y - 6 - (lines.length - 1) * 14).toFixed(2)}" text-anchor="middle" font-size="12" fill="${palette.label}">${lines.map((line, index) => `<tspan x="${labelX}" dy="${index === 0 ? 0 : 14}">${escapeXml(line)}</tspan>`).join("")}</text>`
     : "";
 
   // The group is the addressable unit for review decoration: one wrapper covers
@@ -428,7 +434,7 @@ function renderNote(note: NoteLayout, palette: RenderPalette): string {
   const foldFill = `<path d="${foldPath}" fill="${palette.noteFoldFill}" stroke="${palette.noteStroke}" stroke-width="${STROKE_WIDTH}" stroke-linejoin="round"/>`;
 
   // Multiline notes stack one text element per line, centered vertically.
-  const lines = note.text.split("\n");
+  const lines = note.labelLines ?? note.text.split("\n");
   const labelX = (x + width / 2).toFixed(2);
   const firstY =
     y + height / 2 - ((lines.length - 1) * NOTE_LINE_HEIGHT) / 2 + 4;

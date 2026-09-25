@@ -163,6 +163,10 @@ export interface ParticipantLayout {
   bottomY: number;
   /** Width of the participant name box, so the renderer matches the layout. */
   width: number;
+  /** Wrapped label lines for long participant names. */
+  labelLines?: string[];
+  /** Height of the participant name box. */
+  boxHeight?: number;
   /**
    * Deterministic id of this participant's AST node. The renderer emits it as
    * `data-node-id`, so a rendered element maps back to its source. Optional so
@@ -180,6 +184,8 @@ export interface MessageLayout {
   /** Ending drawn at the head (and, for bidirectional, the tail). */
   arrowStyle: ArrowStyle;
   label: string;
+  /** Wrapped label lines for long message labels. */
+  labelLines?: string[];
   /** Vertical center line of this message row. */
   y: number;
   /** X coordinate of the arrow tail (on the sender's lifeline). */
@@ -231,6 +237,8 @@ export interface NoteLayout {
   messageNumber?: number;
   /** The note text, retained for reference and debugging. May contain `\n`. */
   text: string;
+  /** Wrapped lines used by the SVG callout. */
+  labelLines?: string[];
   /** Horizontal center of the bullet that toggles this note. */
   anchorX: number;
   /** Vertical center of the bullet that toggles this note. */

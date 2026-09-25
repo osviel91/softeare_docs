@@ -426,15 +426,19 @@ function CausalDetails({ item, view, onSourceSelect }: { item: NonNullable<Retur
       <strong>{"displayName" in item ? "Handler" : "name" in item ? "Event" : "Effect"}</strong>
       <h2>{label}</h2>
       {"provenance" in item && <p>Provenance: {item.provenance}</p>}
+      {"initiation" in item && <p>Initiation: {item.initiation ?? "not documented"}</p>}
       {"service" in item && item.service && <p>Service: {item.service}</p>}
       {"kind" in item && item.kind && <p>Kind: {item.kind}</p>}
+      {"metadata" in item && item.metadata.length > 0 && (
+        <p>Metadata: {item.metadata.map((entry) => `${entry.key}=${entry.value}`).join(", ")}</p>
+      )}
       {"displayName" in item && <>
         <p>Inputs: {inputsForHandler(view, item.id).map((entry) => entry.name).join(", ") || "not documented"}</p>
         <p>Outputs: {outputsForHandler(view, item.id).map((entry) => entry.name).join(", ") || "not documented"}</p>
         <p>Effects: {effectsForHandler(view, item.id).map((entry) => entry.description).join(", ") || "not documented"}</p>
       </>}
       {source && <button type="button" onClick={() => onSourceSelect?.(source)}>Reveal in source</button>}
-      <p className="event-causal__focus-note">Immediate upstream and downstream causal neighbors are highlighted.</p>
+      <p className="event-causal__focus-note">Selected, immediate, upstream, and downstream entities are highlighted from explicit causal edges only.</p>
     </aside>
   );
 }

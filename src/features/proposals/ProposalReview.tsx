@@ -60,6 +60,7 @@ export function ProposalReviewPanel({
   const [proposalState, setProposalState] = useState<
     "loading" | "loaded" | "failed"
   >("loading");
+  const [listCollapsed, setListCollapsed] = useState(false);
 
   const merge = async () => {
     if (!selected || !current || !analysis?.autoMergeable) return;
@@ -91,29 +92,13 @@ export function ProposalReviewPanel({
     setCurrent(null);
     setCurrentContent(null);
     setProposalState("loading");
-    if (initialProposalId && !resourceId) {
-      void client
-        .getChangeProposal(initialProposalId)
-        .then((proposal) => {
-          if (!active) return;
-          setProposalState("loaded");
-          setProposals([proposal]);
-          setSelected(proposal);
-        })
-        .catch(() => {
-          if (active) setError("Proposal not found or unavailable.");
-          if (active) setProposalState("failed");
-        });
-      return () => {
-        active = false;
-      };
-    }
     void loadProjectProposals(client, projectId)
       .then((entries) => {
         if (!active) return;
-        const items = entries
-          .filter(({ resource }) => !resourceId || resource.id === resourceId)
-          .map(({ proposal }) => proposal);
+        // Review navigation is project-scoped. The resource that opened the
+        // review may still be useful as the initial selection, but never narrows
+        // the sidebar's proposal set.
+        const items = entries.map(({ proposal }) => proposal);
         setProposals(items);
         setProposalState("loaded");
         setSelected(
@@ -140,7 +125,7 @@ export function ProposalReviewPanel({
       client.getChangeProposalDiff(selected.id),
       client.getChangeProposalMergeAnalysis(selected.id),
       client.readResource(projectId, selected.resourceId),
-      ])
+    ])
       .then(([nextDiff, nextAnalysis, read]) => {
         if (!active) return;
         setDiff(nextDiff);
@@ -159,28 +144,53 @@ export function ProposalReviewPanel({
   return (
     <div className="proposal-review-panel">
       <aside
-        className="proposal-review-panel__list"
+        className={`proposal-review-panel__list${listCollapsed ? " is-collapsed" : ""}`}
         aria-label="Change proposals"
       >
-        <button type="button" className="button button--ghost" onClick={onBack}>
-          Back to changes
+        <button
+          type="button"
+          className="button button--ghost proposal-review-panel__collapse"
+          aria-label={
+            listCollapsed
+              ? "Expand project changes"
+              : "Collapse project changes"
+          }
+          title={
+            listCollapsed
+              ? "Expand project changes"
+              : "Collapse project changes"
+          }
+          onClick={() => setListCollapsed((value) => !value)}
+        >
+          {listCollapsed ? "›" : "‹"}
         </button>
-        <h1>{resourceId ? "Change proposals" : "Project changes"}</h1>
-        {proposalState === "loaded" && proposals.length === 0 && !error && (
-          <p>No proposals for this resource.</p>
+        {!listCollapsed && (
+          <>
+            <button
+              type="button"
+              className="button button--ghost"
+              onClick={onBack}
+            >
+              Back to changes
+            </button>
+            <h1>Project changes</h1>
+            {proposalState === "loaded" && proposals.length === 0 && !error && (
+              <p>No open project changes.</p>
+            )}
+            {proposals.map((item) => (
+              <button
+                type="button"
+                className={selected?.id === item.id ? "is-active" : ""}
+                key={item.id}
+                onClick={() => setSelected(item)}
+              >
+                <strong>{item.title}</strong>
+                <span>{item.status}</span>
+              </button>
+            ))}
+            {error && <p role="alert">{error}</p>}
+          </>
         )}
-        {proposals.map((item) => (
-          <button
-            type="button"
-            className={selected?.id === item.id ? "is-active" : ""}
-            key={item.id}
-            onClick={() => setSelected(item)}
-          >
-            <strong>{item.title}</strong>
-            <span>{item.status}</span>
-          </button>
-        ))}
-        {error && <p role="alert">{error}</p>}
       </aside>
       <main className="proposal-review-panel__main">
         {selected && diff && current && analysis ? (
@@ -216,7 +226,8 @@ function mergeErrorMessage(error: unknown): string {
     if (error.code === "unauthorized") return "Sign in to merge this proposal.";
     if (error.code === "forbidden")
       return "You are not authorized to merge this proposal.";
-    if (error.code === "not_found") return "This proposal or resource no longer exists.";
+    if (error.code === "not_found")
+      return "This proposal or resource no longer exists.";
     if (error.code === "invalid") return error.message;
     if (error.code === "conflict") {
       if (error.details.reason === "proposal_changed")
@@ -402,11 +413,10 @@ export default function ProposalReview({
   const [changeIndex, setChangeIndex] = useState(0);
   const [eventFlowView, setEventFlowView] = useState<EventFlowView>("flow");
   const [linkedNavigation, setLinkedNavigation] = useState(true);
-  // The active linked camera plus which pane last moved it. A pane never
-  // receives its own camera back, so synchronization can never echo between
-  // the two views.
+  // One shared camera plus the pane that last moved it. Every visible pane can
+  // join this group; followers adopt the camera without echoing it back.
   const [linkedCamera, setLinkedCamera] = useState<{
-    origin: "base" | "proposed";
+    origin: "base" | "current" | "proposed";
     transform: DiagramViewportTransform;
   } | null>(null);
   const representation = resourceRepresentationOfType(diff.type);
@@ -456,26 +466,24 @@ export default function ProposalReview({
   useEffect(() => {
     if (!currentTarget) return;
     if (view === "changes") return;
-    const element = document.getElementById(`review-target-${currentTarget.id}`);
+    const element = document.getElementById(
+      `review-target-${currentTarget.id}`,
+    );
     element?.scrollIntoView?.({ block: "nearest" });
     element?.focus();
   }, [currentTarget, view]);
 
-  const handleBaseCamera = useCallback(
-    (transform: DiagramViewportTransform) =>
-      setLinkedCamera({ origin: "base", transform }),
-    [],
-  );
-  const handleProposedCamera = useCallback(
-    (transform: DiagramViewportTransform) =>
-      setLinkedCamera({ origin: "proposed", transform }),
+  const handleCamera = useCallback(
+    (origin: "base" | "current" | "proposed") =>
+      (transform: DiagramViewportTransform) =>
+        setLinkedCamera({ origin, transform }),
     [],
   );
 
   const artifact = (
     label: string,
     content: string,
-    side: "base" | "proposed",
+    side: "base" | "current" | "proposed",
   ) => {
     // In linked mode a pane follows the *other* pane's camera and reports its
     // own; the origin pane never gets its own camera echoed back.
@@ -483,11 +491,7 @@ export default function ProposalReview({
       linkedNavigation && linkedCamera && linkedCamera.origin !== side
         ? linkedCamera.transform
         : null;
-    const onTransformChange = linkedNavigation
-      ? side === "base"
-        ? handleBaseCamera
-        : handleProposedCamera
-      : undefined;
+    const onTransformChange = linkedNavigation ? handleCamera(side) : undefined;
     return (
       <section
         className="proposal-review__artifact"
@@ -503,7 +507,7 @@ export default function ProposalReview({
             onViewChange={setEventFlowView}
             reviewChanges={semanticChanges}
             reviewMode
-            reviewSide={side}
+            reviewSide={side === "proposed" ? "proposed" : "base"}
             linkedTransform={linkedTransform}
             onTransformChange={onTransformChange}
             activeReviewChange={currentTarget?.id}
@@ -514,7 +518,7 @@ export default function ProposalReview({
             source={content}
             reviewChanges={semanticChanges}
             reviewMode
-            reviewSide={side}
+            reviewSide={side === "proposed" ? "proposed" : "base"}
             linkedTransform={linkedTransform}
             onTransformChange={onTransformChange}
             activeReviewChange={currentTarget?.id}
@@ -583,13 +587,16 @@ export default function ProposalReview({
           )}
       </header>
       <div className="proposal-review__toolbar">
-        <nav className="proposal-review__tabs" aria-label="Proposal review views">
+        <nav
+          className="proposal-review__tabs"
+          aria-label="Proposal review views"
+        >
           {(
-          [
-            ["changes", "Changes"],
-            ["compare", "Compare"],
-            ["source", "Source"],
-          ] as const
+            [
+              ["changes", "Changes"],
+              ["compare", "Compare"],
+              ["source", "Source"],
+            ] as const
           ).map(([key, label]) => (
             <button
               type="button"
@@ -602,7 +609,10 @@ export default function ProposalReview({
             </button>
           ))}
         </nav>
-        <div className="proposal-review__decision" aria-label="Proposal decision">
+        <div
+          className="proposal-review__decision"
+          aria-label="Proposal decision"
+        >
           {canMerge && proposal.status === "open" && analysis.autoMergeable ? (
             <button type="button" className="button" onClick={onMerge}>
               Merge proposal
@@ -695,11 +705,11 @@ export default function ProposalReview({
             </label>
           </div>
           <div className="proposal-review__artifacts">
-          {artifact("BASE", diff.baseContent, "base")}
-          {diff.stale &&
-            currentContent !== undefined &&
-            artifact("CURRENT", currentContent, "base")}
-          {artifact("PROPOSED", diff.proposedContent, "proposed")}
+            {artifact("BASE", diff.baseContent, "base")}
+            {diff.stale &&
+              currentContent !== undefined &&
+              artifact("CURRENT", currentContent, "current")}
+            {artifact("PROPOSED", diff.proposedContent, "proposed")}
           </div>
           <ChangeNavigator
             targets={navigable}

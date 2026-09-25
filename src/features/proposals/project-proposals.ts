@@ -109,3 +109,34 @@ export function useResourceProposalCount(
   }, [client, projectId, resourceId]);
   return count;
 }
+
+export function useProjectResourceProposalCounts(
+  client: ServerApiClient,
+  projectId: string | null,
+): Record<string, number> {
+  const [counts, setCounts] = useState<Record<string, number>>({});
+  useEffect(() => {
+    if (!projectId) {
+      setCounts({});
+      return;
+    }
+    let active = true;
+    void loadProjectProposals(client, projectId)
+      .then((entries) => {
+        if (!active) return;
+        const next: Record<string, number> = {};
+        for (const { proposal } of entries) {
+          if (proposal.status === "open")
+            next[proposal.resourceId] = (next[proposal.resourceId] ?? 0) + 1;
+        }
+        setCounts(next);
+      })
+      .catch(() => {
+        if (active) setCounts({});
+      });
+    return () => {
+      active = false;
+    };
+  }, [client, projectId]);
+  return counts;
+}

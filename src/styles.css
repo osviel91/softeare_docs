@@ -81,6 +81,16 @@ body {
   border-right: 1px solid var(--border);
   overflow: auto;
 }
+.proposal-review-panel__list.is-collapsed {
+  width: 42px;
+  flex-basis: 42px;
+  padding: 8px;
+}
+.proposal-review-panel__collapse {
+  width: 100%;
+  min-width: 0;
+  padding: 6px;
+}
 .proposal-review-panel__list > button:not(.button) {
   display: block;
   width: 100%;
@@ -105,9 +115,33 @@ body {
   flex: 1;
   overflow: auto;
 }
+.proposal-review-panel__list.is-collapsed + .proposal-review-panel__main {
+  flex-basis: 0;
+}
+.explorer__proposal-indicator {
+  margin-left: auto;
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+}
+.resource-header__history {
+  margin-left: 8px;
+  padding: 5px 9px;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.resource-header__history:hover,
+.resource-header__history:focus-visible {
+  color: var(--text);
+  border-color: var(--accent);
+}
 .proposal-review {
-  max-width: 1500px;
-  margin: 0 auto;
+  width: 100%;
+  max-width: none;
+  margin: 0;
   padding: 24px clamp(18px, 3vw, 44px);
   min-height: 100%;
   box-sizing: border-box;

@@ -183,6 +183,7 @@ import { ProposalReviewPanel } from "./features/proposals/ProposalReview";
 import ChangesInbox from "./features/proposals/ChangesInbox";
 import {
   useProjectProposalCount,
+  useProjectResourceProposalCounts,
   useResourceProposalCount,
 } from "./features/proposals/project-proposals";
 import type { ResourceMetadata } from "./domain/workspace/resource-metadata";
@@ -387,6 +388,7 @@ export default function App() {
   );
   const [page, setPage] = useState<AppPage>("workspace");
   const [view, setView] = useState<EditorView>("code");
+  const [historyResourceScoped, setHistoryResourceScoped] = useState(false);
   const [autoUpdate, setAutoUpdate] = useState(true);
   const workspaceRef = useRef<HTMLElement | null>(null);
   const [explorerWidth, setExplorerWidth] = useState(252);
@@ -1232,6 +1234,10 @@ export default function App() {
   const canReviewProjectProposals =
     workspaceMode === "server" && selectedProjectId !== null;
   const openProposalCount = useProjectProposalCount(
+    apiClient,
+    canReviewProjectProposals ? selectedProjectId : null,
+  );
+  const openProposalCounts = useProjectResourceProposalCounts(
     apiClient,
     canReviewProjectProposals ? selectedProjectId : null,
   );
@@ -2365,7 +2371,10 @@ export default function App() {
                 className={`segmented__option${view === "history" ? " segmented__option--active" : ""}`}
                 data-testid="view-history"
                 aria-selected={view === "history"}
-                onClick={() => setView("history")}
+                onClick={() => {
+                  setHistoryResourceScoped(false);
+                  setView("history");
+                }}
               >
                 <span aria-hidden="true">⟲</span> History
               </button>
@@ -2536,6 +2545,7 @@ export default function App() {
                   selectedProjectId={selectedProjectId}
                   selectedDiagramId={selectedDiagramId}
                   selectedNoteId={selectedNoteId}
+                  openProposalCounts={openProposalCounts}
                   isLoading={isLoading}
                   onCreateProject={createProjectHere}
                   switcher={
@@ -2700,7 +2710,11 @@ export default function App() {
                 <ProjectOverview index={index} />
               ) : view === "history" ? (
                 <HistoryPanel
-                  versions={history.projectVersions}
+                  versions={
+                    historyResourceScoped
+                      ? history.versions
+                      : history.projectVersions
+                  }
                   isLoading={history.isLoading}
                   hasDiagram={selectedDiagram !== null}
                   currentSource={historySource ?? ""}
@@ -2711,6 +2725,8 @@ export default function App() {
                     projects.find((project) => project.id === selectedProjectId)
                       ?.name ?? null
                   }
+                  resourceScoped={historyResourceScoped}
+                  onShowProjectHistory={() => setHistoryResourceScoped(false)}
                   onSaveVersion={() => {
                     void history.saveVersion(source);
                   }}
@@ -2755,6 +2771,16 @@ export default function App() {
                       writable={metadataWritable}
                       onSave={saveResourceMetadata}
                     />
+                    <button
+                      type="button"
+                      className="resource-header__history"
+                      onClick={() => {
+                        setHistoryResourceScoped(true);
+                        setView("history");
+                      }}
+                    >
+                      History
+                    </button>
                     {canReviewProposals && resourceProposalCount > 0 && (
                       <button
                         type="button"
@@ -2808,6 +2834,16 @@ export default function App() {
                       writable={metadataWritable}
                       onSave={saveResourceMetadata}
                     />
+                    <button
+                      type="button"
+                      className="resource-header__history"
+                      onClick={() => {
+                        setHistoryResourceScoped(true);
+                        setView("history");
+                      }}
+                    >
+                      History
+                    </button>
                     {canReviewProposals && resourceProposalCount > 0 && (
                       <button
                         type="button"

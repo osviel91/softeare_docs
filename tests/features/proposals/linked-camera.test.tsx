@@ -1,10 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  fireEvent,
-  render,
-  screen,
-  within,
-} from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import ProposalReview from "../../../src/features/proposals/ProposalReview";
 import { diffResources } from "../../../src/domain/diff/resource-diff";
 import type { ServerChangeProposalDiff } from "../../../src/workspace/server/api-client";
@@ -45,7 +40,7 @@ function stubPaneSize(width: number, height: number) {
   } as DOMRect);
 }
 
-function renderCompare() {
+function renderCompare(stale = false) {
   render(
     <ProposalReview
       proposal={{
@@ -60,7 +55,12 @@ function renderCompare() {
         status: "open",
         version: 1,
       }}
-      diff={makeDiff()}
+      diff={{ ...makeDiff(), stale }}
+      currentContent={
+        stale
+          ? "title Flow\nparticipant A\nparticipant B\nA -> B: current"
+          : undefined
+      }
       analysis={{
         baseRevision: 1,
         currentRevision: 1,
@@ -87,8 +87,12 @@ function renderCompare() {
     />,
   );
   fireEvent.click(screen.getByRole("button", { name: "Compare" }));
-  const [base, proposed] = screen.getAllByTestId("diagram-viewport");
-  return { base, proposed };
+  const panes = screen.getAllByTestId("diagram-viewport");
+  return {
+    base: panes[0],
+    current: stale ? panes[1] : null,
+    proposed: panes[stale ? 2 : 1],
+  };
 }
 
 const zoomOf = (viewport: HTMLElement) =>
@@ -177,5 +181,27 @@ describe("linked camera in proposal compare", () => {
 
     fireEvent.click(within(proposed).getByTestId("zoom-in"));
     expect(zoomOf(base)).toBe(zoomOf(proposed));
+  });
+
+  it("synchronizes all three panes through one viewport group", () => {
+    const { base, current, proposed } = renderCompare(true);
+    if (!current || !proposed)
+      throw new Error("expected three comparison panes");
+
+    fireEvent.click(within(base).getByTestId("zoom-in"));
+    expect(zoomOf(current)).toBe(zoomOf(base));
+    expect(zoomOf(proposed)).toBe(zoomOf(base));
+
+    fireEvent.click(within(proposed).getByTestId("zoom-out"));
+    expect(zoomOf(base)).toBe(zoomOf(proposed));
+    expect(zoomOf(current)).toBe(zoomOf(proposed));
+
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: /link pan and zoom/i }),
+    );
+    const currentZoom = zoomOf(current);
+    fireEvent.click(within(base).getByTestId("zoom-in"));
+    expect(zoomOf(current)).toBe(currentZoom);
+    expect(zoomOf(proposed)).not.toBe(zoomOf(base));
   });
 });

@@ -23,6 +23,16 @@ describe("ProposalReviewPanel", () => {
   it("resolves an inbox proposal without selected-resource context", async () => {
     const client = {
       getChangeProposal: vi.fn().mockResolvedValue(proposal),
+      listResources: vi.fn().mockResolvedValue([
+        {
+          id: proposal.resourceId,
+          projectId: "project-1",
+          path: "target.seq",
+          type: "sequence-diagram",
+          revision: 2,
+        },
+      ]),
+      listChangeProposals: vi.fn().mockResolvedValue([proposal]),
       getChangeProposalDiff: vi.fn().mockResolvedValue({
         proposalId: proposal.id,
         resourceId: proposal.resourceId,
@@ -85,7 +95,10 @@ describe("ProposalReviewPanel", () => {
     expect(await screen.findByTestId("proposal-review")).toHaveTextContent(
       "Direct inbox proposal",
     );
-    expect(client.getChangeProposal).toHaveBeenCalledWith(proposal.id);
+    expect(client.listChangeProposals).toHaveBeenCalledWith(
+      "project-1",
+      proposal.resourceId,
+    );
     expect(screen.getByTestId("proposal-review")).toHaveTextContent(
       "target.seq",
     );

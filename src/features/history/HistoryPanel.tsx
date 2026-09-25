@@ -47,6 +47,9 @@ export interface HistoryPanelProps {
   kindForDiagram?: (diagramId: string) => string;
   /** The project whose history this is, shown in the header when known. */
   projectName?: string | null;
+  /** When entered from a resource, hide the other project branches. */
+  resourceScoped?: boolean;
+  onShowProjectHistory?: () => void;
 }
 
 /** One diagram's branch: its id and every version recorded for it. */
@@ -94,6 +97,8 @@ export default function HistoryPanel({
   labelForDiagram,
   kindForDiagram,
   projectName = null,
+  resourceScoped = false,
+  onShowProjectHistory,
 }: HistoryPanelProps) {
   const branches = useMemo(() => branchesOf(versions), [versions]);
 
@@ -110,7 +115,9 @@ export default function HistoryPanel({
     <section className="history" data-testid="history-panel">
       <header className="history__header">
         <div className="history__heading">
-          <h2 className="history__title">Trajectory</h2>
+          <h2 className="history__title">
+            {resourceScoped ? "Trajectory" : "Project history"}
+          </h2>
           {projectName && (
             <span className="history__project" data-testid="history-project">
               {projectName}
@@ -130,6 +137,15 @@ export default function HistoryPanel({
         >
           Save version
         </button>
+        {resourceScoped && onShowProjectHistory && (
+          <button
+            type="button"
+            className="button button--ghost"
+            onClick={onShowProjectHistory}
+          >
+            Project history
+          </button>
+        )}
       </header>
 
       {!hasDiagram ? (

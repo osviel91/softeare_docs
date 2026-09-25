@@ -57,6 +57,8 @@ export interface ExplorerProps {
   selectedDiagramId: string | null;
   /** The loaded note id, or `null` when none is loaded. */
   selectedNoteId?: string | null;
+  /** Open proposal counts keyed by server resource id. */
+  openProposalCounts?: Record<string, number>;
   /** True while the initial load or any action is in flight. */
   isLoading: boolean;
   /** Called with a proposed project name when the user creates one. */
@@ -137,6 +139,7 @@ export default function Explorer({
   selectedProjectId,
   selectedDiagramId,
   selectedNoteId = null,
+  openProposalCounts = {},
   isLoading,
   onCreateProject,
   onAddMenu,
@@ -462,6 +465,18 @@ export default function Explorer({
                               ▦
                             </span>
                             {diagramName(diagram)}
+                            {(openProposalCounts[diagram.id] ?? 0) > 0 && (
+                              <span
+                                className="explorer__proposal-indicator"
+                                title={`${openProposalCounts[diagram.id]} open change${openProposalCounts[diagram.id] === 1 ? "" : "s"}`}
+                                aria-label={`${openProposalCounts[diagram.id]} open change${openProposalCounts[diagram.id] === 1 ? "" : "s"}`}
+                              >
+                                ◆
+                                {openProposalCounts[diagram.id] > 1
+                                  ? ` ${openProposalCounts[diagram.id]}`
+                                  : ""}
+                              </span>
+                            )}
                           </button>
                           {onDiagramMenu && (
                             <button
@@ -537,6 +552,18 @@ export default function Explorer({
                               ¶
                             </span>
                             {noteName(note)}
+                            {(openProposalCounts[note.id] ?? 0) > 0 && (
+                              <span
+                                className="explorer__proposal-indicator"
+                                title={`${openProposalCounts[note.id]} open change${openProposalCounts[note.id] === 1 ? "" : "s"}`}
+                                aria-label={`${openProposalCounts[note.id]} open change${openProposalCounts[note.id] === 1 ? "" : "s"}`}
+                              >
+                                ◆
+                                {openProposalCounts[note.id] > 1
+                                  ? ` ${openProposalCounts[note.id]}`
+                                  : ""}
+                              </span>
+                            )}
                           </button>
                           {onNoteMenu && (
                             <button

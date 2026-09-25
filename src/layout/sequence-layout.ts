@@ -25,10 +25,11 @@ import type {
   Statement,
 } from "../domain/diagram/ast";
 import { nodeIdOf } from "../domain/diagram/node-id";
-import { wrapText } from "./text";
+import { estimateTextWidth, wrapText } from "./text";
 import {
   ACTIVATION_MIN_HEIGHT,
   ACTIVATION_NEST_OFFSET,
+  ACTOR_FIGURE_HEIGHT,
   ACTOR_HEIGHT,
   FRAGMENT_BOTTOM_PADDING,
   FRAGMENT_DIVIDER_HEIGHT,
@@ -73,6 +74,11 @@ function estimateLabelWidth(label: string): number {
   if (label.length === 0) return MARGIN_X;
   // ~7px per character is a reasonable average for a monospace-ish estimate.
   return Math.max(MARGIN_X, label.length * 7 + 8);
+}
+
+/** Extra vertical space needed by a multiline message label. */
+function messageRowHeight(lines: string[]): number {
+  return MESSAGE_ROW_HEIGHT + Math.max(0, lines.length - 1) * 14;
 }
 
 /** Compute the participant box width for a label, bounded by a minimum. */
@@ -359,7 +365,15 @@ export function layoutDiagram(diagram: SequenceDiagram): DiagramLayout {
     PARTICIPANT_BOX_HEIGHT,
     ...participantLines.map((lines) => lines.length * 15 + 9),
   );
-  const bandHeight = hasActor ? Math.max(ACTOR_HEIGHT, labelBandHeight) : labelBandHeight;
+  const actorLabelHeight = Math.max(
+    ACTOR_HEIGHT,
+    ...participantLines.map((lines, index) =>
+      diagram.participants[index].participantType === "actor"
+        ? ACTOR_FIGURE_HEIGHT + (lines.length - 1) * 15 + 18
+        : 0,
+    ),
+  );
+  const bandHeight = hasActor ? Math.max(actorLabelHeight, labelBandHeight) : labelBandHeight;
   const titleHeight = diagram.title ? TITLE_HEIGHT : 0;
   /** Top edge of the participant band. */
   const bandTop = titleHeight + bandHeight;
@@ -407,8 +421,8 @@ export function layoutDiagram(diagram: SequenceDiagram): DiagramLayout {
     participants.at(-1)!.x + participants.at(-1)!.width / 2 + MARGIN_X,
   );
 
-  /** Place one message arrow at `y`. */
-  const layoutMessage = (statement: MessageNode, y: number): void => {
+  /** Place one message arrow, moving it down when its label needs more room. */
+  const layoutMessage = (statement: MessageNode): void => {
     const fromIndex = byId.get(statement.from);
     const toIndex = byId.get(statement.to);
     // Endpoints that resolve to the same lifeline are a self-message (either
@@ -416,6 +430,17 @@ export function layoutDiagram(diagram: SequenceDiagram): DiagramLayout {
     // `fromIndex === toIndex` can only be true when both resolved, so an
     // unknown-participant message (a semantic error) is not mistaken for one.
     const isSelf = fromIndex !== undefined && fromIndex === toIndex;
+    const startX = fromIndex !== undefined ? participants[fromIndex].x : MARGIN_X;
+    const endX = toIndex !== undefined ? participants[toIndex].x : MARGIN_X;
+    const isSelfMessage = isSelf;
+    const labelLines = wrapText(
+      statement.label,
+      isSelfMessage
+        ? 80
+        : Math.max(80, Math.abs(startX - endX) - 28),
+      12,
+    );
+    const y = cursorY + (isSelfMessage ? 0 : Math.max(0, labelLines.length - 1) * 14);
     messages.push({
       from: statement.from,
       to: statement.to,
@@ -423,21 +448,20 @@ export function layoutDiagram(diagram: SequenceDiagram): DiagramLayout {
       arrowStyle: statement.arrowStyle,
       label: statement.label,
       semantics: statement.semantics,
-      labelLines: wrapText(
-        statement.label,
-        Math.max(80, Math.abs((participants[fromIndex ?? 0]?.x ?? MARGIN_X) - (participants[toIndex ?? 0]?.x ?? MARGIN_X)) - 28),
-        12,
-      ),
+      labelLines,
       y,
       // Missing endpoints are a semantic error handled by the validator;
       // layout defensively falls back to the margin and still records the
       // message rather than dropping it.
-      startX: fromIndex !== undefined ? participants[fromIndex].x : MARGIN_X,
-      endX: toIndex !== undefined ? participants[toIndex].x : MARGIN_X,
+      startX,
+      endX,
       // A self-message would otherwise be a zero-length horizontal arrow; the
       // loop geometry tells the renderer to draw the cycle instead.
       selfLoop: isSelf
-        ? { width: SELF_MESSAGE_WIDTH, height: SELF_MESSAGE_HEIGHT }
+        ? {
+            width: SELF_MESSAGE_WIDTH,
+            height: SELF_MESSAGE_HEIGHT + Math.max(0, labelLines.length - 1) * 14,
+          }
         : undefined,
       nodeId: nodeIdOf("message", statement.range),
     });
@@ -449,6 +473,7 @@ export function layoutDiagram(diagram: SequenceDiagram): DiagramLayout {
    * no participant (or only unknown ones) spans the whole canvas width.
    */
   const fragmentExtent = (
+    statement: FragmentStatement,
     references: Set<ParticipantId>,
     depth: number,
   ): { left: number; right: number } => {
@@ -466,10 +491,20 @@ export function layoutDiagram(diagram: SequenceDiagram): DiagramLayout {
     const inset = depth * FRAGMENT_INSET;
     left += inset;
     right -= inset;
-    if (right - left < FRAGMENT_MIN_WIDTH) {
+    const branches = fragmentBranches(statement);
+    const headerWidth = estimateTextWidth(
+      `${statement.type} ${branches[0]?.label ?? ""}`,
+      11,
+    ) + 28;
+    const branchWidth = Math.max(
+      0,
+      ...branches.map((branch) => estimateTextWidth(branch.label, 11) + 16),
+    );
+    const minimumWidth = Math.max(FRAGMENT_MIN_WIDTH, headerWidth, branchWidth);
+    if (right - left < minimumWidth) {
       const mid = (left + right) / 2;
-      left = mid - FRAGMENT_MIN_WIDTH / 2;
-      right = mid + FRAGMENT_MIN_WIDTH / 2;
+      left = mid - minimumWidth / 2;
+      right = mid + minimumWidth / 2;
     }
     return { left: Math.max(0, left), right };
   };
@@ -480,6 +515,7 @@ export function layoutDiagram(diagram: SequenceDiagram): DiagramLayout {
     depth: number,
   ): void => {
     const { left, right } = fragmentExtent(
+      statement,
       referencedParticipants([statement]),
       depth,
     );
@@ -526,8 +562,9 @@ export function layoutDiagram(diagram: SequenceDiagram): DiagramLayout {
   const layoutBlock = (statements: Statement[], depth: number): void => {
     for (const statement of statements) {
       if (statement.type === "message") {
-        layoutMessage(statement, cursorY);
-        cursorY += MESSAGE_ROW_HEIGHT;
+        layoutMessage(statement);
+        const message = messages.at(-1)!;
+        cursorY = message.y + messageRowHeight(message.labelLines ?? [message.label]);
         continue;
       }
       if (statement.type === "activation") {

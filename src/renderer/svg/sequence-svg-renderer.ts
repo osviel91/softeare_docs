@@ -335,7 +335,7 @@ function renderSelfMessage(
   const semantic = renderSemanticBadge(
     msg,
     right + SELF_MESSAGE_LABEL_GAP,
-    top + loop.height / 2 + 18,
+    top + loop.height / 2 + (lines.length - 1) * 7 + 18,
     "start",
     palette,
   );

@@ -9,6 +9,7 @@ import type {
   SequenceDiagram,
 } from "../../src/domain/diagram/ast";
 import {
+  ACTOR_FIGURE_HEIGHT,
   ACTOR_HEIGHT,
   FRAGMENT_DIVIDER_HEIGHT,
   FRAGMENT_HEADER_HEIGHT,
@@ -236,6 +237,23 @@ describe("layoutDiagram — message rows and canvas size", () => {
     expect(layout.width).toBe(
       MARGIN_X + layout.participants.length * PARTICIPANT_SPACING,
     );
+  });
+
+  it("grows message rows for wrapped labels instead of overlapping rows", () => {
+    const layout = layoutDiagram(
+      withStatements([
+        message("This is a deliberately long message label that wraps"),
+        message("next"),
+      ]),
+    );
+    const [first, second] = layout.messages;
+    expect(first.labelLines?.length).toBeGreaterThan(1);
+    expect(second.y - first.y).toBe(
+      MESSAGE_ROW_HEIGHT + (first.labelLines!.length - 1) * 14,
+    );
+    expect(
+      first.y - 6 - (first.labelLines!.length - 1) * 14,
+    ).toBeGreaterThan(layout.participants[0].lifelineTop);
   });
 
   it("flows the title text through to the layout", () => {
@@ -802,6 +820,23 @@ describe("layoutDiagram — self messages", () => {
       msg.y + MESSAGE_ROW_HEIGHT,
     );
   });
+
+  it("grows a multiline self-message loop and keeps its label clear", () => {
+    const layout = layoutDiagram(
+      oneParticipant([
+        selfMessage("This is a long self-message label that wraps"),
+        message("next"),
+      ]),
+    );
+    const [self, next] = layout.messages;
+    expect(self.labelLines?.length).toBeGreaterThan(1);
+    expect(self.selfLoop!.height).toBe(
+      SELF_MESSAGE_HEIGHT + (self.labelLines!.length - 1) * 14,
+    );
+    expect(next.y - self.y).toBe(
+      MESSAGE_ROW_HEIGHT + (self.labelLines!.length - 1) * 14,
+    );
+  });
 });
 
 describe("layoutDiagram — activations", () => {
@@ -1084,6 +1119,26 @@ describe("layoutDiagram — actors", () => {
       }),
     );
     expect(layout.messages[0].y).toBe(ACTOR_HEIGHT * 2 + MESSAGE_TOP_CLEARANCE);
+  });
+
+  it("grows the actor band for a multiline actor label", () => {
+    const layout = layoutDiagram(
+      diagram({
+        participants: [
+          {
+            ...participantNode("User", "actor"),
+            label: "A very long actor label that wraps into several lines",
+          },
+          participantNode("API"),
+        ],
+        statements: [messageNode("User", "API", "Login")],
+      }),
+    );
+    const actor = layout.participants[0];
+    expect(actor.labelLines?.length).toBeGreaterThan(1);
+    expect(actor.lifelineTop).toBeGreaterThan(
+      actor.topY + ACTOR_FIGURE_HEIGHT + actor.labelLines!.length * 15,
+    );
   });
 });
 

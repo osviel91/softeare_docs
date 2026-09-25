@@ -16,6 +16,7 @@ import {
 } from "../../src/persistence/server-runtime";
 import { createProjectCatalog } from "../../src/application/project-catalog";
 import { createChangeProposalService } from "../../src/application/change-proposal-service";
+import { createResourceTrajectoryService } from "../../src/application/resource-trajectory-service";
 import type { McpConfig } from "./config";
 import { createMcpAuthenticator, type McpAuthenticator } from "./auth/bearer";
 import { ProcessRateLimiter, type RateLimiter } from "./rate-limit";
@@ -103,11 +104,13 @@ export async function createMcpService(
     projects: runtime.projects,
     mutations: runtime.mutations,
   });
+  const trajectory = createResourceTrajectoryService({ projects: runtime.projects });
 
   const deps: McpHandlerDeps = {
     config,
     catalog,
     proposals,
+    trajectory,
     authenticator: createMcpAuthenticator({
       credentials: runtime.credentials,
       pepper: runtime.tokenPepper,

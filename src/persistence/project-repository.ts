@@ -29,6 +29,7 @@ import {
   text,
 } from "./rows";
 import { normalizeResourcePath } from "./resource-path";
+import type { ResourceType } from "../domain/workspace/resource-id";
 import { isOk, type Result } from "../shared/result/result";
 import type {
   NewResource,
@@ -44,6 +45,7 @@ import type {
   ResourceAuthorship,
   ResourceRevision,
 } from "../domain/workspace/resource-revision";
+import { resourceTrajectoryOf } from "../domain/workspace/resource-trajectory";
 
 export type {
   NewResource,
@@ -401,6 +403,65 @@ export function createProjectRepository(
       );
       const row = result.rows[0];
       return row ? toResourceRevision(row) : null;
+    },
+
+    async listTrajectory(projectId, options = {}) {
+      const limit = Math.min(100, Math.max(1, Math.floor(options.limit ?? 50)));
+      const cursor = Math.max(0, Math.floor(options.cursor ?? 0));
+      const resourceFilter = options.resourceId === undefined ? "" : " AND r.id = $2";
+      const params: SqlValue[] = [projectId];
+      if (options.resourceId !== undefined) params.push(options.resourceId);
+      const result = await client.query(
+        `SELECT r.id, r.project_id, r.path, r.type,
+                rr.revision, rr.content, rr.metadata, rr.authorship, rr.created_at,
+                cp.id AS proposal_id, cp.title AS proposal_title,
+                cp.authorship AS proposal_authorship,
+                cp.merge_authorship, cp.merged_at, cp.base_revision
+           FROM resources r
+           JOIN resource_revisions rr ON rr.resource_id = r.id
+           LEFT JOIN change_proposals cp
+             ON cp.resource_id = rr.resource_id
+            AND cp.merged_revision = rr.revision
+            AND cp.status = 'merged'
+          WHERE r.project_id = $1${resourceFilter}
+          ORDER BY rr.created_at DESC, r.id DESC, rr.revision DESC
+          LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+        [...params, limit + 1, cursor],
+      );
+      const rows = result.rows;
+      const grouped = new Map<string, { revisions: ResourceRevision[]; proposals: import("../domain/workspace/change-proposal").ChangeProposal[]; resource: { projectId: string; path: string; type: ResourceType } }>();
+      for (const row of rows.slice(0, limit + 1)) {
+        const resourceId = text(row, "id");
+        let group = grouped.get(resourceId);
+        if (!group) {
+          group = {
+            revisions: [],
+            proposals: [],
+            resource: { projectId: text(row, "project_id"), path: text(row, "path"), type: toResourceType(row.type) },
+          };
+          grouped.set(resourceId, group);
+        }
+        group.revisions.push(toResourceRevision({ ...row, resource_id: resourceId }));
+        if (row.proposal_id !== null && row.proposal_id !== undefined) {
+          const authorship = typeof row.proposal_authorship === "string" ? JSON.parse(row.proposal_authorship) : row.proposal_authorship;
+          const mergeAuthorship = typeof row.merge_authorship === "string" ? JSON.parse(row.merge_authorship) : row.merge_authorship;
+          group.proposals.push({
+            id: text(row, "proposal_id"), resourceId, baseRevision: integer(row, "base_revision"),
+            proposedContent: "", title: text(row, "proposal_title"), author: authorship as ResourceAuthorship,
+            createdAt: row.merged_at instanceof Date ? row.merged_at : new Date(String(row.merged_at)),
+            updatedAt: row.merged_at instanceof Date ? row.merged_at : new Date(String(row.merged_at)),
+            status: "merged", version: 1,
+            ...(mergeAuthorship ? { mergeActor: mergeAuthorship as ResourceAuthorship } : {}),
+            ...(row.merged_at ? { mergedAt: row.merged_at instanceof Date ? row.merged_at : new Date(String(row.merged_at)) } : {}),
+            mergedRevision: integer(row, "revision"),
+          });
+        }
+      }
+      const entries = [...grouped.entries()].flatMap(([resourceId, group]) =>
+        resourceTrajectoryOf(resourceId, group.revisions, group.proposals, group.resource).entries,
+      ).sort((a, b) => b.occurredAt.getTime() - a.occurredAt.getTime() || b.id.localeCompare(a.id));
+      const page = entries.slice(0, limit);
+      return { entries: page, nextCursor: rows.length > limit ? cursor + limit : null };
     },
   };
 }

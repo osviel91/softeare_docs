@@ -40,6 +40,7 @@ import type { ApplicationContext } from "../../../src/application/context";
 import type { Permission } from "../../../src/domain/access/permissions";
 import type { ProjectCatalog } from "../../../src/application/project-catalog";
 import type { ChangeProposalService } from "../../../src/application/change-proposal-service";
+import type { ResourceTrajectoryService } from "../../../src/application/resource-trajectory-service";
 import type { ResourceRecord } from "../../../src/application/ports/project-repository";
 import { invalid, notFound } from "../../../src/application/errors";
 import { analyze } from "../../../src/language/analyze";
@@ -79,6 +80,7 @@ export interface ToolContext {
   context: ApplicationContext;
   catalog: ProjectCatalog;
   proposals: ChangeProposalService;
+  trajectory: ResourceTrajectoryService;
   config: McpConfig;
   /** Aborted when the client disconnects or the tool deadline elapses. */
   signal?: AbortSignal;
@@ -591,6 +593,32 @@ export function createMcpTools(): McpTool[] {
       },
     },
 
+    {
+      name: "get_project_trajectory",
+      title: "Get project trajectory",
+      description: "Read the bounded canonical history of every resource in a project.",
+      inputSchema: { projectId: projectId(), limit: z.number().int().min(1).max(100).optional(), cursor: z.number().int().min(0).optional() },
+      annotations: { ...READ_ONLY, title: "Get project trajectory" },
+      requiredPermissions: ["resource:read"],
+      async run(args, toolContext) {
+        const result = await toolContext.trajectory.getProjectTrajectory(toolContext.context, stringArg(args, "projectId"), { limit: numberArg(args, "limit"), cursor: numberArg(args, "cursor") });
+        return { text: `${result.entries.length} trajectory entries.`, structured: result };
+      },
+    },
+    {
+      name: "get_resource_trajectory",
+      title: "Get resource trajectory",
+      description: "Read the bounded canonical history of one resource.",
+      inputSchema: { projectId: projectId(), resource: resourceReference(), limit: z.number().int().min(1).max(100).optional(), cursor: z.number().int().min(0).optional() },
+      annotations: { ...READ_ONLY, title: "Get resource trajectory" },
+      requiredPermissions: ["resource:read"],
+      async run(args, toolContext) {
+        const project = stringArg(args, "projectId");
+        const resource = await resolveResource(toolContext, project, stringArg(args, "resource"));
+        const result = await toolContext.trajectory.getResourceTrajectory(toolContext.context, project, resource.id, { limit: numberArg(args, "limit"), cursor: numberArg(args, "cursor") });
+        return { text: `${result.entries.length} trajectory entries.`, structured: result };
+      },
+    },
     {
       name: "list_change_proposals",
       title: "List change proposals",

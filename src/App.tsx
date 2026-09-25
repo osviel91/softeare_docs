@@ -61,6 +61,7 @@ import {
 import { useWorkspaceRepository } from "./features/explorer/workspace-factory";
 import { useVersionHistory } from "./features/history/version-history-factory";
 import { useDiagramHistory } from "./features/history/use-diagram-history";
+import { useServerTrajectory } from "./features/history/use-server-trajectory";
 import type { DiagramFile, NoteFile, Project } from "./domain/workspace/types";
 import {
   diagramResource,
@@ -446,6 +447,7 @@ export default function App() {
   } | null>(null);
   const [proposalReviewOpen, setProposalReviewOpen] = useState(false);
   const [reviewProposalId, setReviewProposalId] = useState<string | null>(null);
+  const [reviewReadOnly, setReviewReadOnly] = useState(false);
 
   const resizePane = useCallback(
     (pane: "explorer" | "editor", clientX: number): void => {
@@ -852,6 +854,12 @@ export default function App() {
     selectedDiagram,
     historySource,
     selectedProjectId,
+  );
+  const serverTrajectory = useServerTrajectory(
+    apiClient,
+    selectedProjectId,
+    historyResourceScoped ? selectedDiagram?.id ?? null : null,
+    workspaceMode === "server",
   );
 
   const { ast, diagnostics } = useDiagram(source);
@@ -2658,11 +2666,13 @@ export default function App() {
                         : undefined
                   }
                   initialProposalId={reviewProposalId}
-                  onBack={() => {
-                    setProposalReviewOpen(false);
-                    setReviewProposalId(null);
-                  }}
-                  canMerge={metadataWritable}
+                   onBack={() => {
+                     setProposalReviewOpen(false);
+                     setReviewProposalId(null);
+                     setReviewReadOnly(false);
+                   }}
+                   canMerge={metadataWritable}
+                   readOnly={reviewReadOnly}
                 />
               ) : view === "changes" && canReviewProjectProposals ? (
                 <ChangesInbox
@@ -2670,6 +2680,7 @@ export default function App() {
                   projectId={selectedProjectId}
                   onOpen={(proposalId) => {
                     setReviewProposalId(proposalId);
+                    setReviewReadOnly(false);
                     setProposalReviewOpen(true);
                   }}
                 />
@@ -2711,12 +2722,15 @@ export default function App() {
                 <ProjectOverview index={index} />
               ) : view === "history" ? (
                 <HistoryPanel
+                  trajectoryEntries={
+                    workspaceMode === "server" ? serverTrajectory.entries : undefined
+                  }
                   versions={
                     historyResourceScoped
                       ? history.versions
                       : history.projectVersions
                   }
-                  isLoading={history.isLoading}
+                  isLoading={workspaceMode === "server" ? serverTrajectory.isLoading : history.isLoading}
                   hasDiagram={selectedDiagram !== null}
                   currentSource={historySource ?? ""}
                   activeDiagramId={selectedDiagram?.id ?? null}
@@ -2729,6 +2743,11 @@ export default function App() {
                   resourceScoped={historyResourceScoped}
                   onShowProjectHistory={() => setHistoryResourceScoped(false)}
                   onShowResourceHistory={() => setHistoryResourceScoped(true)}
+                  onViewProposal={(proposalId) => {
+                    setReviewProposalId(proposalId);
+                    setReviewReadOnly(true);
+                    setProposalReviewOpen(true);
+                  }}
                   onSaveVersion={() => {
                     void history.saveVersion(source);
                   }}

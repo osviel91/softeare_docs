@@ -36,6 +36,7 @@ import {
 import type { ApplicationContext } from "../../../src/application/context";
 import type { ProjectCatalog } from "../../../src/application/project-catalog";
 import type { ChangeProposalService } from "../../../src/application/change-proposal-service";
+import type { ResourceTrajectoryService } from "../../../src/application/resource-trajectory-service";
 import { credentialGrants } from "../../../src/application/authorization";
 import { forbidden, invalid } from "../../../src/application/errors";
 import packageJson from "../../../package.json";
@@ -77,6 +78,7 @@ export interface McpServerForPrincipalOptions {
   context: ApplicationContext;
   catalog: ProjectCatalog;
   proposals: ChangeProposalService;
+  trajectory: ResourceTrajectoryService;
   config: McpConfig;
   observability: Observability;
 }
@@ -153,7 +155,7 @@ function withDeadline(
 export function createMcpServerForPrincipal(
   options: McpServerForPrincipalOptions,
 ): McpServerForPrincipal {
-  const { context, catalog, proposals, config, observability } = options;
+  const { context, catalog, proposals, trajectory, config, observability } = options;
   const server = new McpServer(
     {
       name: MCP_SERVER_NAME,
@@ -208,6 +210,7 @@ export function createMcpServerForPrincipal(
             context,
              catalog,
              proposals,
+             trajectory,
             config,
             signal,
           };

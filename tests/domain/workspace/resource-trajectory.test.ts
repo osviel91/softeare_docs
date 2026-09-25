@@ -56,4 +56,36 @@ describe("resource trajectory", () => {
       }),
     ).toBe("Agent 12345678…");
   });
+
+  it("uses the resulting revision as the merge event and breaks timestamp ties by id", () => {
+    const at = new Date("2026-09-25T00:00:00Z");
+    const trajectory = resourceTrajectoryOf("resource-1", [
+      {
+        resourceId: "resource-1", revision: 1, content: "a", type: "sequence-diagram",
+        authoredBy: { kind: "system" }, createdAt: at,
+      },
+      {
+        resourceId: "resource-1", revision: 2, content: "b", type: "sequence-diagram",
+        authoredBy: { kind: "user", userId: "u1", subjectUserId: "u1" }, createdAt: at,
+      },
+    ], [
+      {
+        id: "proposal-1", resourceId: "resource-1", baseRevision: 1, proposedContent: "b",
+        title: "Merge", author: { kind: "agent", agentId: "agent-1", subjectUserId: "u1" },
+        mergeActor: { kind: "user", userId: "u1", subjectUserId: "u1" },
+        createdAt: at, updatedAt: at, mergedAt: at, mergedRevision: 2,
+        status: "merged", version: 2,
+      },
+    ]);
+
+    expect(trajectory.entries.map((entry) => entry.id)).toEqual(
+      [...trajectory.entries].sort((a, b) => b.id.localeCompare(a.id)).map((entry) => entry.id),
+    );
+    expect(trajectory.entries.find((entry) => entry.kind === "PROPOSAL_MERGED")).toMatchObject({
+      previousRevision: 1,
+      resultingRevision: 2,
+      proposedBy: { kind: "agent" },
+      mergedBy: { kind: "user" },
+    });
+  });
 });

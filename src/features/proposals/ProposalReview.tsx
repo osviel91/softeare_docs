@@ -33,6 +33,7 @@ export interface ProposalReviewProps {
   onBack: () => void;
   canMerge: boolean;
   onMerge: () => void;
+  readOnly?: boolean;
 }
 
 export function ProposalReviewPanel({
@@ -42,6 +43,7 @@ export function ProposalReviewPanel({
   initialProposalId,
   onBack,
   canMerge,
+  readOnly = false,
 }: {
   client: ServerApiClient;
   projectId: string;
@@ -49,6 +51,7 @@ export function ProposalReviewPanel({
   initialProposalId?: string | null;
   onBack: () => void;
   canMerge: boolean;
+  readOnly?: boolean;
 }) {
   const [proposals, setProposals] = useState<ServerChangeProposal[]>([]);
   const [selected, setSelected] = useState<ServerChangeProposal | null>(null);
@@ -63,7 +66,7 @@ export function ProposalReviewPanel({
   const [listCollapsed, setListCollapsed] = useState(false);
 
   const merge = async () => {
-    if (!selected || !current || !analysis?.autoMergeable) return;
+    if (readOnly || !selected || !current || !analysis?.autoMergeable) return;
     const suffix = analysis.stale
       ? " Canonical has advanced; compatible canonical changes will be preserved."
       : "";
@@ -90,7 +93,10 @@ export function ProposalReviewPanel({
     setCurrent(null);
     setCurrentContent(null);
     setProposalState("loading");
-    void loadProjectProposals(client, projectId)
+    const load = initialProposalId && readOnly
+      ? client.getChangeProposal(initialProposalId).then((proposal) => [{ proposal, resource: null, diff: null, analysis: null }])
+      : loadProjectProposals(client, projectId);
+    void load
       .then((entries) => {
         if (!active) return;
         // Review navigation is project-scoped. The resource that opened the
@@ -98,7 +104,7 @@ export function ProposalReviewPanel({
         // the sidebar's proposal set.
         const items = entries
           .map(({ proposal }) => proposal)
-          .filter((proposal) => proposal.status === "open");
+          .filter((proposal) => readOnly || proposal.status === "open");
         setProposals(items);
         setProposalState("loaded");
         setSelected(
@@ -139,7 +145,7 @@ export function ProposalReviewPanel({
     return () => {
       active = false;
     };
-  }, [client, projectId, selected]);
+  }, [client, projectId, selected, readOnly]);
 
   return (
     <div className="proposal-review-panel">
@@ -203,6 +209,7 @@ export function ProposalReviewPanel({
             onBack={onBack}
             canMerge={canMerge}
             onMerge={() => void merge()}
+            readOnly={readOnly}
           />
         ) : (
           <p className="proposal-review__loading" role="status">
@@ -408,6 +415,7 @@ export default function ProposalReview({
   onBack,
   canMerge,
   onMerge,
+  readOnly = false,
 }: ProposalReviewProps & { analysis: MergeAnalysis }) {
   const [view, setView] = useState<"changes" | "compare" | "source">("changes");
   const [changeIndex, setChangeIndex] = useState(0);
@@ -558,7 +566,7 @@ export default function ProposalReview({
           </div>
           <div>
             <dt>Current revision</dt>
-            <dd>r{diff.currentRevision}</dd>
+            <dd>{readOnly && proposal.mergedRevision !== undefined ? `Result r${proposal.mergedRevision}` : `r${diff.currentRevision}`}</dd>
           </div>
           <div>
             <dt>Updated</dt>
@@ -571,7 +579,9 @@ export default function ProposalReview({
           </p>
         )}
         <p className="proposal-review__merge-status" role="status">
-          {analysis.status !== undefined && analysis.status !== "ok"
+          {readOnly && proposal.status === "merged"
+            ? "MERGED"
+            : analysis.status !== undefined && analysis.status !== "ok"
             ? "Invalid proposal"
             : analysis.autoMergeable
               ? analysis.stale
@@ -613,7 +623,7 @@ export default function ProposalReview({
           className="proposal-review__decision"
           aria-label="Proposal decision"
         >
-          {canMerge && proposal.status === "open" && analysis.autoMergeable ? (
+          {canMerge && !readOnly && proposal.status === "open" && analysis.autoMergeable ? (
             <button type="button" className="button" onClick={onMerge}>
               Merge proposal
             </button>
@@ -706,7 +716,7 @@ export default function ProposalReview({
           </div>
           <div className="proposal-review__artifacts">
             {artifact("BASE", diff.baseContent, "base")}
-            {diff.stale &&
+            {diff.stale && !readOnly &&
               currentContent !== undefined &&
               artifact("CURRENT", currentContent, "current")}
             {artifact("PROPOSED", diff.proposedContent, "proposed")}
@@ -743,7 +753,7 @@ export default function ProposalReview({
           </ul>
         </section>
       )}
-      {representation !== "markdown" &&
+      {!readOnly && representation !== "markdown" &&
         current.revision !== diff.currentRevision && (
           <p className="proposal-review__notice">
             Current canonical revision changed while this review was open.

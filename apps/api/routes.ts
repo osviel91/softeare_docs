@@ -308,6 +308,33 @@ export function createRouter(dependencies: AppDependencies): Router {
       }),
   );
 
+  router.get("/api/projects/:projectId/trajectory", async (request, params) =>
+    guarded(correlationId(request), async () => {
+      const context = await contextOf(request);
+      const page = trajectoryPage(request);
+      return json(200, {
+        ...await dependencies.trajectory.getProjectTrajectory(context, params.projectId, page),
+      });
+    }),
+  );
+
+  router.get(
+    "/api/projects/:projectId/resources/:resourceId/trajectory",
+    async (request, params) =>
+      guarded(correlationId(request), async () => {
+        const context = await contextOf(request);
+        const page = trajectoryPage(request);
+        return json(200, {
+          ...await dependencies.trajectory.getResourceTrajectory(
+            context,
+            params.projectId,
+            params.resourceId,
+            page,
+          ),
+        });
+      }),
+  );
+
   router.post(
     "/api/projects/:projectId/resources/:resourceId/proposals",
     async (request, params) =>
@@ -848,6 +875,27 @@ function requireQueryString(
     throw invalid(`The "${name}" query parameter is required.`);
   }
   return single;
+}
+
+function trajectoryPage(request: ServerRequest): { limit?: number; cursor?: number } {
+  const value = (name: string): string | undefined => {
+    const raw = request.query[name];
+    return Array.isArray(raw) ? raw[0] : raw;
+  };
+  const limit = value("limit");
+  const cursor = value("cursor");
+  const parsedLimit = limit === undefined ? undefined : Number(limit);
+  const parsedCursor = cursor === undefined ? undefined : Number(cursor);
+  if (parsedLimit !== undefined && (!Number.isInteger(parsedLimit) || parsedLimit < 1)) {
+    throw invalid("limit must be a positive integer.");
+  }
+  if (parsedCursor !== undefined && (!Number.isInteger(parsedCursor) || parsedCursor < 0)) {
+    throw invalid("cursor must be a non-negative integer.");
+  }
+  return {
+    ...(parsedLimit === undefined ? {} : { limit: parsedLimit }),
+    ...(parsedCursor === undefined ? {} : { cursor: parsedCursor }),
+  };
 }
 
 /**

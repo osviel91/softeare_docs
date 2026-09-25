@@ -24,6 +24,7 @@ import {
   versionSummary,
 } from "../../domain/workspace/version";
 import PageHeader from "../ui/PageHeader";
+import type { ServerTrajectoryEntry } from "../../workspace/server/api-client";
 
 export interface HistoryPanelProps {
   /** The project's versions across every diagram, newest first. */
@@ -52,6 +53,8 @@ export interface HistoryPanelProps {
   resourceScoped?: boolean;
   onShowProjectHistory?: () => void;
   onShowResourceHistory?: () => void;
+  trajectoryEntries?: ServerTrajectoryEntry[];
+  onViewProposal?: (proposalId: string) => void;
 }
 
 /** One diagram's branch: its id and every version recorded for it. */
@@ -102,7 +105,12 @@ export default function HistoryPanel({
   resourceScoped = false,
   onShowProjectHistory,
   onShowResourceHistory,
+  trajectoryEntries,
+  onViewProposal,
 }: HistoryPanelProps) {
+  if (trajectoryEntries !== undefined) {
+    return <TrajectoryHistoryPanel entries={trajectoryEntries} isLoading={isLoading} resourceScoped={resourceScoped} projectName={projectName} onShowProjectHistory={onShowProjectHistory} onShowResourceHistory={onShowResourceHistory} onViewProposal={onViewProposal} />;
+  }
   const branches = useMemo(() => branchesOf(versions), [versions]);
 
   /**
@@ -285,6 +293,23 @@ export default function HistoryPanel({
           })}
         </ol>
       )}
+    </section>
+  );
+}
+
+function TrajectoryHistoryPanel({
+  entries,
+  isLoading,
+  resourceScoped,
+  projectName,
+  onShowProjectHistory,
+  onShowResourceHistory,
+  onViewProposal,
+}: Pick<HistoryPanelProps, "isLoading" | "resourceScoped" | "projectName" | "onShowProjectHistory" | "onShowResourceHistory" | "onViewProposal"> & { entries: ServerTrajectoryEntry[] }) {
+  return (
+    <section className="history" data-testid="history-panel">
+      <PageHeader title={resourceScoped ? "Resource history" : "Project history"} description={<>{projectName && <span className="history__project">{projectName} · </span>}<span className="history__count">{entries.length} event{entries.length === 1 ? "" : "s"}</span></>} actions={resourceScoped && onShowProjectHistory ? <button type="button" className="scope-navigation" onClick={onShowProjectHistory}>Project history</button> : !resourceScoped && onShowResourceHistory ? <button type="button" className="scope-navigation" onClick={onShowResourceHistory}>Resource history</button> : undefined} />
+      {isLoading && entries.length === 0 ? <p className="history__empty">Loading history…</p> : entries.length === 0 ? <p className="history__empty">No canonical history yet.</p> : <ol className="history__list" data-testid="trajectory-list">{entries.map((entry) => <li className="history__version" key={entry.id}><div className="history__version-header"><span className="history__label">{entry.kind.replaceAll("_", " ")}</span><time className="history__time" dateTime={entry.occurredAt}>{new Date(entry.occurredAt).toLocaleString()}</time></div><p className="history__summary">{entry.proposalTitle ?? entry.resourcePath ?? entry.resourceId}</p><p className="history__summary">{entry.previousRevision === undefined ? `r${entry.resultingRevision ?? "?"}` : `r${entry.previousRevision} → r${entry.resultingRevision ?? "?"}`}</p>{entry.proposalId && onViewProposal ? <button type="button" className="button button--ghost button--small" onClick={() => onViewProposal(entry.proposalId!)}>View proposal</button> : null}</li>)}</ol>}
     </section>
   );
 }

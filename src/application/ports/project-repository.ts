@@ -155,4 +155,10 @@ export interface ProjectRepository {
     resourceId: string,
     revision: number,
   ): Promise<ResourceRevision | null>;
+
+  /** Bounded, deterministic canonical history for a project or one resource. */
+  listTrajectory(
+    projectId: string,
+    options?: { resourceId?: string; limit?: number; cursor?: number },
+  ): Promise<{ entries: import("../../domain/workspace/resource-trajectory").TrajectoryEntry[]; nextCursor: number | null }>;
 }

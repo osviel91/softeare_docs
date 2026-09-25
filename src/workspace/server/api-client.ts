@@ -26,6 +26,7 @@ import type { ResourceMetadata } from "../../domain/workspace/resource-metadata"
 import type { MergeAnalysis } from "../../domain/diff/merge-analysis";
 import type { ResourceAuthorship } from "../../domain/workspace/resource-revision";
 import type { ResourceDiff } from "../../domain/diff/resource-diff";
+import type { ResourceTrajectoryKind } from "../../domain/workspace/resource-trajectory";
 
 /** The signed-in person, as `GET /api/me` reports them. */
 export interface AuthenticatedUser {
@@ -157,6 +158,14 @@ export type FetchLike = (
   init?: RequestInit,
 ) => Promise<Response>;
 
+function queryString(options: { limit?: number; cursor?: number }): string {
+  const params = new URLSearchParams();
+  if (options.limit !== undefined) params.set("limit", String(options.limit));
+  if (options.cursor !== undefined) params.set("cursor", String(options.cursor));
+  const value = params.toString();
+  return value === "" ? "" : `?${value}`;
+}
+
 /** Options for {@link ServerApiClient}. */
 export interface ServerApiClientOptions {
   /**
@@ -203,6 +212,24 @@ export interface ServerChangeProposalDiff extends ResourceDiff {
   proposedContent: string;
   baseMetadata?: ResourceMetadata;
   proposedMetadata?: ResourceMetadata;
+}
+
+export interface ServerTrajectoryEntry {
+  id: string;
+  projectId?: string;
+  resourceId: string;
+  resourcePath?: string;
+  resourceType?: ServerResourceType;
+  kind: ResourceTrajectoryKind;
+  occurredAt: string;
+  actor: ResourceAuthorship | null;
+  previousRevision?: number;
+  baseRevision?: number;
+  resultingRevision?: number;
+  proposalId?: string;
+  proposalTitle?: string;
+  proposedBy?: ResourceAuthorship;
+  mergedBy?: ResourceAuthorship;
 }
 
 /**
@@ -421,6 +448,21 @@ export class ServerApiClient {
       "GET",
       `/api/projects/${encodeURIComponent(projectId)}/resources/${encodeURIComponent(resourceId)}`,
     );
+  }
+
+  async getProjectTrajectory(
+    projectId: string,
+    options: { limit?: number; cursor?: number } = {},
+  ): Promise<{ entries: ServerTrajectoryEntry[]; nextCursor: number | null }> {
+    return this.request("GET", `/api/projects/${encodeURIComponent(projectId)}/trajectory${queryString(options)}`);
+  }
+
+  async getResourceTrajectory(
+    projectId: string,
+    resourceId: string,
+    options: { limit?: number; cursor?: number } = {},
+  ): Promise<{ entries: ServerTrajectoryEntry[]; nextCursor: number | null }> {
+    return this.request("GET", `/api/projects/${encodeURIComponent(projectId)}/resources/${encodeURIComponent(resourceId)}/trajectory${queryString(options)}`);
   }
 
   async listChangeProposals(

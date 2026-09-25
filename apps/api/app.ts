@@ -23,6 +23,7 @@ import { createProjectCatalog } from "../../src/application/project-catalog";
 import { createWorkspaceService } from "../../src/application/workspace-service";
 import { createAgentService } from "../../src/application/agent-service";
 import { createChangeProposalService } from "../../src/application/change-proposal-service";
+import { createResourceTrajectoryService } from "../../src/application/resource-trajectory-service";
 import { createCredentialMint } from "./auth/agent-credential";
 import type { ServerConfig } from "./config";
 
@@ -54,6 +55,7 @@ export interface AppDependencies {
   catalog: ReturnType<typeof createProjectCatalog>;
   workspaceService: ReturnType<typeof createWorkspaceService>;
   proposals: ReturnType<typeof createChangeProposalService>;
+  trajectory: ReturnType<typeof createResourceTrajectoryService>;
   /** Where a project's files live. Never derived from a request. */
   storageFor: ServerRuntime["storageFor"];
   /**
@@ -165,6 +167,7 @@ export async function createApp(
       projects: runtime.projects,
       mutations: runtime.mutations,
     }),
+    trajectory: createResourceTrajectoryService({ projects: runtime.projects }),
     storageFor: runtime.storageFor,
     locationFor: runtime.locationFor,
     ping: runtime.ping,

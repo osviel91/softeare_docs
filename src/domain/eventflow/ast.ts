@@ -52,6 +52,8 @@ export const CONVENTIONAL_EVENT_METADATA_KEYS = [
 export interface EventDeclaration {
   type: "event";
   name: string;
+  /** The message kind; omitted declarations remain event-compatible. */
+  kind?: MessageKind;
   /** The first `description` metadata value, normalized for consumers. */
   description?: string;
   /** Optional evidence-based boundary provenance; omitted means undocumented. */
@@ -62,6 +64,17 @@ export interface EventDeclaration {
 
 /** Normalized provenance for an event at the documented system boundary. */
 export type EventProvenance = "external" | "internal" | "unknown";
+
+/** Message-level distinction retained by causal projections. */
+export type MessageKind = "event" | "command";
+
+/** A known mechanism that initiated a causal root message. */
+export type CausalInitiationKind =
+  | "scheduled"
+  | "external"
+  | "manual"
+  | "startup"
+  | "unknown";
 
 /** A `broker <Name>` declaration: the infrastructure events travel through. */
 export interface BrokerDeclaration {
@@ -166,12 +179,21 @@ export interface HandlerEffect {
   range?: SourceRange;
 }
 
+/** Explicit root initiation, independent from message provenance. */
+export interface CausalInitiation {
+  type: "initiation";
+  message: string;
+  kind: CausalInitiationKind;
+  range?: SourceRange;
+}
+
 /** Optional causal facts kept separate from publication/subscription topology. */
 export interface EventFlowCausality {
   handlers: EventFlowHandler[];
   inputs: HandlerInput[];
   outputs: HandlerOutput[];
   effects: HandlerEffect[];
+  initiations?: CausalInitiation[];
 }
 
 /** A title, e.g. `title Order Processing`. */

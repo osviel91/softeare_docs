@@ -24,6 +24,17 @@ describe("causal SVG presentation", () => {
     expect(svg).toContain('aria-label="effect"');
   });
 
+  it("renders message kind and initiation without color-only semantics", () => {
+    const svg = render([
+      "event RetryCommand {", "  kind: command", "  provenance: internal", "}",
+      "handler RetryHandler", "scheduled initiates RetryCommand",
+      "RetryCommand handled by RetryHandler",
+    ].join("\n"));
+    expect(svg).toContain('aria-label="Command: RetryCommand"');
+    expect(svg).toContain("COMMAND · internal · initiated scheduled");
+    expect(svg).toContain('data-edge-type="MESSAGE_HANDLED_BY_HANDLER"');
+  });
+
   it("subdues unrelated branches while preserving the selected context", () => {
     const svg = render([
       "event A", "event B", "event C", "handler H1", "handler H2",

@@ -33,16 +33,17 @@ function width(label: string, type: CausalNodeLayout["type"]): number {
 
 /** Pure, finite, deterministic geometry for explicit causal relationships. */
 export function layoutCausalView(view: CausalViewModel): CausalLayout {
-  const all = [
+  const main = [
     ...view.messages.map((item) => ({ id: item.id, type: "message" as const, label: item.name, sourceNodeIds: item.sourceNodeIds })),
     ...view.handlers.map((item) => ({ id: item.id, type: "handler" as const, label: item.displayName, sourceNodeIds: item.sourceNodeIds })),
-    ...view.effects.map((item) => ({ id: item.id, type: "effect" as const, label: item.description, sourceNodeIds: item.sourceNodeIds })),
   ];
   const rank = new Map<CausalNodeId, number>();
   const visiting = new Set<CausalNodeId>();
   const incoming = new Map<CausalNodeId, CausalNodeId[]>();
-  for (const item of all) incoming.set(item.id, []);
-  for (const edge of view.edges) incoming.get(edge.to)?.push(edge.from);
+  for (const item of main) incoming.set(item.id, []);
+  for (const edge of view.edges) {
+    if (edge.type !== "HANDLER_HAS_EFFECT") incoming.get(edge.to)?.push(edge.from);
+  }
   const getRank = (id: CausalNodeId): number => {
     if (rank.has(id)) return rank.get(id)!;
     if (visiting.has(id)) return 0; // back edge: keep cycles finite
@@ -52,9 +53,9 @@ export function layoutCausalView(view: CausalViewModel): CausalLayout {
     rank.set(id, value);
     return value;
   };
-  all.forEach((item) => getRank(item.id));
-  const columns = new Map<number, typeof all>();
-  for (const item of all) {
+  main.forEach((item) => getRank(item.id));
+  const columns = new Map<number, typeof main>();
+  for (const item of main) {
     const column = columns.get(rank.get(item.id)!) ?? [];
     column.push(item);
     columns.set(rank.get(item.id)!, column);
@@ -66,15 +67,27 @@ export function layoutCausalView(view: CausalViewModel): CausalLayout {
     const columnWidth = Math.max(...column.map((item) => width(item.label, item.type)));
     let y = MARGIN + (view.title ? 28 : 0);
     for (const item of column) {
-      const height = item.type === "effect" ? EFFECT_HEIGHT : NODE_HEIGHT;
+      const height = NODE_HEIGHT;
       boxes.set(item.id, { x, y, width: columnWidth, height });
       y += height + GAP_Y;
     }
     maxY = Math.max(maxY, y - GAP_Y + MARGIN);
     x += columnWidth + GAP_X;
   }
+  // Effects are owned annotations, not another causal rank. Place them under
+  // their handler and move them down on collision with the main graph.
+  const effects = view.effects.map((item) => ({ id: item.id, type: "effect" as const, label: item.description, sourceNodeIds: item.sourceNodeIds }));
+  for (const effect of effects) {
+    const handler = boxes.get(view.effects.find((item) => item.id === effect.id)!.handlerId);
+    if (!handler) continue;
+    const box = { x: handler.x + (handler.width - width(effect.label, "effect")) / 2, y: handler.y + handler.height + GAP_Y, width: width(effect.label, "effect"), height: EFFECT_HEIGHT };
+    while ([...boxes.values()].some((other) => overlaps(box, other))) box.y += EFFECT_HEIGHT + GAP_Y;
+    boxes.set(effect.id, box);
+    maxY = Math.max(maxY, box.y + box.height + MARGIN);
+  }
+  const all = [...main, ...effects];
   return {
-    width: Math.max(MARGIN * 2, x - GAP_X + MARGIN),
+    width: Math.max(MARGIN * 2, x - GAP_X + MARGIN, ...[...boxes.values()].map((box) => box.x + box.width + MARGIN)),
     height: Math.max(MARGIN * 2, maxY),
     ...(view.title === undefined ? {} : { title: view.title }),
     nodes: all.map((item) => ({ ...item, box: boxes.get(item.id)! })),
@@ -84,4 +97,8 @@ export function layoutCausalView(view: CausalViewModel): CausalLayout {
       return from && to ? [{ edge, from, to }] : [];
     }),
   };
+}
+
+function overlaps(left: CausalBox, right: CausalBox): boolean {
+  return left.x < right.x + right.width && left.x + left.width > right.x && left.y < right.y + right.height && left.y + left.height > right.y;
 }

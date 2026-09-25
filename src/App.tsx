@@ -398,6 +398,7 @@ export default function App() {
   const [explorerCollapsed, setExplorerCollapsed] = useState(false);
   const [previewMaximized, setPreviewMaximized] = useState(false);
   const [eventFlowView, setEventFlowView] = useState<EventFlowView>("flow");
+  const eventFlowViewTouched = useRef(false);
   const [resizing, setResizing] = useState<"explorer" | "editor" | null>(null);
   // The source the preview is actually showing. While auto-update is on this
   // tracks the editor; while it is off it only moves when the user renders.
@@ -1272,6 +1273,25 @@ export default function App() {
     [isEventFlow, source],
   );
   const eventFlow = eventFlowAnalysis?.flow ?? null;
+
+  // Causal is the investigation default only when entering a new causal flow;
+  // a later view click remains the user's choice while that document is open.
+  const autoCausalDocument = useRef<string | null>(null);
+  useEffect(() => {
+    if (!isEventFlow || selectedDiagram?.id === undefined) return;
+    if (autoCausalDocument.current !== selectedDiagram.id) {
+      autoCausalDocument.current = selectedDiagram.id;
+      eventFlowViewTouched.current = false;
+      setEventFlowView(eventFlow?.causal ? "causal" : "flow");
+      return;
+    }
+    if (eventFlow?.causal && !eventFlowViewTouched.current) setEventFlowView("causal");
+  }, [eventFlow?.causal, isEventFlow, selectedDiagram?.id]);
+
+  const changeEventFlowView = useCallback((next: EventFlowView) => {
+    eventFlowViewTouched.current = true;
+    setEventFlowView(next);
+  }, []);
 
   // The circled step numbers the canvas prints, keyed by source line, so the
   // editor gutter can show the same number beside the message that wrote it.
@@ -2916,7 +2936,7 @@ export default function App() {
                       source={source}
                       flow={eventFlow}
                       view={eventFlowView}
-                      onViewChange={setEventFlowView}
+                      onViewChange={changeEventFlowView}
                       onNodeSelect={onNodeSelect}
                       activeNodeId={activeNodeId}
                       maximized={previewMaximized}

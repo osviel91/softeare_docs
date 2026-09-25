@@ -108,7 +108,7 @@ export function documentationModelText(): string {
     "",
     "When real asynchronous behavior exists, use `Event -> Handler/consumer -> Effects -> Resulting events` as an investigation heuristic, not a mandatory shape. The absence of an asynchronous event context is a valid result: say `No asynchronous event context was observed` rather than inventing Event Flow coverage. Topology (`publishes`/`consumes`) is not causality. Use explicit `handler`, `handled by`, `causes`, and `effect` lines; never infer handler outputs from service publications. Partial causal knowledge is valid, and unknown provenance is preferable to invented provenance. Commands and events share the generic message-name slot.",
     "",
-    "For each important event, document evidence-supported provenance (external, internal, or unknown), publisher, consumer/handler, reads, writes, external effects, resulting events, cycles, fan-outs, missing consumers, and relevant retry/idempotency/order semantics. Do not invent absent behavior or unsupported syntax.",
+    "For each important message, preserve an explicit `kind: event|command` when evidence supports it; commands and events remain one message-level concept. Document evidence-supported provenance (external, internal, or unknown) separately from initiation. Use `scheduled|external|manual|startup|unknown initiates <message>` when the root's origin is known; a scheduled internal command is valid. Do not infer initiation from producer topology or invent absent behavior, retry policy, or unsupported syntax.",
     "",
     "## Notes",
     "",

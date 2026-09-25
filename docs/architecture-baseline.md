@@ -105,8 +105,10 @@ architecture.
 - Causal facts may be incomplete: an event can have no known handler, a handler
   can have no known output, and an effect can terminate a documented branch.
   Event provenance is optional and normalized to `external`, `internal`, or
-  `unknown`; it is never inferred from names. Commands and events share the
-   message-name slot until a later syntax decision requires a distinction.
+  `unknown`; it is never inferred from names. Messages retain an optional
+  explicit `kind` of `event` or `command` in Causal. Root initiation is a
+  separate optional fact (`scheduled`, `external`, `manual`, `startup`, or
+  `unknown`) and does not replace provenance.
 - `CausalViewModel` projects first-class messages, handlers, effects, and typed
   `MESSAGE_HANDLED_BY_HANDLER`, `HANDLER_CAUSES_MESSAGE`, and
   `HANDLER_HAS_EFFECT` edges. These edges are authored relationships; topology

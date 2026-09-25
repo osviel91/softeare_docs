@@ -28,4 +28,15 @@ describe("layoutCausalView", () => {
     expect(result.width).toBeGreaterThan(0);
     expect(result.height).toBeGreaterThan(0);
   });
+
+  it("keeps effects subordinate to their handler instead of ranking them", () => {
+    const result = layout([
+      "event A", "event B", "handler H", "A handled by H", "H causes B",
+      "effect save on H: Save state",
+    ].join("\n"));
+    const handler = result.nodes.find((node) => node.id === "handler:H")!;
+    const effect = result.nodes.find((node) => node.id === "effect:save")!;
+    expect(effect.box.y).toBeGreaterThan(handler.box.y + handler.box.height);
+    expect(effect.box.x).toBeGreaterThanOrEqual(handler.box.x - effect.box.width);
+  });
 });

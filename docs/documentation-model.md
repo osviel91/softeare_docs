@@ -177,7 +177,8 @@ topology relations: `Event -> Handler -> Effects / Resulting Events`. Handler
 inputs and outputs are explicit, so fan-out branches do not create cross-product
 edges. Effects have an identity, optional kind, description, and open metadata;
 they are not coupled to a database, HTTP client, mail system, or other
-technology. Commands and events are both message names in this phase.
+technology. Commands and events remain one message-level concept, with an
+optional explicit `kind: event|command` metadata value preserved by Causal.
 
 Legacy projections still show services consuming and publishing events, while
 the domain model now also carries explicit named handlers, effects, and
@@ -218,7 +219,11 @@ emphasizing its immediate causal neighborhood. Upstream means explicit paths
 that may produce or precede the selection; downstream means explicit paths that
 may follow it. Effects remain owned by their handler and are not rendered as
 events in the causal chain. External, internal, and unknown provenance are
-shown as message context, not as a causal claim.
+shown as message context, not as a causal claim. An optional causal initiation
+line (`scheduled`, `external`, `manual`, `startup`, or `unknown` `initiates
+<message>`) explains why a root message exists; initiation is independent from
+provenance. A scheduler can initiate an internal command. Do not infer
+initiation from publication topology.
 
 Legacy topology-only flows intentionally have an empty Causal view. The view
 explains that topology is documented but explicit Handler-based causality is

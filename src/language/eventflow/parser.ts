@@ -47,6 +47,9 @@ import type {
   HandlerInput,
   HandlerOutput,
   EventMetadataEntry,
+  CausalInitiation,
+  CausalInitiationKind,
+  MessageKind,
   EventPublication,
   EventSubscription,
   ServiceDeclaration,
@@ -104,6 +107,7 @@ export enum EventFlowDiagnosticCode {
   CausalUnknownEvent = "eventflow.causal-unknown-event",
   EffectWithoutHandler = "eventflow.effect-without-handler",
   InvalidProvenance = "eventflow.invalid-provenance",
+  InvalidMessageKind = "eventflow.invalid-message-kind",
   MalformedCausalRelationship = "eventflow.malformed-causal-relationship",
 }
 
@@ -224,6 +228,14 @@ const PROVENANCES = new Set<EventProvenance>([
   "internal",
   "unknown",
 ]);
+const MESSAGE_KINDS = new Set<MessageKind>(["event", "command"]);
+const INITIATION_KINDS = new Set<CausalInitiationKind>([
+  "scheduled",
+  "external",
+  "manual",
+  "startup",
+  "unknown",
+]);
 
 /**
  * Parse an event-flow document.
@@ -243,6 +255,7 @@ export function parseEventFlow(source: string): EventFlowParseResult {
   const inputs: HandlerInput[] = [];
   const outputs: HandlerOutput[] = [];
   const effects: HandlerEffect[] = [];
+  const initiations: CausalInitiation[] = [];
   let title: EventFlowTitle | undefined;
 
   /** The event whose metadata block is open, if any. */
@@ -316,6 +329,18 @@ export function parseEventFlow(source: string): EventFlowParseResult {
             });
           } else if (!metadataKeys.has("provenance")) {
             target.provenance = value as EventProvenance;
+          }
+        }
+        if (target.type === "event" && key.toLowerCase() === "kind") {
+          if (!MESSAGE_KINDS.has(value as MessageKind)) {
+            diagnostics.push({
+              severity: "error",
+              message: `Invalid message kind "${value}"; use event or command`,
+              code: EventFlowDiagnosticCode.InvalidMessageKind,
+              range: entry.range,
+            });
+          } else if (!metadataKeys.has("kind")) {
+            target.kind = value as MessageKind;
           }
         }
         if (target.type === "effect" && key.toLowerCase() === "kind") {
@@ -512,6 +537,7 @@ export function parseEventFlow(source: string): EventFlowParseResult {
         }
       } else if (causal.kind === "input") inputs.push(causal.value);
       else if (causal.kind === "output") outputs.push(causal.value);
+      else if (causal.kind === "initiation") initiations.push(causal.value);
       else {
         effects.push(causal.value);
         if (causal.opensMetadata) {
@@ -552,8 +578,8 @@ export function parseEventFlow(source: string): EventFlowParseResult {
     flow: {
       title,
       statements,
-      ...(handlers.length || inputs.length || outputs.length || effects.length
-        ? { causal: { handlers, inputs, outputs, effects } }
+      ...(handlers.length || inputs.length || outputs.length || effects.length || initiations.length
+        ? { causal: { handlers, inputs, outputs, effects, initiations } }
         : {}),
     },
     diagnostics,
@@ -564,6 +590,7 @@ type CausalLine =
   | { kind: "handler"; value: EventFlowHandler; opensMetadata: boolean }
   | { kind: "input"; value: HandlerInput; opensMetadata: false }
   | { kind: "output"; value: HandlerOutput; opensMetadata: false }
+  | { kind: "initiation"; value: CausalInitiation; opensMetadata: false }
   | { kind: "effect"; value: HandlerEffect; opensMetadata: boolean };
 
 /** Causal lines use explicit references; no topology or adjacency is consulted. */
@@ -572,6 +599,16 @@ function parseCausalLine(line: EventFlowLine): CausalLine | "malformed" | null {
   const values = words.map((word) => word.value.toLowerCase());
   const range = lineRange(line);
   const opensMetadata = line.tokens.some((token) => token.type === "braceOpen");
+
+  if (values[1] === "initiates" && words[2]) {
+    const kind = values[0] as CausalInitiationKind;
+    if (!INITIATION_KINDS.has(kind)) return "malformed";
+    return {
+      kind: "initiation",
+      opensMetadata: false,
+      value: { type: "initiation", kind, message: words[2].value, range },
+    };
+  }
 
   if (values[0] === "handler") {
     const id = words[1];
@@ -652,7 +689,7 @@ function parseCausalLine(line: EventFlowLine): CausalLine | "malformed" | null {
   }
 
   if (
-    ["handler", "handled", "handles", "causes", "effect"].includes(
+    ["handler", "handled", "handles", "causes", "effect", "scheduled", "external", "manual", "startup", "unknown"].includes(
       values[0] ?? "",
     ) ||
     values.includes("handled")

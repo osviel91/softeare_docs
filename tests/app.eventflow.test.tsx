@@ -252,6 +252,18 @@ describe("App — event flows", () => {
     expect(screen.getByLabelText("Causal selection details")).toHaveTextContent("TransactionHandler");
   });
 
+  it("defaults to Causal when explicit causal facts are present", async () => {
+    render(<App />);
+    await createProject();
+    await newEventFlow();
+    fireEvent.change(screen.getByTestId("dsl-textarea"), { target: { value: [
+      "event Input", "event Output", "handler Handle", "Input handled by Handle", "Handle causes Output",
+    ].join("\n") } });
+    await waitFor(() => expect(screen.getByTestId("causal-svg")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "Flow" }));
+    expect(screen.getByTestId("preview-svg")).toBeInTheDocument();
+  });
+
   it("explains why a legacy topology-only flow has no causal view", async () => {
     render(<App />);
     await createProject();

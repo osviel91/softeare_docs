@@ -7,6 +7,7 @@ import {
   type HandlerEffect,
   type HandlerInput,
   type HandlerOutput,
+  type CausalInitiation,
 } from "./ast";
 
 export function handlersFor(flow: EventFlow, event: string): EventFlowHandler[] {
@@ -65,7 +66,12 @@ export type CausalInvariantCode =
 export interface CausalInvariantViolation {
   code: CausalInvariantCode;
   message: string;
-  reference: HandlerInput | HandlerOutput | HandlerEffect | EventFlowHandler;
+  reference:
+    | HandlerInput
+    | HandlerOutput
+    | HandlerEffect
+    | EventFlowHandler
+    | CausalInitiation;
 }
 
 /** Validate causal references without requiring a complete causal graph. */
@@ -130,6 +136,15 @@ export function validateEventFlowCausality(
         code: "duplicate-effect",
         message: `Effect "${effect.id}" is declared more than once`,
         reference: effect,
+      });
+    }
+  }
+  for (const initiation of causal.initiations ?? []) {
+    if (!eventNames.has(initiation.message)) {
+      violations.push({
+        code: "unknown-event",
+        message: `Causal initiation names unknown event "${initiation.message}"`,
+        reference: initiation,
       });
     }
   }

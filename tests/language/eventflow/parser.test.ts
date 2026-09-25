@@ -465,6 +465,19 @@ describe("event-flow validation", () => {
 });
 
 describe("event-flow causal syntax", () => {
+  it("parses explicit message kind and causal initiation", () => {
+    const { flow, diagnostics } = parseEventFlow([
+      "event ResendNonReceivedWebhookEventsCommand {",
+      "  kind: command",
+      "}",
+      "scheduled initiates ResendNonReceivedWebhookEventsCommand",
+    ].join("\n"));
+    expect(diagnostics).toEqual([]);
+    expect(flow.statements[0]).toMatchObject({ type: "event", kind: "command" });
+    expect(flow.causal?.initiations).toMatchObject([
+      { kind: "scheduled", message: "ResendNonReceivedWebhookEventsCommand" },
+    ]);
+  });
   it("keeps independent handler branches explicit", () => {
     const source = [
       "event UpOneTransactionRaisedEvent",

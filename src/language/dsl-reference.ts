@@ -268,6 +268,20 @@ export const EVENT_FLOW_CONSTRUCTS: DslConstruct[] = [
     example: "event PaymentReceived {\n  provenance: external\n}",
   },
   {
+    name: "Message kind",
+    syntax: "kind: event|command",
+    summary:
+      "Optional event metadata retained by the Causal view. Event and command remain one message-level concept; omission keeps the existing event-compatible default.",
+    example: "event SaveTransactionCommand {\n  kind: command\n}",
+  },
+  {
+    name: "Causal initiation",
+    syntax: "scheduled|external|manual|startup|unknown initiates <message>",
+    summary:
+      "Records why a causal root message exists when known. Initiation is separate from provenance and never derives from producer topology.",
+    example: "scheduled initiates ResendNonReceivedWebhookEventsCommand",
+  },
+  {
     name: "Comment",
     syntax: "# <text>",
     summary:

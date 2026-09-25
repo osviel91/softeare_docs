@@ -7,6 +7,7 @@ import {
   type EventFlow,
   type EventMetadataEntry,
   type EventProvenance,
+  type CausalInitiationKind,
   type HandlerEffect,
 } from "./ast";
 import { normalizeEventProvenance } from "./causality";
@@ -36,6 +37,8 @@ export interface CausalMessage {
   description?: string;
   metadata: EventMetadataEntry[];
   provenance: EventProvenance;
+  kind: "event" | "command";
+  initiation?: CausalInitiationKind;
   sourceNodeIds: AstNodeId[];
   topology: {
     publications: CausalTopologyContext[];
@@ -124,6 +127,8 @@ export function projectEventFlowToCausalView(flow: EventFlow): CausalViewModel {
       description: declaration?.description,
       metadata: declaration?.metadata ?? [],
       provenance: normalizeEventProvenance(declaration?.provenance),
+      kind: declaration?.kind ?? "event",
+      initiation: causal.initiations?.find((item) => item.message === name)?.kind,
       sourceNodeIds: declaration ? [nodeIdOf("event", declaration.range)] : [],
       topology: topologyFor(flow, name),
       causalRoot: false,

@@ -21,9 +21,11 @@ describe("projectEventFlowToCausalView", () => {
   it("keeps independent fan-out branches independent", () => {
     const view = project([
       "event UpOneTransactionRaisedEvent",
-      "event SaveUpOneTransactionCommand",
       "event AddAccountCommand",
       "event AddCorporateAccountCommand",
+      "event SaveUpOneTransactionCommand {",
+      "  kind: command",
+      "}",
       "handler TransactionsHandler",
       "handler AccountsHandler",
       "UpOneTransactionRaisedEvent handled by TransactionsHandler",
@@ -47,6 +49,7 @@ describe("projectEventFlowToCausalView", () => {
       "AddAccountCommand",
       "AddCorporateAccountCommand",
     ]);
+    expect(view.messages.find((item) => item.name === "SaveUpOneTransactionCommand")?.kind).toBe("command");
   });
 
   it("does not infer causal edges from topology", () => {
@@ -98,6 +101,34 @@ describe("projectEventFlowToCausalView", () => {
     ]);
   });
 
+  it("keeps the negative-balance chain readable with message kinds", () => {
+    const view = project([
+      "event MslTransactionCreated",
+      "event TransactionLedgerBalanceThresholdExceededEvent",
+      "event SendEmailCommand {", "  kind: command", "}",
+      "handler MslTransactionCriteriaHandler",
+      "handler NegativeBalanceNotificationHandler",
+      "MslTransactionCreated handled by MslTransactionCriteriaHandler",
+      "MslTransactionCriteriaHandler causes TransactionLedgerBalanceThresholdExceededEvent",
+      "TransactionLedgerBalanceThresholdExceededEvent handled by NegativeBalanceNotificationHandler",
+      "NegativeBalanceNotificationHandler causes SendEmailCommand",
+    ].join("\n"));
+    expect(view.edges.filter((edge) => edge.type === "HANDLER_CAUSES_MESSAGE")).toHaveLength(2);
+    expect(view.messages.find((item) => item.name === "SendEmailCommand")?.kind).toBe("command");
+  });
+
+  it("keeps export completion fan-in singular without orchestration", () => {
+    const view = project([
+      "event ExportTransactionsProcessEndedEvent", "event ExportConsumptionsProcessEndedEvent", "event ExportCorporateBalanceProcessEndedEvent", "event WebhookExportCompleted",
+      "handler TransactionsCompletionHandler", "handler ConsumptionsCompletionHandler", "handler CorporateBalanceCompletionHandler",
+      "ExportTransactionsProcessEndedEvent handled by TransactionsCompletionHandler", "TransactionsCompletionHandler causes WebhookExportCompleted",
+      "ExportConsumptionsProcessEndedEvent handled by ConsumptionsCompletionHandler", "ConsumptionsCompletionHandler causes WebhookExportCompleted",
+      "ExportCorporateBalanceProcessEndedEvent handled by CorporateBalanceCompletionHandler", "CorporateBalanceCompletionHandler causes WebhookExportCompleted",
+    ].join("\n"));
+    expect(view.messages.filter((item) => item.name === "WebhookExportCompleted")).toHaveLength(1);
+    expect(upstreamCausalNeighbors(view, messageId("WebhookExportCompleted"))).toHaveLength(3);
+  });
+
   it("represents cycles, disconnected nodes, roots, and unknown provenance finitely", () => {
     const view = project([
       "event EventA", "event EventB", "event Isolated", "handler HandlerA", "handler HandlerB",
@@ -111,6 +142,23 @@ describe("projectEventFlowToCausalView", () => {
     expect(view.components[0].rootNodeIds).toEqual([]);
     expect(view.components[1].nodeIds).toEqual(["message:Isolated"]);
     expect(view.messages.find((item) => item.name === "EventA")?.provenance).toBe("unknown");
+  });
+
+  it("keeps scheduled initiation separate from provenance", () => {
+    const view = project([
+      "event ResendNonReceivedWebhookEventsCommand {",
+      "  kind: command",
+      "  provenance: internal",
+      "}",
+      "event WebhookDeliveryRetried",
+      "handler WebhookRetryHandler",
+      "scheduled initiates ResendNonReceivedWebhookEventsCommand",
+      "ResendNonReceivedWebhookEventsCommand handled by WebhookRetryHandler",
+      "WebhookRetryHandler causes WebhookDeliveryRetried",
+    ].join("\n"));
+    expect(view.messages.find((item) => item.name === "ResendNonReceivedWebhookEventsCommand")).toMatchObject({
+      kind: "command", provenance: "internal", initiation: "scheduled", causalRoot: true,
+    });
   });
 
   it("preserves deterministic ordering and legacy empty behavior", () => {

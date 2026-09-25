@@ -233,7 +233,7 @@ export const EVENT_FLOW_CONSTRUCTS: DslConstruct[] = [
   },
   {
     name: "Handler",
-    syntax: "handler <id> [in <service>] [{ metadata }]",
+    syntax: "handler <id> [in <service>] [{ metadata | details: \"\"\" ... \"\"\" }]",
     summary:
       "Declares a causal responsibility with a stable identity. Hosting service and metadata are optional; a handler does not need a service declaration.",
     example: "handler TransactionsHandler in TransactionsService",
@@ -254,11 +254,19 @@ export const EVENT_FLOW_CONSTRUCTS: DslConstruct[] = [
   },
   {
     name: "Effect",
-    syntax: "effect <id> on <handler> [kind <kind>] : <description>",
+    syntax: "effect <id> on <handler> [kind <kind>] : <description> [{ details: \"\"\" ... \"\"\" }]",
     summary:
       "Records a meaningful non-message consequence owned by one handler. The kind is open-ended and technology-neutral.",
     example:
       "effect persist-transaction on TransactionsHandler kind state-update: Persist transaction",
+  },
+  {
+    name: "Entity details",
+    syntax: "details: \"\"\"\\n  <plain text>\\n\"\"\"",
+    summary:
+      "Optional multiline plain-text context for an event, handler, or effect. It is shown in the inspector, not expanded into causal diagram nodes; keep structured facts in structured fields and preserve unknowns explicitly.",
+    example:
+      'handler TransactionsHandler {\n  details: """\n  Validates the persisted transaction before emitting commands.\n  Guarantees are not documented beyond the repository evidence.\n  """\n}',
   },
   {
     name: "Provenance",

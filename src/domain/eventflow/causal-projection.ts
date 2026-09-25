@@ -35,6 +35,7 @@ export interface CausalMessage {
   id: CausalMessageId;
   name: string;
   description?: string;
+  details?: string;
   metadata: EventMetadataEntry[];
   provenance: EventProvenance;
   kind: "event" | "command";
@@ -53,6 +54,7 @@ export interface CausalHandler {
   displayName: string;
   service?: string;
   description?: string;
+  details?: string;
   metadata: EventMetadataEntry[];
   sourceNodeIds: AstNodeId[];
 }
@@ -62,6 +64,7 @@ export interface CausalEffect {
   effectId: string;
   kind?: string;
   description: string;
+  details?: string;
   metadata: EventMetadataEntry[];
   handlerId: CausalHandlerId;
   sourceNodeIds: AstNodeId[];
@@ -124,7 +127,8 @@ export function projectEventFlowToCausalView(flow: EventFlow): CausalViewModel {
     const message: CausalMessage = {
       id: messageId(name),
       name,
-      description: declaration?.description,
+        description: declaration?.description,
+        details: declaration?.details,
       metadata: declaration?.metadata ?? [],
       provenance: normalizeEventProvenance(declaration?.provenance),
       kind: declaration?.kind ?? "event",
@@ -149,6 +153,7 @@ export function projectEventFlowToCausalView(flow: EventFlow): CausalViewModel {
         displayName: handler.id,
         service: handler.service,
         description: handler.description,
+        details: handler.details,
         metadata: handler.metadata,
         sourceNodeIds: handler.range
           ? [nodeIdOf("handler", handler.range)]
@@ -288,6 +293,7 @@ function projectEffect(effect: HandlerEffect): CausalEffect {
     effectId: effect.id,
     kind: effect.kind,
     description: effect.description,
+    details: effect.details,
     metadata: effect.metadata,
     handlerId: handlerNodeId(effect.handlerId),
     sourceNodeIds: effect.range ? [nodeIdOf("effect", effect.range)] : [],

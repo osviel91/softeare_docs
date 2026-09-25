@@ -252,6 +252,41 @@ describe("App — event flows", () => {
     expect(screen.getByLabelText("Causal selection details")).toHaveTextContent("TransactionHandler");
   });
 
+  it("shows authored entity details alongside derived causal information", async () => {
+    render(<App />);
+    await createProject();
+    await newEventFlow();
+    const source = [
+      "event Received {",
+      "  details: \"\"\"",
+      "  Emitted only after the persisted record is available.",
+      "  \"\"\"",
+      "}",
+      "event Created",
+      "handler TransactionHandler {",
+      "  details: \"\"\"",
+      "  Validates and transforms the received record.",
+      "  \"\"\"",
+      "}",
+      "Received handled by TransactionHandler",
+      "TransactionHandler causes Created",
+      "effect persist on TransactionHandler kind state: persist transaction {",
+      "  details: \"\"\"",
+      "  The persistence guarantee is not documented.",
+      "  \"\"\"",
+      "}",
+    ].join("\n");
+    fireEvent.change(screen.getByTestId("dsl-textarea"), { target: { value: source } });
+    fireEvent.click(screen.getByRole("button", { name: "Causal" }));
+    const handler = screen.getByTestId("causal-svg").querySelector('[data-causal-id="handler:TransactionHandler"]');
+    fireEvent.click(handler!);
+    expect(screen.getByLabelText("Causal selection details")).toHaveTextContent(
+      "Validates and transforms the received record.",
+    );
+    expect(screen.getByLabelText("Causal selection details")).toHaveTextContent("Inputs: Received");
+    expect(screen.getByLabelText("Causal selection details")).toHaveTextContent("Outputs: Created");
+  });
+
   it("defaults to Causal when explicit causal facts are present", async () => {
     render(<App />);
     await createProject();

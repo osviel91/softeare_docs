@@ -2044,6 +2044,14 @@ body {
 }
 
 .event-causal__details p { margin: 6px 0; }
+.event-causal__authored {
+  margin: 10px 0;
+  padding: 8px;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border-left: 2px solid var(--accent);
+}
+.event-causal__authored h3 { margin: 0 0 5px; color: var(--text); font-size: 12px; }
+.event-causal__authored pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
 .event-causal__details button {
   padding: 5px 8px;
   color: var(--accent);

@@ -590,4 +590,52 @@ describe("event-flow causal syntax", () => {
     ].join("\n");
     expect(parseEventFlow(source).flow).toEqual(parseEventFlow(source).flow);
   });
+
+  it("parses rich details on events, handlers, and effects", () => {
+    const source = [
+      "event ThresholdExceeded {",
+      "  kind: event",
+      "  details: \"\"\"",
+      "  Raised after criteria [x] evaluates the persisted MSL transaction.",
+      "",
+      "  It does not deliver notifications; unknown guarantees remain unknown.",
+      "  \"\"\"",
+      "}",
+      "handler CriteriaHandler {",
+      "  details: \"\"\"",
+      "  Decides whether the configured threshold is exceeded.",
+      "  \"\"\"",
+      "}",
+      "ThresholdExceeded handled by CriteriaHandler",
+      "effect persist on CriteriaHandler kind state-update: Persist transaction {",
+      "  details: \"\"\"",
+      "  Writes the transaction; punctuation: { } : # is plain text.",
+      "  \"\"\"",
+      "}",
+    ].join("\n");
+    const { flow, diagnostics } = parseEventFlow(source);
+    expect(diagnostics).toEqual([]);
+    expect(eventsOf(flow)[0].details).toBe(
+      "Raised after criteria [x] evaluates the persisted MSL transaction.\n\nIt does not deliver notifications; unknown guarantees remain unknown.",
+    );
+    expect(flow.causal?.handlers[0].details).toBe(
+      "Decides whether the configured threshold is exceeded.",
+    );
+    expect(flow.causal?.effects[0].details).toContain("punctuation: { } : #");
+    expect(parseEventFlow(source).flow).toEqual(flow);
+  });
+
+  it("keeps absent and empty details absent and preserves legacy flows", () => {
+    const legacy = parseEventFlow("event A\nhandler H\nA handled by H");
+    expect(legacy.diagnostics).toEqual([]);
+    expect(eventsOf(legacy.flow)[0].details).toBeUndefined();
+    const empty = parseEventFlow([
+      "event A {",
+      "  details: \"\"\"",
+      "  \"\"\"",
+      "}",
+    ].join("\n"));
+    expect(empty.diagnostics).toEqual([]);
+    expect(eventsOf(empty.flow)[0].details).toBeUndefined();
+  });
 });

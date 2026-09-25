@@ -13,7 +13,7 @@ import { analyzeEventFlow } from "../../language/eventflow/parser";
 import { renderEventFlowDocument } from "../../renderer/pipeline/eventflow-to-svg";
 import { renderEventFlowTopologyDocument } from "../../renderer/pipeline/eventflow-to-topology-svg";
 import { renderEventFlowCausalDocument } from "../../renderer/pipeline/eventflow-to-causal-svg";
-import { effectsForHandler, inputsForHandler, outputsForHandler, projectEventFlowToCausalView, type CausalNodeId } from "../../domain/eventflow/causal-projection";
+import { downstreamCausalNeighbors, effectsForHandler, inputsForHandler, outputsForHandler, projectEventFlowToCausalView, upstreamCausalNeighbors, type CausalNodeId } from "../../domain/eventflow/causal-projection";
 import { projectEventFlowToCatalog } from "../../domain/eventflow/catalog-projection";
 import { projectEventFlowToTopology } from "../../domain/eventflow/topology-projection";
 import {
@@ -429,6 +429,12 @@ function CausalDetails({ item, view, onSourceSelect }: { item: NonNullable<Retur
       {"initiation" in item && <p>Initiation: {item.initiation ?? "not documented"}</p>}
       {"service" in item && item.service && <p>Service: {item.service}</p>}
       {"kind" in item && item.kind && <p>Kind: {item.kind}</p>}
+      {"details" in item && item.details && (
+        <section className="event-causal__authored">
+          <h3>Authored documentation</h3>
+          <pre>{item.details}</pre>
+        </section>
+      )}
       {"metadata" in item && item.metadata.length > 0 && (
         <p>Metadata: {item.metadata.map((entry) => `${entry.key}=${entry.value}`).join(", ")}</p>
       )}
@@ -437,9 +443,26 @@ function CausalDetails({ item, view, onSourceSelect }: { item: NonNullable<Retur
         <p>Outputs: {outputsForHandler(view, item.id).map((entry) => entry.name).join(", ") || "not documented"}</p>
         <p>Effects: {effectsForHandler(view, item.id).map((entry) => entry.description).join(", ") || "not documented"}</p>
       </>}
+      {"handlerId" in item && !("displayName" in item) && (
+        <p>Owning handler: {item.handlerId.replace(/^handler:/, "")}</p>
+      )}
+      <p>Upstream: {causalNeighborLabels(view, upstreamCausalNeighbors(view, item.id)).join(", ") || "none documented"}</p>
+      <p>Downstream: {causalNeighborLabels(view, downstreamCausalNeighbors(view, item.id)).join(", ") || "none documented"}</p>
       {source && <button type="button" onClick={() => onSourceSelect?.(source)}>Reveal in source</button>}
       <p className="event-causal__focus-note">Selected, immediate, upstream, and downstream entities are highlighted from explicit causal edges only.</p>
     </aside>
+  );
+}
+
+function causalNeighborLabels(
+  view: ReturnType<typeof projectEventFlowToCausalView>,
+  ids: CausalNodeId[],
+): string[] {
+  return ids.map((id) =>
+    view.messages.find((entry) => entry.id === id)?.name ??
+    view.handlers.find((entry) => entry.id === id)?.displayName ??
+    view.effects.find((entry) => entry.id === id)?.description ??
+    id,
   );
 }
 

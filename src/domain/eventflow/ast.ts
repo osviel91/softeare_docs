@@ -56,6 +56,8 @@ export interface EventDeclaration {
   kind?: MessageKind;
   /** The first `description` metadata value, normalized for consumers. */
   description?: string;
+  /** Optional authored context kept out of the compact diagram. */
+  details?: string;
   /** Optional evidence-based boundary provenance; omitted means undocumented. */
   provenance?: EventProvenance;
   metadata: EventMetadataEntry[];
@@ -147,6 +149,8 @@ export interface EventFlowHandler {
   id: string;
   service?: string;
   description?: string;
+  /** Optional authored context kept out of the compact diagram. */
+  details?: string;
   metadata: EventMetadataEntry[];
   /** Optional until a future source syntax can provide a source span. */
   range?: SourceRange;
@@ -175,6 +179,8 @@ export interface HandlerEffect {
   handlerId: string;
   kind?: string;
   description: string;
+  /** Optional authored context kept out of the compact diagram. */
+  details?: string;
   metadata: EventMetadataEntry[];
   range?: SourceRange;
 }

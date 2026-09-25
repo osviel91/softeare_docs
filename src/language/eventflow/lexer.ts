@@ -30,6 +30,8 @@ export interface EventFlowLine {
   /** The line as written, without its terminator. */
   text: string;
   tokens: EventFlowToken[];
+  /** Lines belonging to a `details: """` block are retained verbatim. */
+  documentation?: "open" | "body" | "close";
 }
 
 /** Punctuation the lexer recognises, mapped to its token type. */
@@ -99,19 +101,31 @@ export function tokenizeEventFlowLine(
   return tokens;
 }
 
-/** Tokenize a whole document into non-empty, non-comment lines. */
+/** Tokenize statements while retaining every line inside a details block. */
 export function tokenizeEventFlow(source: string): EventFlowLine[] {
+  let inDocumentation = false;
   return source
     .replace(/\r\n?/g, "\n")
     .split("\n")
-    .map((text, line) => ({ text, line }))
-    .filter(({ text }) => {
+    .map((text, line) => {
       const trimmed = text.trim();
-      return trimmed !== "" && !trimmed.startsWith("#");
+      const documentation: EventFlowLine["documentation"] = inDocumentation
+        ? trimmed === '"""' ? "close" : "body"
+        : /^details\s*:\s*"""\s*$/.test(trimmed)
+          ? "open"
+          : undefined;
+      if (documentation === "open") inDocumentation = true;
+      if (documentation === "close") inDocumentation = false;
+      return { text, line, documentation };
     })
-    .map(({ text, line }) => ({
+    .filter(({ text, documentation }) => {
+      const trimmed = text.trim();
+      return documentation !== undefined || (trimmed !== "" && !trimmed.startsWith("#"));
+    })
+    .map(({ text, line, documentation }) => ({
       line,
       text,
+      documentation,
       tokens: tokenizeEventFlowLine(text, line),
     }));
 }

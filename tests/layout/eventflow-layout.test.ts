@@ -76,6 +76,38 @@ B consumes OrderCreated
 `;
 
 describe("layoutEventFlow — one row per event name", () => {
+  it("does not change layout for entity details", () => {
+    const source = `event E
+service A
+service B
+A publishes E
+B consumes E`;
+    const documented = `event E {
+  details: """
+  A long explanation that belongs in the inspector, not the map.
+  """
+}
+service A
+service B
+A publishes E
+B consumes E`;
+    const before = layoutEventFlow(flowFrom(source));
+    const after = layoutEventFlow(flowFrom(documented));
+    expect(after.width).toBe(before.width);
+    expect(after.height).toBe(before.height);
+    expect(after.rows.map((row) => ({
+      event: row.event,
+      eventBox: row.eventBox,
+      producerBox: row.producerBox,
+      consumerBoxes: row.consumerBoxes,
+    }))).toEqual(before.rows.map((row) => ({
+      event: row.event,
+      eventBox: row.eventBox,
+      producerBox: row.producerBox,
+      consumerBoxes: row.consumerBoxes,
+    })));
+  });
+
   it("collapses duplicate declarations, publications and subscriptions", () => {
     const layout = layoutEventFlow(flowFrom(DUPLICATED));
     expect(layout.rows).toHaveLength(1);

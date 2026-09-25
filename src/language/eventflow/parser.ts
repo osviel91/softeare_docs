@@ -262,21 +262,41 @@ export function parseEventFlow(source: string): EventFlowParseResult {
   let metadataTarget:
     EventDeclaration | EventFlowHandler | HandlerEffect | null = null;
   let metadataKeys = new Set<string>();
+  let detailsLines: string[] | null = null;
+  let detailsEntry: EventMetadataEntry | null = null;
 
   const closeMetadata = (): void => {
     metadataTarget = null;
     metadataKeys = new Set<string>();
+    detailsLines = null;
+    detailsEntry = null;
   };
 
   for (const line of lines) {
     const tokens = line.tokens;
-    if (tokens.length === 0) continue;
+    if (tokens.length === 0 && !line.documentation) continue;
     const first = tokens[0];
 
-    // Inside `event X { … }` every line is `key: value` or the closing brace.
+    // Entity blocks contain metadata lines, or a retained details body.
     if (metadataTarget) {
       const target = metadataTarget;
-      if (first.type === "braceClose") {
+      if (detailsLines && line.documentation === "body") {
+        detailsLines.push(line.text);
+        continue;
+      }
+      if (detailsLines && line.documentation === "close") {
+        const details = normalizeDetails(detailsLines);
+        if (details !== "") target.details = details;
+        if (detailsEntry) {
+          detailsEntry.value = details;
+          detailsEntry.range = lineRange(line);
+        }
+        target.range = { start: target.range!.start, end: lineRange(line).end };
+        detailsLines = null;
+        detailsEntry = null;
+        continue;
+      }
+      if (first?.type === "braceClose") {
         target.range = { start: target.range!.start, end: first.range.end };
         closeMetadata();
         continue;
@@ -311,6 +331,16 @@ export function parseEventFlow(source: string): EventFlowParseResult {
           range: lineRange(line),
         };
         target.metadata.push(entry);
+        if (key.toLowerCase() === "details" && line.documentation === "open") {
+          detailsLines = [];
+          detailsEntry = entry;
+          metadataKeys.add(key.toLowerCase());
+          target.range = {
+            start: metadataTarget.range!.start,
+            end: entry.range.end,
+          };
+          continue;
+        }
         if (
           key.toLowerCase() === "description" &&
           !metadataKeys.has("description") &&
@@ -671,7 +701,10 @@ function parseCausalLine(line: EventFlowLine): CausalLine | "malformed" | null {
     const kindAt = values.indexOf("kind");
     const kind = kindAt === -1 ? undefined : words[kindAt + 1]?.value;
     const description = colon
-      ? line.text.slice(colon.range.end.column).trim()
+      ? line.text
+          .slice(colon.range.end.column)
+          .trim()
+          .replace(/\s*\{$/, "")
       : "";
     return {
       kind: "effect",
@@ -713,6 +746,17 @@ function parseDescription(value: string): { value: string; valid: boolean } {
       .trim(),
     valid: true,
   };
+}
+
+function normalizeDetails(lines: string[]): string {
+  const trimmed = [...lines];
+  while (trimmed[0]?.trim() === "") trimmed.shift();
+  while (trimmed.at(-1)?.trim() === "") trimmed.pop();
+  const indents = trimmed
+    .filter((line) => line.trim())
+    .map((line) => line.match(/^\s*/)?.[0].length ?? 0);
+  const indent = indents.length > 0 ? Math.min(...indents) : 0;
+  return trimmed.map((line) => line.slice(indent)).join("\n");
 }
 
 /**

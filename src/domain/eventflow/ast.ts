@@ -54,6 +54,8 @@ export interface EventDeclaration {
   name: string;
   /** The message kind; omitted declarations remain event-compatible. */
   kind?: MessageKind;
+  /** Explicit project-scoped semantic message identity; names are not identity. */
+  messageRef?: string;
   /** The first `description` metadata value, normalized for consumers. */
   description?: string;
   /** Optional authored context kept out of the compact diagram. */

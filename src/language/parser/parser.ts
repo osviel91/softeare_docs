@@ -757,6 +757,20 @@ class Parser {
     this.advance();
     this.advance();
     this.advance();
+    let messageRef: string | undefined;
+    if (this.peek()?.value === "messageRef") {
+      this.advance();
+      const reference = this.peek();
+      if (!reference || reference.type !== TokenType.Identifier) {
+        this.errorHere(
+          "Expected a stable semantic message id after messageRef",
+          DiagnosticCode.MalformedSemanticMessage,
+        );
+      } else {
+        messageRef = reference.value;
+        this.advance();
+      }
+    }
     if (this.peek()?.type !== TokenType.Eol && !this.atEnd()) {
       this.errorHere(
         "Unexpected text after semantic message metadata",
@@ -767,6 +781,7 @@ class Parser {
       name: nameToken.value,
       kind: kind as SequenceMessageKind,
       operation: operation as SequenceMessageOperation,
+      ...(messageRef ? { messageRef } : {}),
       range: span(semantic.start, this.previousEnd()),
     };
   }

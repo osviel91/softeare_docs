@@ -73,12 +73,20 @@ export interface ResourceRecord {
   metadata?: ResourceMetadata;
 }
 
+/** A project-scoped architectural message identity. Names are display data, not identity. */
+export interface SemanticMessageIdentity {
+  id: string;
+  name: string;
+  kind: "event" | "command";
+}
+
 /** A project's persisted identity record. */
 export interface ProjectMetadata {
   format: string;
   version: number;
   resources: ResourceRecord[];
   relationships?: ResourceRelationship[];
+  semanticMessages?: SemanticMessageIdentity[];
 }
 
 /** A file the metadata should describe, as the repository reports it. */
@@ -107,6 +115,7 @@ export function createEmptyMetadata(): ProjectMetadata {
     version: PROJECT_METADATA_VERSION,
     resources: [],
     relationships: [],
+    semanticMessages: [],
   };
 }
 
@@ -171,6 +180,54 @@ export function parseProjectMetadata(value: unknown): ProjectMetadata | null {
           );
         }) }
       : {}),
+    ...(Array.isArray(record.semanticMessages)
+      ? { semanticMessages: record.semanticMessages.filter((item): item is SemanticMessageIdentity => {
+          if (typeof item !== "object" || item === null) return false;
+          const message = item as Record<string, unknown>;
+          return typeof message.id === "string" && message.id !== "" &&
+            typeof message.name === "string" && message.name !== "" &&
+            (message.kind === "event" || message.kind === "command");
+        }) }
+      : {}),
+  };
+}
+
+export function semanticMessageById(
+  metadata: ProjectMetadata,
+  id: string,
+): SemanticMessageIdentity | null {
+  return metadata.semanticMessages?.find((message) => message.id === id) ?? null;
+}
+
+export function duplicateSemanticMessageIds(metadata: ProjectMetadata): string[] {
+  const seen = new Set<string>();
+  const duplicates: string[] = [];
+  for (const message of metadata.semanticMessages ?? []) {
+    if (seen.has(message.id) && !duplicates.includes(message.id)) duplicates.push(message.id);
+    seen.add(message.id);
+  }
+  return duplicates;
+}
+
+export function upsertSemanticMessage(
+  metadata: ProjectMetadata,
+  message: SemanticMessageIdentity,
+): ProjectMetadata {
+  const messages = metadata.semanticMessages ?? [];
+  const existing = messages.findIndex((entry) => entry.id === message.id);
+  if (existing < 0) return { ...metadata, semanticMessages: [...messages, message] };
+  const next = [...messages];
+  next[existing] = message;
+  return { ...metadata, semanticMessages: next };
+}
+
+export function removeSemanticMessage(
+  metadata: ProjectMetadata,
+  id: string,
+): ProjectMetadata {
+  return {
+    ...metadata,
+    semanticMessages: (metadata.semanticMessages ?? []).filter((message) => message.id !== id),
   };
 }
 
@@ -212,6 +269,13 @@ function sameRecords(a: ResourceRecord[], b: ResourceRecord[]): boolean {
       JSON.stringify(record.metadata ?? {}) === JSON.stringify(other.metadata ?? {})
     );
   });
+}
+
+function sameSemanticMessages(
+  a: SemanticMessageIdentity[] | undefined,
+  b: SemanticMessageIdentity[] | undefined,
+): boolean {
+  return JSON.stringify(a ?? []) === JSON.stringify(b ?? []);
 }
 
 /**
@@ -282,10 +346,15 @@ export function reconcileMetadata(
               resources.some((resource) => resource.id === relationship.targetId),
           ),
         }),
+    ...(previous.semanticMessages === undefined
+      ? {}
+      : { semanticMessages: previous.semanticMessages }),
   };
   return {
     metadata,
-    changed: !sameRecords(previous.resources, resources),
+    changed:
+      !sameRecords(previous.resources, resources) ||
+      !sameSemanticMessages(previous.semanticMessages, metadata.semanticMessages),
     assigned,
     removed,
   };

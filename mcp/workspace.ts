@@ -62,6 +62,9 @@ import {
 import {
   addResourceRelationship,
   removeResourceRelationships,
+  upsertSemanticMessage,
+  removeSemanticMessage,
+  type SemanticMessageIdentity,
 } from "../src/domain/workspace/metadata";
 import {
   validateResourceRelationship,
@@ -495,6 +498,25 @@ export class DocumentationWorkspace {
 
   async listRelationships(project: Project): Promise<ResourceRelationship[]> {
     return (await this.snapshot(project)).metadata.relationships ?? [];
+  }
+
+  async listSemanticMessages(project: Project): Promise<SemanticMessageIdentity[]> {
+    return (await this.snapshot(project)).metadata.semanticMessages ?? [];
+  }
+
+  async saveSemanticMessage(project: Project, message: SemanticMessageIdentity): Promise<SemanticMessageIdentity> {
+    const snapshot = await this.snapshot(project);
+    const existing = snapshot.metadata.semanticMessages?.find((entry) => entry.id === message.id);
+    if (existing && existing.kind !== message.kind) throw new Error(`Semantic message "${message.id}" cannot change kind.`);
+    unwrap(await (await this.workspaceOf(project)).repo.writeProjectMetadata(project.id, upsertSemanticMessage(snapshot.metadata, message)));
+    return message;
+  }
+
+  async deleteSemanticMessage(project: Project, id: string): Promise<void> {
+    const snapshot = await this.snapshot(project);
+    const index = await this.index(project, snapshot);
+    if ((index.semanticOccurrences ?? []).some((entry) => entry.messageRef === id) || (index.eventFlowMessages ?? []).some((entry) => entry.messageRef === id)) throw new Error(`Semantic message "${id}" is still referenced.`);
+    unwrap(await (await this.workspaceOf(project)).repo.writeProjectMetadata(project.id, removeSemanticMessage(snapshot.metadata, id)));
   }
 
   async createRelationship(

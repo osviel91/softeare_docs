@@ -39,6 +39,17 @@ import type {
 } from "../workspace/resource-id";
 import { resourceClassificationOfDescriptor } from "../workspace/resource-id";
 import type { MarkdownReferenceKind } from "../../language/markdown/markdown";
+import type { SemanticMessageOccurrence } from "../diagram/semantic-messages";
+import type { MessageKind } from "../eventflow/ast";
+import type { SemanticMessageIdentity } from "../workspace/metadata";
+
+export interface EventFlowMessageEntity {
+  name: string;
+  kind: MessageKind;
+  messageRef?: string;
+  resourceId: ResourceId;
+  sourceRange?: SourceRange;
+}
 
 /** A resource as the index describes it: stable identity plus current location. */
 export interface ResourceDescriptor {
@@ -223,6 +234,9 @@ export interface ProjectIndex {
   /** Every place a participant name is written, declarations excluded. */
   usages: ProjectSymbolUsage[];
   references: ProjectReference[];
+  semanticMessages?: SemanticMessageIdentity[];
+  semanticOccurrences?: Array<SemanticMessageOccurrence & { resourceId: ResourceId }>;
+  eventFlowMessages?: EventFlowMessageEntity[];
   diagnostics: ProjectDiagnostic[];
 }
 
@@ -256,6 +270,8 @@ export interface ResourceAnalysis {
   symbols: ProjectSymbol[];
   usages: ProjectSymbolUsage[];
   references: ReferenceCandidate[];
+  semanticOccurrences: SemanticMessageOccurrence[];
+  eventFlowMessages: EventFlowMessageEntity[];
   /** Problems found inside this resource without looking at any other file. */
   diagnostics: ProjectDiagnostic[];
   headings: MarkdownHeading[];
@@ -504,6 +520,10 @@ export function buildProjectIndex(
     }));
 
   const usages = ordered.flatMap((analysis) => analysis.usages);
+  const semanticOccurrences = ordered.flatMap((analysis) =>
+    analysis.semanticOccurrences.map((occurrence) => ({ ...occurrence, resourceId: analysis.descriptor.id })),
+  );
+  const eventFlowMessages = ordered.flatMap((analysis) => analysis.eventFlowMessages);
 
   // A resource is itself a symbol, so quick-open and find-references can treat
   // "the payment diagram" and "the PaymentService participant" alike.
@@ -548,6 +568,9 @@ export function buildProjectIndex(
     participants: [...resourceSymbols, ...declared],
     usages,
     references,
+    semanticMessages: metadata.semanticMessages ?? [],
+    semanticOccurrences,
+    eventFlowMessages,
   };
 
   return { ...core, diagnostics: validate(core) };

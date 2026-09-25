@@ -944,6 +944,71 @@ export function createTools(): Tool[] {
 
     {
       definition: {
+        name: "list_semantic_messages",
+        title: "List semantic message identities",
+        description: "List explicit project-scoped semantic message identities. Equal names without bindings remain candidates, not identity.",
+        inputSchema: objectSchema({ project: stringProp("Project id or name.") }),
+        annotations: { ...readOnly, title: "List semantic message identities" },
+      },
+      async run(args, context) {
+        const project = await context.workspace.resolveProject(optionalString(args, "project"));
+        const messages = await context.workspace.listSemanticMessages(project);
+        return { text: messages.length ? JSON.stringify(messages) : "No semantic message identities.", structured: { messages } };
+      },
+    },
+    {
+      definition: {
+        name: "create_semantic_message",
+        title: "Create semantic message identity",
+        description: "Create or replace an explicit project-scoped event or command identity. This never binds equal names automatically.",
+        inputSchema: objectSchema({ project: stringProp("Project id or name."), id: stringProp("Stable project-scoped id."), name: stringProp("Display name."), kind: enumProp(["event", "command"], "Architectural message kind.") }, ["id", "name", "kind"]),
+        annotations: { ...write, title: "Create semantic message identity" },
+      },
+      async run(args, context) {
+        const project = await context.workspace.resolveProject(optionalString(args, "project"));
+        const message = { id: requiredString(args, "id"), name: requiredString(args, "name"), kind: requiredString(args, "kind") as "event" | "command" };
+        await context.workspace.saveSemanticMessage(project, message);
+        return { text: `Created semantic message ${message.id}.`, structured: { message } };
+      },
+    },
+    {
+      definition: {
+        name: "bind_semantic_message",
+        title: "Bind semantic message occurrence",
+        description: "Bind one explicit Sequence occurrence or Event Flow event entity to an existing identity. Name matching is only a candidate and never performs this operation.",
+        inputSchema: objectSchema({ project: stringProp("Project id or name."), resource: stringProp("Resource id or path."), messageId: stringProp("Existing semantic message id."), name: stringProp("Sequence semantic name or Event Flow event name."), step: numberProp("1-based Sequence message step; omit for Event Flow.") }, ["resource", "messageId", "name"]),
+        annotations: { ...write, title: "Bind semantic message occurrence" },
+      },
+      async run(args, context) {
+        const project = await context.workspace.resolveProject(optionalString(args, "project"));
+        const identity = (await context.workspace.listSemanticMessages(project)).find((entry) => entry.id === requiredString(args, "messageId"));
+        if (!identity) throw new Error(`Unknown semantic message "${requiredString(args, "messageId")}".`);
+        const resource = context.workspace.resolveResource(await context.workspace.index(project), requiredString(args, "resource"));
+        const current = await context.workspace.readResource(project, resource.id);
+        const name = requiredString(args, "name");
+        const step = args.step === undefined ? undefined : Number(args.step);
+        const lines = current.content.split("\n");
+        if (resource.type === "event-flow") {
+          const line = lines.findIndex((entry) => /^\s*event\s+\S+/.test(entry) && entry.trim().split(/\s+/)[1] === name);
+          if (line < 0) throw new Error(`No Event Flow event "${name}" found.`);
+          if (lines[line].includes("messageRef")) throw new Error("The Event Flow event is already bound.");
+          lines[line] += ` messageRef ${identity.id}`;
+        } else {
+          const ast = analyze(current.content).ast;
+          const occurrence = ast && step !== undefined
+            ? semanticMessagesOf(ast).find((entry) => entry.name === name && entry.step === step)
+            : undefined;
+          const semanticLine = occurrence ? occurrence.range.start.line + 1 : -1;
+          if (semanticLine < 0 || step === undefined) throw new Error("Sequence binding requires an exact semantic name and step.");
+          if (lines[semanticLine].includes("messageRef")) throw new Error("The Sequence occurrence is already bound.");
+          lines[semanticLine] += ` messageRef ${identity.id}`;
+        }
+        const result = await context.workspace.updateResource(project, resource.id, { content: lines.join("\n") });
+        return { text: `Bound ${name} to ${identity.id}.`, structured: { resource: resource.id, messageId: identity.id, result } };
+      },
+    },
+    {
+      definition: {
         name: "audit_documentation",
         title: "Audit documentation quality",
         description:

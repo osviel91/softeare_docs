@@ -473,7 +473,9 @@ export function parseEventFlow(source: string): EventFlowParseResult {
       const allowsTail =
         CHANNEL_KINDS[keyword] !== undefined &&
         trailing?.value.toLowerCase() === "on";
-      if (trailing && !opensMetadata && !allowsTail) {
+      const allowsMessageRef = keyword === "event" &&
+        trailing?.value.toLowerCase() === "messageref";
+      if (trailing && !opensMetadata && !allowsTail && !allowsMessageRef) {
         diagnostics.push(
           lineDiagnostic(
             line,
@@ -500,6 +502,11 @@ export function parseEventFlow(source: string): EventFlowParseResult {
           metadata: [],
           range: lineRange(line),
         };
+        if (allowsMessageRef && tokens[3]?.type === "word") {
+          declaration.messageRef = tokens[3].value;
+        } else if (allowsMessageRef) {
+          diagnostics.push(lineDiagnostic(line, "messageRef requires a stable semantic message id", EventFlowDiagnosticCode.MalformedDeclaration));
+        }
         statements.push(declaration);
         if (opensMetadata) {
           metadataTarget = declaration;

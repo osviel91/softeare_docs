@@ -48,6 +48,7 @@ import {
   type MarkdownReference,
 } from "../../language/markdown/markdown";
 import { noteTitle } from "../../language/markdown/note-title";
+import { semanticMessagesOf } from "../diagram/semantic-messages";
 
 /** A salt so a change to the analysis rules invalidates cached fingerprints. */
 const ANALYSIS_VERSION = "1";
@@ -316,6 +317,8 @@ export function analyzeResource(
     symbols: [] as ProjectSymbol[],
     usages: [] as ProjectSymbolUsage[],
     references: [] as ReferenceCandidate[],
+    semanticOccurrences: [],
+    eventFlowMessages: [],
     diagnostics: [] as ProjectDiagnostic[],
     metrics: { participants: 0, messages: 0, words: 0 },
   };
@@ -332,6 +335,8 @@ export function analyzeResource(
       declaredTitle,
       symbols: ast ? diagramSymbols(ast, content, descriptor.id) : [],
       usages: ast ? participantUsages(ast, content, descriptor.id) : [],
+      semanticOccurrences: ast ? semanticMessagesOf(ast) : [],
+      eventFlowMessages: [],
       diagnostics: diagramDiagnostics(ast, content, descriptor.id),
       metrics: {
         participants: ast?.participants.length ?? 0,
@@ -407,6 +412,14 @@ export function analyzeResource(
       declaredTitle,
       symbols,
       usages: [],
+      semanticOccurrences: [],
+      eventFlowMessages: eventsOf(flow).map((event) => ({
+        name: event.name,
+        kind: event.kind ?? "event",
+        messageRef: event.messageRef,
+        resourceId: descriptor.id,
+        sourceRange: event.range,
+      })),
       diagnostics: diagnostics.map((diagnostic) =>
         eventFlowDiagnostic(diagnostic, descriptor.id),
       ),

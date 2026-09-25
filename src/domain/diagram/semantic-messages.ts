@@ -9,6 +9,7 @@ export interface SemanticMessageOccurrence {
   from: string;
   to: string;
   step: number;
+  messageRef?: string;
   range: MessageNode["range"];
 }
 
@@ -26,6 +27,7 @@ export function semanticMessagesOf(
       name: statement.semantics.name,
       kind: statement.semantics.kind,
       operation: statement.semantics.operation,
+      messageRef: statement.semantics.messageRef,
       from: statement.from,
       to: statement.to,
       step,

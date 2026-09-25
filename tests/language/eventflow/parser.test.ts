@@ -93,6 +93,10 @@ describe("event-flow lexer", () => {
 });
 
 describe("event-flow parser", () => {
+  it("parses an explicit message identity reference", () => {
+    const result = analyzeEventFlow("event Created messageRef msg-created\n");
+    expect(result.flow.statements[0]).toMatchObject({ type: "event", name: "Created", messageRef: "msg-created" });
+  });
   it("parses the declarations of a document", () => {
     const flow = parse(FLOW);
     expect(flow.title?.value).toBe("Order Processing");

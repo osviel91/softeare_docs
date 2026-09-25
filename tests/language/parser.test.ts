@@ -16,6 +16,13 @@ API --> User: Token
 `;
 
 describe("parse — valid input", () => {
+  it("parses an explicit semantic message identity reference", () => {
+    const { ast } = parse(`participant A\nparticipant B\nA -> B: created\nsemantic event publish Created messageRef msg-created\n`);
+    expect(ast?.statements.at(-1)).toMatchObject({
+      type: "message",
+      semantics: { name: "Created", kind: "event", operation: "publish", messageRef: "msg-created" },
+    });
+  });
   it("parses the login example into the expected AST", () => {
     const { ast, diagnostics } = parse(LOGIN_EXAMPLE);
     expect(diagnostics).toEqual([]);

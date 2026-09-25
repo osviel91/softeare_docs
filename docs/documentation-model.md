@@ -61,6 +61,25 @@ other resource as a navigable execution or causal view. Do not create the
 relationship for merely adjacent topics, shared components, or every pair of a
 Sequence and Event Flow.
 
+### Resource Relationships And Semantic Messages
+
+These are three separate concepts:
+
+- A `complementary-view` resource relationship means a Sequence and Event Flow
+  are two projections of substantially the same behavior.
+- A project-scoped semantic message identity is the stable architectural concept,
+  such as `MslTransactionCreatedEvent`. Its display name is not its identity.
+- A message occurrence or Event Flow entity may explicitly bind to that identity.
+  Equal names are candidates only and never create a binding.
+
+`publish`, `consume`, and `dispatch` belong to Sequence occurrences. `event` or
+`command` belongs to the semantic identity and must be compatible with every
+explicit binding. Distinct behaviors may intersect through a semantic message
+without becoming complementary views. MSL is an example: an ingestion Sequence
+and a negative-balance causal flow can share an explicit message identity without
+claiming to be the same behavior. UpOne is different: its existing
+`complementary-view` relationship remains, and message bindings enrich it.
+
 Similarly, `Merge Change Proposal.seq` can show execution, a proposal
 collaboration Event Flow can show asynchronous reactions, a future conceptual
 view can show proposal relationships, and a future Database view can show

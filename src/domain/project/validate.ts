@@ -19,6 +19,7 @@
  */
 import {
   duplicateResourceIds,
+  duplicateSemanticMessageIds,
   type ProjectMetadata,
 } from "../workspace/metadata";
 import type {
@@ -41,11 +42,46 @@ export const ProjectDiagnosticCode = {
   WrongReferenceKind: "project.wrong-reference-kind",
   /** A wiki-link or relative link resolves to nothing. */
   UnresolvedLink: "project.unresolved-link",
+  DuplicateSemanticMessageId: "project.duplicate-semantic-message-id",
+  DanglingSemanticMessageRef: "project.dangling-semantic-message-ref",
+  SemanticMessageKindMismatch: "project.semantic-message-kind-mismatch",
 } as const;
 
 /** Whether a reference was written with a stable scheme. */
 function hasStableScheme(raw: string): boolean {
   return /^(resource|diagram|doc):\/\//i.test(raw.trim());
+}
+
+function semanticMessageDiagnostics(
+  core: ProjectIndexCore,
+  metadata: ProjectMetadata,
+): ProjectDiagnostic[] {
+  const diagnostics: ProjectDiagnostic[] = duplicateSemanticMessageIds(metadata).map((id) => ({
+    severity: "error",
+    code: ProjectDiagnosticCode.DuplicateSemanticMessageId,
+    resourceId: core.resources[0]?.id ?? id,
+    message: `Semantic message id "${id}" is declared more than once`,
+  }));
+  const identities = new Map((metadata.semanticMessages ?? []).map((message) => [message.id, message]));
+  for (const occurrence of core.semanticOccurrences ?? []) {
+    if (!occurrence.messageRef) continue;
+    const identity = identities.get(occurrence.messageRef);
+    if (!identity) {
+      diagnostics.push({ severity: "error", code: ProjectDiagnosticCode.DanglingSemanticMessageRef, resourceId: occurrence.resourceId, sourceRange: occurrence.range, message: `Semantic message ref "${occurrence.messageRef}" does not exist` });
+    } else if (identity.kind !== occurrence.kind) {
+      diagnostics.push({ severity: "error", code: ProjectDiagnosticCode.SemanticMessageKindMismatch, resourceId: occurrence.resourceId, sourceRange: occurrence.range, message: `Semantic message "${identity.name}" is ${identity.kind}, but this occurrence is ${occurrence.kind}` });
+    }
+  }
+  for (const entity of core.eventFlowMessages ?? []) {
+    if (!entity.messageRef) continue;
+    const identity = identities.get(entity.messageRef);
+    if (!identity) {
+      diagnostics.push({ severity: "error", code: ProjectDiagnosticCode.DanglingSemanticMessageRef, resourceId: entity.resourceId, sourceRange: entity.sourceRange, message: `Semantic message ref "${entity.messageRef}" does not exist` });
+    } else if (identity.kind !== entity.kind) {
+      diagnostics.push({ severity: "error", code: ProjectDiagnosticCode.SemanticMessageKindMismatch, resourceId: entity.resourceId, sourceRange: entity.sourceRange, message: `Semantic message "${identity.name}" is ${identity.kind}, but this Event Flow entity is ${entity.kind}` });
+    }
+  }
+  return diagnostics;
 }
 
 /** The diagnostic a single unresolved reference earns, or `null` for none. */
@@ -177,6 +213,7 @@ export function validateProject(
 
   diagnostics.push(...duplicateIdDiagnostics(core, metadata));
   diagnostics.push(...duplicateTitleDiagnostics(core));
+  diagnostics.push(...semanticMessageDiagnostics(core, metadata));
 
   for (const reference of core.references) {
     const diagnostic = referenceDiagnostic(reference);

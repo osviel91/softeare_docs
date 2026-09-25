@@ -576,6 +576,28 @@ export function createRouter(dependencies: AppDependencies): Router {
     }),
   );
 
+  router.get("/api/projects/:projectId/relationships", async (request, params) =>
+    guarded(correlationId(request), async () => {
+      const context = await contextOf(request);
+      return json(200, { relationships: await catalog.listResourceRelationships(context, params.projectId) });
+    }),
+  );
+
+  router.post("/api/projects/:projectId/relationships", async (request, params) =>
+    guarded(correlationId(request), async () => {
+      const context = await contextOf(request);
+      const body = parseJsonBody(request.body);
+      const relationship = await catalog.createResourceRelationship(context, params.projectId, {
+        kind: body.kind === "complementary-view" ? "complementary-view" : body.kind as "complementary-view",
+        sourceId: requireBodyString(body, "sourceId"),
+        targetId: requireBodyString(body, "targetId"),
+        ...(typeof body.sourceRole === "string" ? { sourceRole: body.sourceRole as "execution" | "causal" | "other" } : {}),
+        ...(typeof body.targetRole === "string" ? { targetRole: body.targetRole as "execution" | "causal" | "other" } : {}),
+      });
+      return json(201, { relationship });
+    }),
+  );
+
   router.post("/api/projects/:projectId/resources", async (request, params) =>
     guarded(correlationId(request), async () => {
       const context = await contextOf(request);

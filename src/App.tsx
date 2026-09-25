@@ -181,6 +181,7 @@ import LoginScreen from "./features/server/LoginScreen";
 import { RevisionConflictError } from "./workspace/server/api-errors";
 import { supportsForcedWrite } from "./workspace/server/server-workspace-repository";
 import ResourceMetadataEditor from "./features/resource/ResourceMetadataEditor";
+import ComplementaryViews from "./features/resource/ComplementaryViews";
 import { ProposalReviewPanel } from "./features/proposals/ProposalReview";
 import ChangesInbox from "./features/proposals/ChangesInbox";
 import {
@@ -838,6 +839,10 @@ export default function App() {
   // reads it rather than recomputing project facts, and it is built here — before
   // the document helpers — because link resolution needs it too.
   const index = useProjectIndex(selectedProjectId, diagrams, notes, metadata);
+  const complementaryResources = (index?.resources ?? []).map((resource) => ({
+    id: resource.id,
+    title: resource.title,
+  }));
 
   // Version history ("Trajectory") only applies to a diagram, and only while the
   // tab showing it is the one on screen.
@@ -2812,6 +2817,19 @@ export default function App() {
                       writable={metadataWritable}
                       onSave={saveResourceMetadata}
                     />
+                    <ComplementaryViews
+                      resourceId={activeResourceId}
+                      relationships={metadata?.relationships ?? []}
+                      resources={complementaryResources}
+                      onNavigate={(id) => {
+                        const target = index?.resources.find((resource) => resource.id === id);
+                        const file = target && [...diagrams, ...notes].find((item) => item.name === target.path);
+                        if (file) {
+                          if (target.type === "markdown-document") loadNote(file as NoteFile);
+                          else loadDiagram(file as DiagramFile);
+                        }
+                      }}
+                    />
                   </div>
                   <ResourceActionBar
                     proposalCount={resourceProposalCount}
@@ -2862,6 +2880,19 @@ export default function App() {
                       metadata={selectedDiagram?.metadata}
                       writable={metadataWritable}
                       onSave={saveResourceMetadata}
+                    />
+                    <ComplementaryViews
+                      resourceId={activeResourceId}
+                      relationships={metadata?.relationships ?? []}
+                      resources={complementaryResources}
+                      onNavigate={(id) => {
+                        const target = index?.resources.find((resource) => resource.id === id);
+                        const file = target && [...diagrams, ...notes].find((item) => item.name === target.path);
+                        if (file) {
+                          if (target.type === "markdown-document") loadNote(file as NoteFile);
+                          else loadDiagram(file as DiagramFile);
+                        }
+                      }}
                     />
                   </div>
                   <ResourceActionBar

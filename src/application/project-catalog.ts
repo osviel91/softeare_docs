@@ -48,6 +48,7 @@ import {
 } from "./workspace-mutations";
 import type { JsonObject } from "../shared/json/json-value";
 import type { ResourceMetadata } from "../domain/workspace/resource-metadata";
+import type { ResourceRelationship } from "../domain/workspace/resource-relationship";
 
 /**
  * A resource as the API and MCP surface it: identity, path, type, revision.
@@ -206,6 +207,15 @@ export interface ProjectCatalog {
     context: ApplicationContext,
     projectId: string,
   ): Promise<CatalogResource[]>;
+  listResourceRelationships(
+    context: ApplicationContext,
+    projectId: string,
+  ): Promise<ResourceRelationship[]>;
+  createResourceRelationship(
+    context: ApplicationContext,
+    projectId: string,
+    relationship: ResourceRelationship,
+  ): Promise<ResourceRelationship>;
 
   /** One resource's record. */
   getResource(
@@ -591,6 +601,23 @@ export function createProjectCatalog(
       await requirePermission(context, projectId, "resource:read");
       const records = await projects.listResources(projectId);
       return records.map(toCatalogResource);
+    },
+
+    async listResourceRelationships(context, projectId) {
+      await requirePermission(context, projectId, "resource:read");
+      return projects.listResourceRelationships(projectId);
+    },
+
+    async createResourceRelationship(context, projectId, relationship) {
+      await requirePermission(context, projectId, "resource:update");
+      const resources = await projects.listResources(projectId);
+      const source = resources.find((resource) => resource.id === relationship.sourceId);
+      const target = resources.find((resource) => resource.id === relationship.targetId);
+      if (!source || !target) throw notFound("Both relationship resources must exist.");
+      if (!((source.type === "sequence-diagram" && target.type === "event-flow") || (source.type === "event-flow" && target.type === "sequence-diagram"))) {
+        throw invalid("Complementary views require a Sequence and an Event Flow.");
+      }
+      return projects.createResourceRelationship(projectId, relationship);
     },
 
     async getResource(context, projectId, resourceId) {

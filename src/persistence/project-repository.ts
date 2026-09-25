@@ -46,6 +46,7 @@ import type {
   ResourceRevision,
 } from "../domain/workspace/resource-revision";
 import { resourceTrajectoryOf } from "../domain/workspace/resource-trajectory";
+import type { ResourceRelationship } from "../domain/workspace/resource-relationship";
 
 export type {
   NewResource,
@@ -384,6 +385,38 @@ export function createProjectRepository(
         "DELETE FROM resources WHERE project_id = $1 AND id = $2",
         [projectId, resourceId],
       );
+    },
+
+    async listResourceRelationships(projectId) {
+      const result = await client.query(
+        "SELECT source_id, target_id, kind, source_role, target_role FROM resource_relationships WHERE project_id = $1 ORDER BY source_id, target_id",
+        [projectId],
+      );
+      return result.rows.map((row) => ({
+        kind: row.kind as ResourceRelationship["kind"],
+        sourceId: text(row, "source_id"),
+        targetId: text(row, "target_id"),
+        ...(row.source_role ? { sourceRole: row.source_role as ResourceRelationship["sourceRole"] } : {}),
+        ...(row.target_role ? { targetRole: row.target_role as ResourceRelationship["targetRole"] } : {}),
+      }));
+    },
+
+    async createResourceRelationship(projectId, relationship) {
+      const result = await client.query(
+        `INSERT INTO resource_relationships (project_id, source_id, target_id, kind, source_role, target_role)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT (project_id, source_id, target_id) DO UPDATE SET kind = EXCLUDED.kind, source_role = EXCLUDED.source_role, target_role = EXCLUDED.target_role
+         RETURNING source_id, target_id, kind, source_role, target_role`,
+        [projectId, relationship.sourceId, relationship.targetId, relationship.kind, relationship.sourceRole ?? null, relationship.targetRole ?? null],
+      );
+      const row = result.rows[0];
+      return {
+        kind: row.kind as ResourceRelationship["kind"],
+        sourceId: text(row, "source_id"),
+        targetId: text(row, "target_id"),
+        ...(row.source_role ? { sourceRole: row.source_role as ResourceRelationship["sourceRole"] } : {}),
+        ...(row.target_role ? { targetRole: row.target_role as ResourceRelationship["targetRole"] } : {}),
+      };
     },
 
     async listRevisions(resourceId) {

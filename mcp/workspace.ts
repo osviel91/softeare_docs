@@ -59,6 +59,14 @@ import {
   resourceKindOf,
   type ResourceType,
 } from "../src/domain/workspace/resource-id";
+import {
+  addResourceRelationship,
+  removeResourceRelationships,
+} from "../src/domain/workspace/metadata";
+import {
+  validateResourceRelationship,
+  type ResourceRelationship,
+} from "../src/domain/workspace/resource-relationship";
 import { ensureMarkdownExtension } from "../src/domain/workspace/note";
 import { createEmptyMetadata } from "../src/domain/workspace/metadata";
 import type {
@@ -118,6 +126,7 @@ export interface ResourceSummary {
   /** Whether the document declares a title of its own. */
   titleDeclared: boolean;
   metrics: ResourceMetrics;
+  complementaryViews: ResourceRelationship[];
 }
 
 /** A project and the shape of its documentation, for `list_projects`. */
@@ -480,7 +489,37 @@ export class DocumentationWorkspace {
     const snapshot = await this.snapshot(project);
     const index = await this.index(project, snapshot);
     return index.resources.map((descriptor) =>
-      this.summarize(descriptor, index),
+      this.summarize(descriptor, index, snapshot.metadata.relationships),
+    );
+  }
+
+  async listRelationships(project: Project): Promise<ResourceRelationship[]> {
+    return (await this.snapshot(project)).metadata.relationships ?? [];
+  }
+
+  async createRelationship(
+    project: Project,
+    input: ResourceRelationship,
+  ): Promise<ResourceRelationship> {
+    const snapshot = await this.snapshot(project);
+    const index = await this.index(project, snapshot);
+    const relationship = validateResourceRelationship(input, index.resources);
+    unwrap(
+      await (await this.workspaceOf(project)).repo.writeProjectMetadata(
+        project.id,
+        addResourceRelationship(snapshot.metadata, relationship),
+      ),
+    );
+    return relationship;
+  }
+
+  async deleteRelationshipsForResource(project: Project, resourceId: string): Promise<void> {
+    const snapshot = await this.snapshot(project);
+    unwrap(
+      await (await this.workspaceOf(project)).repo.writeProjectMetadata(
+        project.id,
+        removeResourceRelationships(snapshot.metadata, resourceId),
+      ),
     );
   }
 
@@ -589,7 +628,7 @@ export class DocumentationWorkspace {
     const index = await this.index(project, snapshot);
     const descriptor = this.resolveResource(index, reference);
     return {
-      resource: this.summarize(descriptor, index),
+      resource: this.summarize(descriptor, index, snapshot.metadata.relationships),
       content: this.contentOf(snapshot, descriptor),
     };
   }
@@ -693,11 +732,11 @@ export class DocumentationWorkspace {
       );
     }
     return {
-      resource: this.summarize(descriptor, afterIndex),
+      resource: this.summarize(descriptor, afterIndex, after.metadata.relationships),
       created: existing === undefined,
       diagnostics: this.validateContent(
         content,
-        this.summarize(descriptor, afterIndex),
+        this.summarize(descriptor, afterIndex, after.metadata.relationships),
       ),
     };
   }
@@ -860,6 +899,7 @@ export class DocumentationWorkspace {
         ),
       );
     }
+    await this.deleteRelationshipsForResource(project, descriptor.id);
     return { deleted: this.summarize(descriptor, index) };
   }
 
@@ -1135,6 +1175,7 @@ export class DocumentationWorkspace {
   private summarize(
     descriptor: ResourceDescriptor,
     index: ProjectIndex,
+    relationships: ResourceRelationship[] = [],
   ): ResourceSummary {
     return {
       id: descriptor.id,
@@ -1144,6 +1185,10 @@ export class DocumentationWorkspace {
       title: descriptor.title,
       titleDeclared: descriptor.title !== descriptor.path,
       metrics: this.metricsOf(descriptor.id, index),
+      complementaryViews: relationships.filter(
+        (relationship) =>
+          relationship.sourceId === descriptor.id || relationship.targetId === descriptor.id,
+      ),
     };
   }
 

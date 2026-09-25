@@ -25,6 +25,11 @@ import {
   PROJECT_METADATA_FORMAT,
   type ProjectMetadata,
 } from "../../../src/domain/workspace/metadata";
+import {
+  addResourceRelationship,
+  removeResourceRelationships,
+} from "../../../src/domain/workspace/metadata";
+import { validateResourceRelationship } from "../../../src/domain/workspace/resource-relationship";
 
 describe("resource ids", () => {
   it("maps a stored kind onto a resource type and back", () => {
@@ -83,6 +88,43 @@ describe("resource ids", () => {
     expect(isResourceId("diagram-payment-processing")).toBe(true);
     expect(isResourceId("docs/architecture.md")).toBe(false);
     expect(isResourceId("9lives")).toBe(false);
+  });
+});
+
+describe("complementary views", () => {
+  it("normalizes direction, validates the pair, and removes deleted targets", () => {
+    const metadata = createEmptyMetadata();
+    const relationship = validateResourceRelationship(
+      {
+        kind: "complementary-view",
+        sourceId: "event",
+        targetId: "sequence",
+        sourceRole: "causal",
+        targetRole: "execution",
+      },
+      [
+        { id: "sequence", type: "sequence-diagram" },
+        { id: "event", type: "event-flow" },
+      ],
+    );
+    const withRelationship = addResourceRelationship(metadata, relationship);
+    expect(withRelationship.relationships).toHaveLength(1);
+    expect(withRelationship.relationships?.[0].sourceId).toBe("event");
+    expect(removeResourceRelationships(withRelationship, "event").relationships).toEqual([]);
+  });
+
+  it("rejects dangling and non-complementary relationships", () => {
+    expect(() => validateResourceRelationship(
+      { kind: "complementary-view", sourceId: "missing", targetId: "event" },
+      [{ id: "event", type: "event-flow" }],
+    )).toThrow("Both relationship resources must exist");
+    expect(() => validateResourceRelationship(
+      { kind: "complementary-view", sourceId: "note", targetId: "event" },
+      [
+        { id: "note", type: "markdown-document" },
+        { id: "event", type: "event-flow" },
+      ],
+    )).toThrow("require a Sequence and an Event Flow");
   });
 });
 

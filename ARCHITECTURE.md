@@ -64,6 +64,14 @@ derived from existing content titles with the current resource-name fallback.
 Visualization is not metadata; stored metadata is propagated through server
 persistence and the existing resource read/write surfaces.
 
+Resource relationships are a fifth, project-scoped concern. A
+`ResourceRelationship` stores stable resource ids, a semantic kind, and optional
+directional view roles. `complementary-view` is currently the only supported kind
+and is restricted to a Sequence/Event Flow pair. Local projects keep these rows
+in `project.json`; server projects use `resource_relationships` with foreign keys
+and cascading deletion. The pair is canonicalized once, while readers expose it
+in both directions. It is deliberately not a generic graph or a Markdown link.
+
 ### Server resource history
 
 The server's `resources.revision` remains the current optimistic-concurrency

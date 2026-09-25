@@ -38,6 +38,11 @@ import {
   parseResourceMetadata,
   type ResourceMetadata,
 } from "./resource-metadata";
+import type { ResourceRelationship } from "./resource-relationship";
+import {
+  normalizeResourceRelationship,
+  sameResourceRelationship,
+} from "./resource-relationship";
 
 /** The `format` marker written into a project metadata file. */
 export const PROJECT_METADATA_FORMAT = "sequencediagrams-project";
@@ -73,6 +78,7 @@ export interface ProjectMetadata {
   format: string;
   version: number;
   resources: ResourceRecord[];
+  relationships?: ResourceRelationship[];
 }
 
 /** A file the metadata should describe, as the repository reports it. */
@@ -100,6 +106,7 @@ export function createEmptyMetadata(): ProjectMetadata {
     format: PROJECT_METADATA_FORMAT,
     version: PROJECT_METADATA_VERSION,
     resources: [],
+    relationships: [],
   };
 }
 
@@ -153,6 +160,17 @@ export function parseProjectMetadata(value: unknown): ProjectMetadata | null {
     format: PROJECT_METADATA_FORMAT,
     version: PROJECT_METADATA_VERSION,
     resources,
+    ...(Array.isArray(record.relationships)
+      ? { relationships: record.relationships.filter((item): item is ResourceRelationship => {
+          if (typeof item !== "object" || item === null) return false;
+          const relation = item as Record<string, unknown>;
+          return (
+            relation.kind === "complementary-view" &&
+            typeof relation.sourceId === "string" &&
+            typeof relation.targetId === "string"
+          );
+        }) }
+      : {}),
   };
 }
 
@@ -255,6 +273,15 @@ export function reconcileMetadata(
     format: PROJECT_METADATA_FORMAT,
     version: PROJECT_METADATA_VERSION,
     resources,
+    ...(previous.relationships === undefined
+      ? {}
+      : {
+          relationships: previous.relationships.filter(
+            (relationship) =>
+              resources.some((resource) => resource.id === relationship.sourceId) &&
+              resources.some((resource) => resource.id === relationship.targetId),
+          ),
+        }),
   };
   return {
     metadata,
@@ -331,4 +358,25 @@ export function pathForResourceId(
   id: ResourceId,
 ): string | null {
   return resourceRecordById(metadata, id)?.path ?? null;
+}
+
+export function addResourceRelationship(
+  metadata: ProjectMetadata,
+  relationship: ResourceRelationship,
+): ProjectMetadata {
+  const next = normalizeResourceRelationship(relationship);
+  if ((metadata.relationships ?? []).some((item) => sameResourceRelationship(item, next))) {
+    return metadata;
+  }
+  return { ...metadata, relationships: [...(metadata.relationships ?? []), next] };
+}
+
+export function removeResourceRelationships(
+  metadata: ProjectMetadata,
+  resourceId: string,
+): ProjectMetadata {
+  const relationships = (metadata.relationships ?? []).filter(
+    (item) => item.sourceId !== resourceId && item.targetId !== resourceId,
+  );
+  return { ...metadata, relationships };
 }

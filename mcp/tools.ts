@@ -254,6 +254,61 @@ export function createTools(): Tool[] {
 
     {
       definition: {
+        name: "list_resource_relationships",
+        title: "List resource relationships",
+        description:
+          "List semantic relationships in a project. Complementary views are stable-id links between a Sequence and an Event Flow that document the same behavior from execution and causal perspectives; they are not generic hyperlinks.",
+        inputSchema: objectSchema({
+          project: stringProp("Project id or name."),
+        }),
+        annotations: { ...readOnly, title: "List resource relationships" },
+      },
+      async run(args, context) {
+        const project = await context.workspace.resolveProject(optionalString(args, "project"));
+        const relationships = await context.workspace.listRelationships(project);
+        return {
+          text: relationships.length === 0 ? "No semantic resource relationships." : JSON.stringify(relationships),
+          structured: { project: { id: project.id, name: project.name }, relationships },
+        };
+      },
+    },
+
+    {
+      definition: {
+        name: "create_resource_relationship",
+        title: "Create resource relationship",
+        description:
+          "Declare two existing resources as complementary views of substantially the same behavior. Use only when both views add materially different information; do not create a Sequence/Event Flow pair mechanically.",
+        inputSchema: objectSchema(
+          {
+            project: stringProp("Project id or name."),
+            source: stringProp("Stable id, path, or title of the first resource."),
+            target: stringProp("Stable id, path, or title of the second resource."),
+            sourceRole: enumProp(["execution", "causal", "other"], "Optional role of the first resource."),
+            targetRole: enumProp(["execution", "causal", "other"], "Optional role of the second resource."),
+          },
+          ["source", "target"],
+        ),
+        annotations: { ...write, title: "Create resource relationship" },
+      },
+      async run(args, context) {
+        const project = await context.workspace.resolveProject(optionalString(args, "project"));
+        const index = await context.workspace.index(project);
+        const source = context.workspace.resolveResource(index, requiredString(args, "source"));
+        const target = context.workspace.resolveResource(index, requiredString(args, "target"));
+        const relationship = await context.workspace.createRelationship(project, {
+          kind: "complementary-view",
+          sourceId: source.id,
+          targetId: target.id,
+          ...(optionalString(args, "sourceRole") ? { sourceRole: optionalString(args, "sourceRole") as "execution" | "causal" | "other" } : {}),
+          ...(optionalString(args, "targetRole") ? { targetRole: optionalString(args, "targetRole") as "execution" | "causal" | "other" } : {}),
+        });
+        return { text: `Created complementary view relationship: ${source.title} <-> ${target.title}.`, structured: { project: { id: project.id, name: project.name }, relationship } };
+      },
+    },
+
+    {
+      definition: {
         name: "create_project",
         title: "Create a documentation project",
         description:

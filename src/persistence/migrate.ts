@@ -27,6 +27,7 @@ import { up as mergedProposals } from "./migrations/0012-merged-proposals";
 import { up as mergeSchemaRepair } from "./migrations/0013-merge-schema-repair";
 import { repairMergeSchema } from "./migrations/0013-merge-schema-repair";
 import { up as mergedStatusConstraint } from "./migrations/0014-merged-status-constraint";
+import { up as resourceRelationships } from "./migrations/0015-resource-relationships";
 
 /** One migration: a stable name and the SQL that applies it. */
 export interface Migration {
@@ -54,6 +55,7 @@ export const MIGRATIONS: readonly Migration[] = [
   { version: 12, name: "merged-proposals", sql: mergedProposals },
   { version: 13, name: "merge-schema-repair", sql: mergeSchemaRepair },
   { version: 14, name: "merged-status-constraint", sql: mergedStatusConstraint },
+  { version: 15, name: "resource-relationships", sql: resourceRelationships },
 ];
 
 /**

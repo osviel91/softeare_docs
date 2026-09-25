@@ -54,6 +54,13 @@ documented as an Event Flow when that evidence forms a meaningful causal
 context. Do not mechanically duplicate every Sequence as an Event Flow; add the
 second view only when real asynchronous causal structure is present.
 
+When two resources document substantially the same behavior from these different
+angles, record a semantic `complementary-view` relationship. This is stronger
+than a Markdown hyperlink: it is stored by stable resource id and exposes the
+other resource as a navigable execution or causal view. Do not create the
+relationship for merely adjacent topics, shared components, or every pair of a
+Sequence and Event Flow.
+
 Similarly, `Merge Change Proposal.seq` can show execution, a proposal
 collaboration Event Flow can show asynchronous reactions, a future conceptual
 view can show proposal relationships, and a future Database view can show

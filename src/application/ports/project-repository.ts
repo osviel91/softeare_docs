@@ -26,6 +26,7 @@ import type { ResourceType } from "../../domain/workspace/resource-id";
 import type { ResourceMetadata } from "../../domain/workspace/resource-metadata";
 import type { ResourceRevision } from "../../domain/workspace/resource-revision";
 import type { Result } from "../../shared/result/result";
+import type { ResourceRelationship } from "../../domain/workspace/resource-relationship";
 
 /** A resource row: the server's record of one stored document. */
 export interface ResourceRecord {
@@ -148,6 +149,12 @@ export interface ProjectRepository {
 
   /** Forget a resource. Its file is removed by the caller. */
   deleteResource(projectId: string, resourceId: string): Promise<void>;
+
+  listResourceRelationships(projectId: string): Promise<ResourceRelationship[]>;
+  createResourceRelationship(
+    projectId: string,
+    relationship: ResourceRelationship,
+  ): Promise<ResourceRelationship>;
 
   listRevisions(resourceId: string): Promise<ResourceRevision[]>;
 

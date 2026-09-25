@@ -5,18 +5,13 @@ import {
   loadProjectProposals,
   type ProjectProposalEntry,
 } from "./project-proposals";
+import PageHeader from "../ui/PageHeader";
 
 function age(value: string): string {
   return new Date(value).toLocaleString();
 }
 
 function author(author: ProjectProposalEntry["proposal"]["author"]): string {
-  if (author.kind === "agent") return `Agent ${author.agentId.slice(0, 8)}…`;
-  if (author.kind === "user") return "User";
-  return "System";
-}
-
-function actor(author: ProjectProposalEntry["proposal"]["author"]): string {
   if (author.kind === "agent") return `Agent ${author.agentId.slice(0, 8)}…`;
   if (author.kind === "user") return "User";
   return "System";
@@ -49,7 +44,6 @@ export default function ChangesInbox({
   onOpen: (proposalId: string) => void;
 }) {
   const [entries, setEntries] = useState<ProjectProposalEntry[]>([]);
-  const [showHistory, setShowHistory] = useState(false);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     let active = true;
@@ -65,44 +59,23 @@ export default function ChangesInbox({
     };
   }, [client, projectId]);
 
-  const visible = entries.filter(({ proposal }) =>
-    showHistory ? proposal.status !== "open" : proposal.status === "open",
-  );
+  const visible = entries.filter(({ proposal }) => proposal.status === "open");
   return (
     <main className="changes-inbox" data-testid="changes-inbox">
-      <header className="changes-inbox__header">
-        <div>
-          <p className="proposal-review__eyebrow">Project collaboration</p>
-          <h1>
+      <PageHeader
+        eyebrow="Project collaboration"
+        title={
+          <>
             Changes{" "}
-            <span className="changes-inbox__count">
-              {
-                entries.filter(({ proposal }) => proposal.status === "open")
-                  .length
-              }{" "}
-              open
-            </span>
-          </h1>
-          <p>
-            Review proposed documentation changes across every resource in this
-            project.
-          </p>
-        </div>
-        <button
-          type="button"
-          className="button button--ghost"
-          aria-label={showHistory ? "Open changes" : "View history"}
-          onClick={() => setShowHistory((value) => !value)}
-        >
-          {showHistory ? "Open" : "History"}
-        </button>
-      </header>
+            <span className="changes-inbox__count">{visible.length} open</span>
+          </>
+        }
+        description="Review proposed documentation changes across every resource in this project."
+      />
       {error && <p role="alert">{error}</p>}
       {visible.length === 0 ? (
         <p className="changes-inbox__empty">
-          {showHistory
-            ? "No merged or closed changes yet."
-            : "No open changes — Canonical documentation is up to date."}
+          No open changes — Canonical documentation is up to date.
         </p>
       ) : (
         <ul className="changes-inbox__list">
@@ -133,20 +106,6 @@ export default function ChangesInbox({
                   {entry.diff?.currentRevision ?? entry.resource.revision}
                 </span>
                 <span>{mergeStatus(entry)}</span>
-                {showHistory && entry.proposal.status === "merged" && (
-                  <span>
-                    Merged
-                    {entry.proposal.mergeActor
-                      ? ` by ${actor(entry.proposal.mergeActor)}`
-                      : ""}
-                    {entry.proposal.mergedRevision !== undefined
-                      ? ` into r${entry.proposal.mergedRevision}`
-                      : ""}
-                    {entry.proposal.mergedAt
-                      ? ` · ${age(entry.proposal.mergedAt)}`
-                      : ""}
-                  </span>
-                )}
               </button>
             </li>
           ))}

@@ -21,6 +21,12 @@ const proposal: ServerChangeProposal = {
 
 describe("ProposalReviewPanel", () => {
   it("resolves an inbox proposal without selected-resource context", async () => {
+    const mergedProposal = {
+      ...proposal,
+      id: "merged",
+      title: "Old merged change",
+      status: "merged" as const,
+    };
     const client = {
       getChangeProposal: vi.fn().mockResolvedValue(proposal),
       listResources: vi.fn().mockResolvedValue([
@@ -32,7 +38,9 @@ describe("ProposalReviewPanel", () => {
           revision: 2,
         },
       ]),
-      listChangeProposals: vi.fn().mockResolvedValue([proposal]),
+      listChangeProposals: vi
+        .fn()
+        .mockResolvedValue([proposal, mergedProposal]),
       getChangeProposalDiff: vi.fn().mockResolvedValue({
         proposalId: proposal.id,
         resourceId: proposal.resourceId,
@@ -102,5 +110,6 @@ describe("ProposalReviewPanel", () => {
     expect(screen.getByTestId("proposal-review")).toHaveTextContent(
       "target.seq",
     );
+    expect(screen.queryByText("Old merged change")).not.toBeInTheDocument();
   });
 });

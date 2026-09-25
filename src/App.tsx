@@ -51,6 +51,7 @@ import ContextMenu, { type ContextMenuItem } from "./features/ui/ContextMenu";
 import PromptDialog from "./features/ui/PromptDialog";
 import SaveConflictDialog from "./features/ui/SaveConflictDialog";
 import HistoryPanel from "./features/history/HistoryPanel";
+import ResourceActionBar from "./features/ui/ResourceActionBar";
 import MarkdownEditor from "./features/notes/MarkdownEditor";
 import MarkdownView from "./features/notes/MarkdownView";
 import {
@@ -2727,6 +2728,7 @@ export default function App() {
                   }
                   resourceScoped={historyResourceScoped}
                   onShowProjectHistory={() => setHistoryResourceScoped(false)}
+                  onShowResourceHistory={() => setHistoryResourceScoped(true)}
                   onSaveVersion={() => {
                     void history.saveVersion(source);
                   }}
@@ -2771,34 +2773,22 @@ export default function App() {
                       writable={metadataWritable}
                       onSave={saveResourceMetadata}
                     />
-                    <button
-                      type="button"
-                      className="resource-header__history"
-                      onClick={() => {
-                        setHistoryResourceScoped(true);
-                        setView("history");
-                      }}
-                    >
-                      History
-                    </button>
-                    {canReviewProposals && resourceProposalCount > 0 && (
-                      <button
-                        type="button"
-                        className="resource-header__proposals"
-                        onClick={() => {
-                          setReviewProposalId(null);
-                          setProposalReviewOpen(true);
-                        }}
-                        aria-label={`Review ${resourceProposalCount} open change ${resourceProposalCount === 1 ? "proposal" : "proposals"}`}
-                        title={`Review ${resourceProposalCount} open change ${resourceProposalCount === 1 ? "proposal" : "proposals"}`}
-                      >
-                        <span aria-hidden="true">◇</span>
-                        <span className="resource-header__proposal-count">
-                          {resourceProposalCount}
-                        </span>
-                      </button>
-                    )}
                   </div>
+                  <ResourceActionBar
+                    proposalCount={resourceProposalCount}
+                    onHistory={() => {
+                      setHistoryResourceScoped(true);
+                      setView("history");
+                    }}
+                    onChanges={
+                      canReviewProposals
+                        ? () => {
+                            setReviewProposalId(null);
+                            setProposalReviewOpen(true);
+                          }
+                        : undefined
+                    }
+                  />
                   <MarkdownEditor
                     value={source}
                     onChange={updateActiveSource}
@@ -2834,34 +2824,22 @@ export default function App() {
                       writable={metadataWritable}
                       onSave={saveResourceMetadata}
                     />
-                    <button
-                      type="button"
-                      className="resource-header__history"
-                      onClick={() => {
-                        setHistoryResourceScoped(true);
-                        setView("history");
-                      }}
-                    >
-                      History
-                    </button>
-                    {canReviewProposals && resourceProposalCount > 0 && (
-                      <button
-                        type="button"
-                        className="resource-header__proposals"
-                        onClick={() => {
-                          setReviewProposalId(null);
-                          setProposalReviewOpen(true);
-                        }}
-                        aria-label={`Review ${resourceProposalCount} open change ${resourceProposalCount === 1 ? "proposal" : "proposals"}`}
-                        title={`Review ${resourceProposalCount} open change ${resourceProposalCount === 1 ? "proposal" : "proposals"}`}
-                      >
-                        <span aria-hidden="true">◇</span>
-                        <span className="resource-header__proposal-count">
-                          {resourceProposalCount}
-                        </span>
-                      </button>
-                    )}
                   </div>
+                  <ResourceActionBar
+                    proposalCount={resourceProposalCount}
+                    onHistory={() => {
+                      setHistoryResourceScoped(true);
+                      setView("history");
+                    }}
+                    onChanges={
+                      canReviewProposals
+                        ? () => {
+                            setReviewProposalId(null);
+                            setProposalReviewOpen(true);
+                          }
+                        : undefined
+                    }
+                  />
                   <Editor
                     value={source}
                     onChange={updateActiveSource}

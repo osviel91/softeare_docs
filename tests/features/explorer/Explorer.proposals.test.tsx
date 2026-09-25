@@ -20,6 +20,10 @@ describe("Explorer proposal indicators", () => {
     render(<Explorer {...props} openProposalCounts={{ one: 1, two: 2 }} />);
     expect(screen.getByTitle("1 open change")).toBeInTheDocument();
     expect(screen.getByTitle("2 open changes")).toBeInTheDocument();
+    expect(screen.getAllByTestId("explorer-status-slot")).toHaveLength(2);
+    expect(
+      screen.getAllByTestId("explorer-status-slot")[0].parentElement,
+    ).toHaveClass("explorer__diagram-button");
   });
 
   it("does not render a marker for resources without open proposals", () => {

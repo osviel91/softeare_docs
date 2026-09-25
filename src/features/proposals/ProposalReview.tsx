@@ -72,9 +72,7 @@ export function ProposalReviewPanel({
       const result = await client.mergeChangeProposal(selected.id);
       setSelected(result.proposal);
       setProposals((items) =>
-        items.map((item) =>
-          item.id === result.proposal.id ? result.proposal : item,
-        ),
+        items.filter((item) => item.id !== result.proposal.id),
       );
       setCurrent(result.resource);
     } catch (caught) {
@@ -98,7 +96,9 @@ export function ProposalReviewPanel({
         // Review navigation is project-scoped. The resource that opened the
         // review may still be useful as the initial selection, but never narrows
         // the sidebar's proposal set.
-        const items = entries.map(({ proposal }) => proposal);
+        const items = entries
+          .map(({ proposal }) => proposal)
+          .filter((proposal) => proposal.status === "open");
         setProposals(items);
         setProposalState("loaded");
         setSelected(

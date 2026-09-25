@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import HistoryPanel from "../../../src/features/history/HistoryPanel";
 import type { DiagramVersion } from "../../../src/domain/workspace/version";
 
@@ -110,6 +116,31 @@ describe("HistoryPanel", () => {
     expect(screen.getByTestId("history-empty")).toHaveTextContent(
       "No versions yet",
     );
+  });
+
+  it("uses the same scope navigation in both history views", () => {
+    const showProject = vi.fn();
+    const showResource = vi.fn();
+    renderPanel({
+      resourceScoped: true,
+      onShowProjectHistory: showProject,
+    });
+    expect(screen.getByTestId("project-history-navigation")).toHaveTextContent(
+      "Project history",
+    );
+    fireEvent.click(screen.getByTestId("project-history-navigation"));
+    expect(showProject).toHaveBeenCalledTimes(1);
+
+    cleanup();
+    renderPanel({
+      activeDiagramId: "diag-1",
+      onShowResourceHistory: showResource,
+    });
+    expect(screen.getByTestId("resource-history-navigation")).toHaveTextContent(
+      "Resource history",
+    );
+    fireEvent.click(screen.getByTestId("resource-history-navigation"));
+    expect(showResource).toHaveBeenCalledTimes(1);
   });
 });
 

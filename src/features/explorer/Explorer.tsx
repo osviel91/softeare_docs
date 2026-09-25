@@ -464,19 +464,26 @@ export default function Explorer({
                             >
                               ▦
                             </span>
-                            {diagramName(diagram)}
-                            {(openProposalCounts[diagram.id] ?? 0) > 0 && (
-                              <span
-                                className="explorer__proposal-indicator"
-                                title={`${openProposalCounts[diagram.id]} open change${openProposalCounts[diagram.id] === 1 ? "" : "s"}`}
-                                aria-label={`${openProposalCounts[diagram.id]} open change${openProposalCounts[diagram.id] === 1 ? "" : "s"}`}
-                              >
-                                ◆
-                                {openProposalCounts[diagram.id] > 1
-                                  ? ` ${openProposalCounts[diagram.id]}`
-                                  : ""}
-                              </span>
-                            )}
+                            <span className="explorer__item-name">
+                              {diagramName(diagram)}
+                            </span>
+                            <span
+                              className="explorer__status-slot"
+                              data-testid="explorer-status-slot"
+                            >
+                              {(openProposalCounts[diagram.id] ?? 0) > 0 && (
+                                <span
+                                  className="explorer__proposal-indicator"
+                                  title={`${openProposalCounts[diagram.id]} open change${openProposalCounts[diagram.id] === 1 ? "" : "s"}`}
+                                  aria-label={`${openProposalCounts[diagram.id]} open change${openProposalCounts[diagram.id] === 1 ? "" : "s"}`}
+                                >
+                                  ◆
+                                  {openProposalCounts[diagram.id] > 1
+                                    ? ` ${openProposalCounts[diagram.id]}`
+                                    : ""}
+                                </span>
+                              )}
+                            </span>
                           </button>
                           {onDiagramMenu && (
                             <button
@@ -551,19 +558,26 @@ export default function Explorer({
                             >
                               ¶
                             </span>
-                            {noteName(note)}
-                            {(openProposalCounts[note.id] ?? 0) > 0 && (
-                              <span
-                                className="explorer__proposal-indicator"
-                                title={`${openProposalCounts[note.id]} open change${openProposalCounts[note.id] === 1 ? "" : "s"}`}
-                                aria-label={`${openProposalCounts[note.id]} open change${openProposalCounts[note.id] === 1 ? "" : "s"}`}
-                              >
-                                ◆
-                                {openProposalCounts[note.id] > 1
-                                  ? ` ${openProposalCounts[note.id]}`
-                                  : ""}
-                              </span>
-                            )}
+                            <span className="explorer__item-name">
+                              {noteName(note)}
+                            </span>
+                            <span
+                              className="explorer__status-slot"
+                              data-testid="explorer-status-slot"
+                            >
+                              {(openProposalCounts[note.id] ?? 0) > 0 && (
+                                <span
+                                  className="explorer__proposal-indicator"
+                                  title={`${openProposalCounts[note.id]} open change${openProposalCounts[note.id] === 1 ? "" : "s"}`}
+                                  aria-label={`${openProposalCounts[note.id]} open change${openProposalCounts[note.id] === 1 ? "" : "s"}`}
+                                >
+                                  ◆
+                                  {openProposalCounts[note.id] > 1
+                                    ? ` ${openProposalCounts[note.id]}`
+                                    : ""}
+                                </span>
+                              )}
+                            </span>
                           </button>
                           {onNoteMenu && (
                             <button

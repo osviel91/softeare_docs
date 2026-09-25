@@ -118,25 +118,58 @@ body {
 .proposal-review-panel__list.is-collapsed + .proposal-review-panel__main {
   flex-basis: 0;
 }
-.explorer__proposal-indicator {
+.explorer__status-slot {
+  flex: 0 0 28px;
   margin-left: auto;
+  text-align: right;
+}
+.explorer__proposal-indicator {
   color: var(--accent);
   font-size: 11px;
   font-weight: 700;
 }
-.resource-header__history {
-  margin-left: 8px;
+.resource-action-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  min-height: 38px;
+  padding: 4px 12px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+}
+.resource-action-bar__action,
+.scope-navigation {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
   padding: 5px 9px;
   color: var(--text-muted);
   background: transparent;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 550;
   cursor: pointer;
 }
-.resource-header__history:hover,
-.resource-header__history:focus-visible {
+.resource-action-bar__action:hover,
+.resource-action-bar__action:focus-visible,
+.scope-navigation:hover,
+.scope-navigation:focus-visible {
   color: var(--text);
+  background: var(--bg-hover);
   border-color: var(--accent);
+}
+.resource-action-bar__badge {
+  min-width: 1.4em;
+  padding: 1px 5px;
+  color: var(--text);
+  background: var(--accent-soft);
+  border-radius: 999px;
+  font-size: 10px;
+  text-align: center;
 }
 .proposal-review {
   width: 100%;
@@ -480,6 +513,25 @@ body {
   overflow: auto;
   padding: 28px;
 }
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 24px;
+}
+.page-header__copy h1 {
+  margin: 4px 0 8px;
+}
+.page-header__copy > p:last-child {
+  color: var(--text-muted);
+}
+.page-header__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
 @media (max-width: 760px) {
   .proposal-review-panel {
     display: block;
@@ -514,6 +566,12 @@ body {
   }
   .changes-inbox {
     padding: 18px;
+  }
+  .page-header {
+    display: block;
+  }
+  .page-header__actions {
+    margin-top: 12px;
   }
   .proposal-review {
     padding: 18px;
@@ -2351,7 +2409,9 @@ body {
 }
 
 .explorer__diagram-button {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 7px;
   width: 100%;
   padding: 6px 10px;
   font: inherit;
@@ -2633,6 +2693,7 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  flex-wrap: wrap;
 }
 
 .history__heading {
@@ -2888,7 +2949,9 @@ body {
 .explorer__note-button {
   flex: 1 1 auto;
   min-width: 0;
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 7px;
   width: 100%;
   padding: 6px 10px;
   font: inherit;
@@ -3087,30 +3150,6 @@ body {
   margin-left: auto;
   font: 11px var(--font-mono);
   color: var(--text-faint);
-}
-.resource-header__proposals {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  margin-left: 4px;
-  padding: 2px 6px;
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  color: var(--accent);
-  background: transparent;
-  cursor: pointer;
-  font: inherit;
-  font-size: 12px;
-}
-.resource-header__proposals:hover,
-.resource-header__proposals:focus-visible {
-  background: var(--bg-hover);
-}
-.resource-header__proposal-count {
-  min-width: 1.2em;
-  text-align: center;
-  font-size: 10px;
-  color: var(--text);
 }
 .resource-header__metadata {
   flex-basis: 100%;

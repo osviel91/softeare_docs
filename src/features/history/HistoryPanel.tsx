@@ -23,6 +23,7 @@ import {
   sameVersionContent,
   versionSummary,
 } from "../../domain/workspace/version";
+import PageHeader from "../ui/PageHeader";
 
 export interface HistoryPanelProps {
   /** The project's versions across every diagram, newest first. */
@@ -50,6 +51,7 @@ export interface HistoryPanelProps {
   /** When entered from a resource, hide the other project branches. */
   resourceScoped?: boolean;
   onShowProjectHistory?: () => void;
+  onShowResourceHistory?: () => void;
 }
 
 /** One diagram's branch: its id and every version recorded for it. */
@@ -99,6 +101,7 @@ export default function HistoryPanel({
   projectName = null,
   resourceScoped = false,
   onShowProjectHistory,
+  onShowResourceHistory,
 }: HistoryPanelProps) {
   const branches = useMemo(() => branchesOf(versions), [versions]);
 
@@ -113,40 +116,55 @@ export default function HistoryPanel({
 
   return (
     <section className="history" data-testid="history-panel">
-      <header className="history__header">
-        <div className="history__heading">
-          <h2 className="history__title">
-            {resourceScoped ? "Trajectory" : "Project history"}
-          </h2>
-          {projectName && (
-            <span className="history__project" data-testid="history-project">
-              {projectName}
+      <PageHeader
+        title={resourceScoped ? "Resource history" : "Project history"}
+        description={
+          <>
+            {projectName && (
+              <span className="history__project" data-testid="history-project">
+                {projectName} ·{" "}
+              </span>
+            )}
+            <span className="history__count" data-testid="history-count">
+              {versions.length} version{versions.length === 1 ? "" : "s"}
+              {branches.length > 1 ? ` · ${branches.length} diagrams` : ""}
             </span>
-          )}
-          <span className="history__count" data-testid="history-count">
-            {versions.length} version{versions.length === 1 ? "" : "s"}
-            {branches.length > 1 ? ` · ${branches.length} diagrams` : ""}
-          </span>
-        </div>
-        <button
-          type="button"
-          className="button button--primary"
-          data-testid="save-version-button"
-          disabled={!hasDiagram}
-          onClick={onSaveVersion}
-        >
-          Save version
-        </button>
-        {resourceScoped && onShowProjectHistory && (
-          <button
-            type="button"
-            className="button button--ghost"
-            onClick={onShowProjectHistory}
-          >
-            Project history
-          </button>
-        )}
-      </header>
+          </>
+        }
+        actions={
+          <>
+            <button
+              type="button"
+              className="button button--primary"
+              data-testid="save-version-button"
+              disabled={!hasDiagram}
+              onClick={onSaveVersion}
+            >
+              Create checkpoint
+            </button>
+            {resourceScoped && onShowProjectHistory && (
+              <button
+                type="button"
+                className="scope-navigation"
+                data-testid="project-history-navigation"
+                onClick={onShowProjectHistory}
+              >
+                Project history
+              </button>
+            )}
+            {!resourceScoped && onShowResourceHistory && activeDiagramId && (
+              <button
+                type="button"
+                className="scope-navigation"
+                data-testid="resource-history-navigation"
+                onClick={onShowResourceHistory}
+              >
+                Resource history
+              </button>
+            )}
+          </>
+        }
+      />
 
       {!hasDiagram ? (
         <p className="history__empty" data-testid="history-empty">

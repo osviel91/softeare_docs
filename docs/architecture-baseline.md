@@ -132,9 +132,18 @@ only characterization of the server event-flow path and this baseline record.
 
 ## Proposal Review Presentation
 
-- The project `Changes` view is the primary proposal inbox. It discovers open
-  proposals across resources and keeps merged/closed entries in an explicit
-  history view; resource headers expose a contextual Changes affordance.
+- `Changes` is pending collaboration work: the project Changes view and the
+  proposal review sidebar contain open proposals only. Historical proposals do
+  not contribute to counts or appear in the review queue.
+- `History` is completed trajectory. Project History is the project-wide
+  projection; Resource History is the same trajectory filtered to one resource.
+  Merged proposals belong to that historical boundary, although the current
+  local version store does not yet persist proposal merge events.
+- Resource actions use one Resource Action Bar. Explorer proposal indicators
+  occupy a fixed status slot and mean open proposals only.
+- `Create checkpoint` is the UI label for the existing explicit manual version
+  capture action. Automatic checkpoints remain distinct from this user-created
+  checkpoint; no second history store is introduced.
 - Project review resolves `proposal → target resource → review context` and does
   not depend on the editor's selected resource. Review presents `Changes`,
   `Compare`, and `Source` modes; stale reviews retain explicit BASE, CURRENT,

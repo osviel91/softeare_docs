@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import ChangesInbox from "../../../src/features/proposals/ChangesInbox";
 import type {
   ServerApiClient,
@@ -81,7 +81,7 @@ describe("ChangesInbox", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("keeps history behind an explicit lifecycle filter", async () => {
+  it("keeps historical proposals out of the review inbox", async () => {
     render(
       <ChangesInbox
         client={clientFor([proposal("closed", "closed-1")])}
@@ -94,9 +94,7 @@ describe("ChangesInbox", () => {
         "No open changes — Canonical documentation is up to date.",
       ),
     ).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "View history" }));
-    expect(
-      await screen.findByText("Closed checkout change"),
-    ).toBeInTheDocument();
+    expect(screen.queryByText("Closed checkout change")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "View history" })).toBeNull();
   });
 });

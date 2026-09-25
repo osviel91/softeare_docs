@@ -210,6 +210,7 @@ export class ServerWorkspaceRepository
     if (projectId !== this.projectId) return this.wrongProject(projectId);
     try {
       const resources = await this.client.listResources(this.projectId);
+      const relationships = await this.client.listResourceRelationships(this.projectId);
       return ok({
         format: PROJECT_METADATA_FORMAT,
         version: PROJECT_METADATA_VERSION,
@@ -218,6 +219,7 @@ export class ServerWorkspaceRepository
           path: resource.path,
           type: resource.type,
         })),
+        ...(relationships.length > 0 ? { relationships } : {}),
       });
     } catch (error) {
       return err(toError(error));

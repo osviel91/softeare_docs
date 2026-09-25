@@ -27,6 +27,7 @@ import type { MergeAnalysis } from "../../domain/diff/merge-analysis";
 import type { ResourceAuthorship } from "../../domain/workspace/resource-revision";
 import type { ResourceDiff } from "../../domain/diff/resource-diff";
 import type { ResourceTrajectoryKind } from "../../domain/workspace/resource-trajectory";
+import type { ResourceRelationship } from "../../domain/workspace/resource-relationship";
 
 /** The signed-in person, as `GET /api/me` reports them. */
 export interface AuthenticatedUser {
@@ -437,6 +438,16 @@ export class ServerApiClient {
       `/api/projects/${encodeURIComponent(projectId)}/resources`,
     );
     return body.resources ?? [];
+  }
+
+  async listResourceRelationships(
+    projectId: string,
+  ): Promise<ResourceRelationship[]> {
+    const body = await this.request<{ relationships: ResourceRelationship[] }>(
+      "GET",
+      `/api/projects/${encodeURIComponent(projectId)}/relationships`,
+    );
+    return body.relationships ?? [];
   }
 
   /** Read one resource's record and text. */

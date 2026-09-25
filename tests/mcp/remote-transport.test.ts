@@ -87,6 +87,8 @@ describe("the remote MCP service over Streamable HTTP", () => {
     expect(names).toContain("upsert_sequence_diagram");
     expect(names).toContain("validate_project");
     expect(names).toContain("search_project");
+    expect(names).toContain("list_resource_relationships");
+    expect(names).toContain("create_resource_relationship");
     // A write tool must not claim to be read-only.
     const update = tools.find((tool) => tool.name === "update_resource");
     expect(update?.annotations?.readOnlyHint).toBe(false);
@@ -160,6 +162,101 @@ describe("the remote MCP service over Streamable HTTP", () => {
         expect.objectContaining({ code: "eventflow.unknown-handler" }),
       ]),
     );
+    await client.close();
+  });
+
+  it("lets an external client discover, create, validate and rediscover typed complementary views", async () => {
+    const client = await connect(token);
+    expect(client.getInstructions()).toContain(
+      "Prose such as \"complements X\" in a description is not a replacement",
+    );
+    expect(client.getInstructions()).toContain(
+      "complementary projections of substantially the same behavior",
+    );
+
+    const sequence = await client.callTool({
+      name: "upsert_sequence_diagram",
+      arguments: {
+        projectId,
+        path: "typed-complementary.seq",
+        content: "title Typed complementary\n",
+      },
+    });
+    const flow = await client.callTool({
+      name: "upsert_event_flow",
+      arguments: {
+        projectId,
+        path: "typed-complementary.eventseq",
+        content: "title Typed causal\nevent Input\n",
+      },
+    });
+    expect(sequence.isError).toBeFalsy();
+    expect(flow.isError).toBeFalsy();
+
+    const sequenceId = structured(sequence).resource.id;
+    const flowId = structured(flow).resource.id;
+    const before = await client.callTool({
+      name: "list_resource_relationships",
+      arguments: { projectId },
+    });
+    expect(structured(before).relationships).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ sourceId: sequenceId, targetId: flowId }),
+      ]),
+    );
+
+    const created = await client.callTool({
+      name: "create_resource_relationship",
+      arguments: {
+        projectId,
+        source: sequenceId,
+        target: flowId,
+        sourceRole: "execution",
+        targetRole: "causal",
+      },
+    });
+    expect(created.isError).toBeFalsy();
+    expect(structured(created).relationship).toEqual(
+      expect.objectContaining({
+        kind: "complementary-view",
+        sourceId: expect.any(String),
+        targetId: expect.any(String),
+        sourceRole: "execution",
+        targetRole: "causal",
+      }),
+    );
+
+    const after = await client.callTool({
+      name: "list_resource_relationships",
+      arguments: { projectId },
+    });
+    expect(structured(after).relationships).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "complementary-view",
+          sourceRole: "execution",
+          targetRole: "causal",
+        }),
+      ]),
+    );
+    const listed = await client.callTool({
+      name: "list_resources",
+      arguments: { projectId },
+    });
+    expect(structured(listed).relationships).toEqual(
+      expect.arrayContaining([expect.objectContaining({ kind: "complementary-view" })]),
+    );
+
+    const self = await client.callTool({
+      name: "create_resource_relationship",
+      arguments: { projectId, source: sequenceId, target: sequenceId },
+    });
+    expect(self.isError).toBe(true);
+    const dangling = await client.callTool({
+      name: "create_resource_relationship",
+      arguments: { projectId, source: sequenceId, target: "missing-resource" },
+    });
+    expect(dangling.isError).toBe(true);
     await client.close();
   });
 

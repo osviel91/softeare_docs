@@ -101,6 +101,10 @@ function createFakeApi(
       return failure(403, "forbidden");
     }
 
+    if (/^\/api\/projects\/[^/]+\/relationships$/.test(path)) {
+      return reply(200, { relationships: [] });
+    }
+
     // GET /api/projects/:id/resources
     const listMatch = /^\/api\/projects\/([^/]+)\/resources$/.exec(path);
     if (listMatch) {

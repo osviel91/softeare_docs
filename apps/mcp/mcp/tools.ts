@@ -68,6 +68,7 @@ import {
 import type { ToolAnnotations } from "../../../src/shared/mcp/protocol";
 import type { McpConfig } from "../config";
 import { normalizeResourceMetadata } from "../../../src/domain/workspace/resource-metadata";
+import type { ResourceRelationship } from "../../../src/domain/workspace/resource-relationship";
 
 /** A tool's result before the dispatcher wraps it in an MCP result. */
 export interface ToolOutcome {
@@ -500,6 +501,66 @@ export function createMcpTools(): McpTool[] {
     },
 
     {
+      name: "list_resource_relationships",
+      title: "List resource relationships",
+      description:
+        "List a project's typed resource relationships. A complementary-view relationship is a stable-id link between an existing Sequence and Event Flow that substantially describe the same behavior from different execution and causal perspectives. Prose in descriptions is not a substitute for this relationship.",
+      inputSchema: { projectId: projectId() },
+      annotations: { ...READ_ONLY, title: "List resource relationships" },
+      requiredPermissions: ["resource:read"],
+      async run(args, toolContext) {
+        const id = stringArg(args, "projectId");
+        const relationships = await toolContext.catalog.listResourceRelationships(
+          toolContext.context,
+          id,
+        );
+        return {
+          text: relationships.length
+            ? `${relationships.length} typed resource relationship(s).`
+            : "No typed resource relationships.",
+          structured: { projectId: id, relationships },
+        };
+      },
+    },
+
+    {
+      name: "create_resource_relationship",
+      title: "Create resource relationship",
+      description:
+        "Create a typed complementary-view relationship between two existing resources. Use only when a Sequence and Event Flow are complementary projections of substantially the same behavior and both add materially different information; do not relate merely similar topics or downstream sub-flows. Stable resource ids and optional execution/causal roles are returned.",
+      inputSchema: {
+        projectId: projectId(),
+        source: resourceReference().describe("Stable id or project-relative path of the first resource."),
+        target: resourceReference().describe("Stable id or project-relative path of the second resource."),
+        sourceRole: z.enum(["execution", "causal", "other"]).optional(),
+        targetRole: z.enum(["execution", "causal", "other"]).optional(),
+      },
+      annotations: { ...WRITE, title: "Create resource relationship" },
+      requiredPermissions: ["resource:update"],
+      async run(args, toolContext) {
+        const projectIdValue = stringArg(args, "projectId");
+        const source = await resolveResource(toolContext, projectIdValue, stringArg(args, "source"));
+        const target = await resolveResource(toolContext, projectIdValue, stringArg(args, "target"));
+        const relationship: ResourceRelationship = {
+          kind: "complementary-view",
+          sourceId: source.id,
+          targetId: target.id,
+          ...(typeof args.sourceRole === "string" ? { sourceRole: args.sourceRole as ResourceRelationship["sourceRole"] } : {}),
+          ...(typeof args.targetRole === "string" ? { targetRole: args.targetRole as ResourceRelationship["targetRole"] } : {}),
+        };
+        const created = await toolContext.catalog.createResourceRelationship(
+          toolContext.context,
+          projectIdValue,
+          relationship,
+        );
+        return {
+          text: `Created typed complementary-view relationship between ${source.path} and ${target.path}.`,
+          structured: { projectId: projectIdValue, relationship: created },
+        };
+      },
+    },
+
+    {
       name: "get_project_index",
       title: "Get the project index",
       description:
@@ -510,7 +571,7 @@ export function createMcpTools(): McpTool[] {
         cursor: cursor(),
       },
       annotations: { ...READ_ONLY, title: "Get the project index" },
-      requiredPermissions: ["project:read"],
+      requiredPermissions: ["resource:read"],
       async run(args, toolContext) {
         const id = stringArg(args, "projectId");
         const resources = await toolContext.catalog.listResources(
@@ -523,6 +584,10 @@ export function createMcpTools(): McpTool[] {
             typeof args.cursor === "string" ? args.cursor : undefined,
           ),
           numberArg(args, "limit") ?? 100,
+        );
+        const relationships = await toolContext.catalog.listResourceRelationships(
+          toolContext.context,
+          id,
         );
         return {
           text: `${resources.length} resources; showing ${items.length}.`,
@@ -538,6 +603,7 @@ export function createMcpTools(): McpTool[] {
                 ? {}
                 : { metadata: resource.metadata }),
             })),
+            relationships,
             nextCursor,
           },
         };
@@ -578,6 +644,10 @@ export function createMcpTools(): McpTool[] {
           ),
           numberArg(args, "limit") ?? 100,
         );
+        const relationships = await toolContext.catalog.listResourceRelationships(
+          toolContext.context,
+          id,
+        );
         return {
           text:
             items.length === 0
@@ -587,6 +657,7 @@ export function createMcpTools(): McpTool[] {
             projectId: id,
             total: filtered.length,
             resources: items,
+            relationships,
             nextCursor,
           },
         };

@@ -49,6 +49,7 @@ import {
 import type { JsonObject } from "../shared/json/json-value";
 import type { ResourceMetadata } from "../domain/workspace/resource-metadata";
 import type { ResourceRelationship } from "../domain/workspace/resource-relationship";
+import { validateResourceRelationship } from "../domain/workspace/resource-relationship";
 
 /**
  * A resource as the API and MCP surface it: identity, path, type, revision.
@@ -611,13 +612,17 @@ export function createProjectCatalog(
     async createResourceRelationship(context, projectId, relationship) {
       await requirePermission(context, projectId, "resource:update");
       const resources = await projects.listResources(projectId);
-      const source = resources.find((resource) => resource.id === relationship.sourceId);
-      const target = resources.find((resource) => resource.id === relationship.targetId);
-      if (!source || !target) throw notFound("Both relationship resources must exist.");
-      if (!((source.type === "sequence-diagram" && target.type === "event-flow") || (source.type === "event-flow" && target.type === "sequence-diagram"))) {
-        throw invalid("Complementary views require a Sequence and an Event Flow.");
+      try {
+        return await projects.createResourceRelationship(
+          projectId,
+          validateResourceRelationship(relationship, resources),
+        );
+      } catch (error) {
+        if (error instanceof Error && error.message === "Both relationship resources must exist.") {
+          throw notFound(error.message);
+        }
+        throw invalid(error instanceof Error ? error.message : "Invalid resource relationship.");
       }
-      return projects.createResourceRelationship(projectId, relationship);
     },
 
     async getResource(context, projectId, resourceId) {

@@ -169,6 +169,9 @@ function fakeFetch(input: string, init?: RequestInit): Promise<Response> {
       reply(200, { resources: [...state.resources.values()].map(view) }),
     );
   }
+  if (path === "/api/projects/p1/relationships") {
+    return Promise.resolve(reply(200, { relationships: [] }));
+  }
   const one = /^\/api\/projects\/p1\/resources\/([^/]+)$/.exec(path);
   if (one) {
     const resource = state.resources.get(one[1]);

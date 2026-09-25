@@ -81,11 +81,13 @@ architecture.
 ### Event Flow Views
 
 - The Event Flow pipeline is `source → parser/analyzer → EventFlow semantic
-model`, followed by independent Flow, Catalog, or Topology projections. Flow
+  model`, followed by independent Flow, Catalog, Topology, or Causal
+  projections. Flow
   continues through `FlowViewModel → Flow layout → Flow renderer → SVG`; Catalog
   is a source-ordered document projection rendered by the browser UI; Topology
   continues through `TopologyViewModel → Topology layout → Topology renderer →
-SVG`.
+  SVG`; Causal continues through `CausalViewModel` and has no layout or renderer
+  yet.
 - The semantic model contains documented-system facts such as events, services,
   channels, brokers, publications, subscriptions, and event metadata. The
   `FlowViewModel` contains the row view's presentation decisions, but no pixel
@@ -104,7 +106,20 @@ SVG`.
   can have no known output, and an effect can terminate a documented branch.
   Event provenance is optional and normalized to `external`, `internal`, or
   `unknown`; it is never inferred from names. Commands and events share the
-  message-name slot until a later syntax decision requires a distinction.
+   message-name slot until a later syntax decision requires a distinction.
+- `CausalViewModel` projects first-class messages, handlers, effects, and typed
+  `MESSAGE_HANDLED_BY_HANDLER`, `HANDLER_CAUSES_MESSAGE`, and
+  `HANDLER_HAS_EFFECT` edges. These edges are authored relationships; topology
+  is optional message context and never creates causal edges. Message identities
+  use `message:<name>`; handler and effect identities use authored IDs with
+  `handler:` and `effect:` prefixes. Entities and edges retain source node IDs
+  for navigation and later semantic comparison.
+- Causal output preserves source order, keeps fan-out branches independent,
+  shares message entities for fan-in, and computes finite connected components
+  even when cycles have no roots. A structural causal root is a message with no
+  known causal predecessor and does not imply external provenance. Effects remain
+  owned by their handler; handlers with no known output remain terminal/partial.
+  Legacy topology-only flows have an empty causal view.
 
 ### Resource Dimensions
 

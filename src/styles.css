@@ -26,6 +26,8 @@
   --ok: #4ade80;
   --warn: #fbbf24;
   --danger: #f87171;
+  --review-syntax: #fb923c;
+  --review-semantic: #c084fc;
 
   --grid-dot: rgba(255, 255, 255, 0.07);
 
@@ -309,12 +311,41 @@ body {
   stroke-width: 3;
   stroke-dasharray: 5 3;
 }
-.review-change--modified {
-  filter: drop-shadow(0 0 5px rgba(251, 191, 36, 0.8));
+.review-change--syntactic {
+  filter: drop-shadow(0 0 5px rgba(251, 146, 60, 0.85));
 }
-.review-change--modified rect {
-  stroke: var(--warn);
+.review-change--syntactic rect {
+  stroke: var(--review-syntax);
   stroke-width: 3;
+}
+.review-change--syntactic line,
+.review-change--syntactic path,
+.review-change--syntactic polyline,
+.review-change--syntactic polygon,
+.review-change--syntactic circle {
+  stroke: var(--review-syntax);
+}
+.review-change--syntactic polygon,
+.review-change--syntactic text {
+  fill: var(--review-syntax);
+}
+.review-change--semantic {
+  filter: drop-shadow(0 0 5px rgba(192, 132, 252, 0.9));
+}
+.review-change--semantic rect {
+  stroke: var(--review-semantic);
+  stroke-width: 3;
+}
+.review-change--semantic line,
+.review-change--semantic path,
+.review-change--semantic polyline,
+.review-change--semantic polygon,
+.review-change--semantic circle {
+  stroke: var(--review-semantic);
+}
+.review-change--semantic polygon,
+.review-change--semantic text {
+  fill: var(--review-semantic);
 }
 .review-change--added line,
 .review-change--added path,
@@ -344,7 +375,19 @@ body {
   fill: var(--danger);
 }
 .review-change--active {
-  filter: drop-shadow(0 0 7px var(--accent));
+  opacity: 1;
+  filter: drop-shadow(0 0 4px #fff) drop-shadow(0 0 10px var(--accent));
+}
+.review-change--active line,
+.review-change--active path,
+.review-change--active polyline,
+.review-change--active polygon,
+.review-change--active circle,
+.review-change--active rect {
+  stroke-width: 4;
+}
+.review-change--active text {
+  font-weight: 800;
 }
 .viewport--review .viewport__rail {
   top: 8px;

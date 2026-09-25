@@ -44,7 +44,12 @@ function eventOf(change: SemanticChange): string | null {
 }
 
 export function reviewTargetId(change: SemanticChange): string {
-  if (change.entity === "interaction") return `interaction:${change.identity}`;
+  if (change.entity === "interaction") {
+    const replacementId = change.details?.replacementId;
+    if (typeof replacementId === "string")
+      return `interaction:replacement:${replacementId}`;
+    return `interaction:${change.identity}`;
+  }
   if (change.entity === "participant") return `participant:${change.identity}`;
   const event = eventOf(change);
   if (
@@ -74,7 +79,7 @@ export function reviewChangeTargets(
     const previous = grouped.get(id);
     grouped.set(
       id,
-      previous
+      previous && event !== null
         ? {
             ...previous,
             entity: "event",

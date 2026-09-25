@@ -3,7 +3,10 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import ProposalReview from "../../../src/features/proposals/ProposalReview";
 import { diffResources } from "../../../src/domain/diff/resource-diff";
 import type { ResourceState } from "../../../src/domain/diff/resource-state";
-import { reviewChangeTargets } from "../../../src/features/proposals/review-targets";
+import {
+  navigableTargets,
+  reviewChangeTargets,
+} from "../../../src/features/proposals/review-targets";
 import type { ResourceMetadata } from "../../../src/domain/workspace/resource-metadata";
 import type {
   ServerChangeProposal,
@@ -98,6 +101,8 @@ function renderReview(diff: ServerChangeProposalDiff) {
 
 /** The stable target id the focused review row currently points at. */
 function focusedTargetId(): string | null {
+  const active = document.querySelector(".review-change--active");
+  if (active) return active.getAttribute("data-review-change");
   const element = document.activeElement;
   return element instanceof HTMLElement
     ? element.getAttribute("data-review-target")
@@ -111,13 +116,28 @@ function expectedTargetIds(diff: ServerChangeProposalDiff): string[] {
   );
 }
 
+function expectedModeTargetIds(
+  diff: ServerChangeProposalDiff,
+  mode: "compare" | "source",
+): string[] {
+  return navigableTargets(
+    mode,
+    reviewChangeTargets(diff.metadata.changes, diff.content.changes),
+    diff.source,
+    diff.type === "sequence-diagram"
+      ? "sequence"
+      : diff.type === "event-flow"
+        ? "event-flow"
+        : "markdown",
+  ).map((target) => target.id);
+}
+
 /**
  * Walk the navigator to the end and back, recording the focused target id after
  * every step. Returns both the canonical list and both traversals so a caller
  * can assert identity, not just that a counter moved.
  */
-function navigateAll(diff: ServerChangeProposalDiff) {
-  const expected = expectedTargetIds(diff);
+function navigateAll(expected: string[]) {
   const forward = [focusedTargetId()];
   for (let index = 1; index < expected.length; index += 1) {
     fireEvent.click(screen.getByTestId("change-next"));
@@ -164,19 +184,30 @@ describe("proposal review change navigation", () => {
       "participant A\nparticipant C\nA -> C: two\nA -> C: three",
     );
     renderReview(diff);
-    const expected = expectedTargetIds(diff);
+    fireEvent.click(screen.getByRole("button", { name: "Compare" }));
+    const expected = expectedModeTargetIds(diff, "compare");
     // Metadata first, then the grouped semantic targets — a hand-checked set,
     // so a change to the canonical collection is caught here too.
     expect(expected).toEqual([
       "participant:B",
       "participant:C",
-      "interaction:message:1-0",
-      "interaction:message:0-1",
+      "interaction:replacement:1-1",
       "interaction:message:0-2",
     ]);
     expect(screen.getByTestId("change-position")).toHaveTextContent(
       `1 of ${expected.length}`,
     );
+  });
+
+  it("does not render navigation in the Changes tab", () => {
+    const diff = makeDiff(
+      "sequence-diagram",
+      "participant A\nparticipant B\nA -> B: one",
+      "participant A\nparticipant C\nA -> C: two",
+    );
+    renderReview(diff);
+    expect(screen.queryByTestId("change-position")).toBeNull();
+    expect(screen.queryByTestId("change-next")).toBeNull();
   });
 
   describe.each([
@@ -223,10 +254,15 @@ describe("proposal review change navigation", () => {
   ])("%s", (_name, diff: ServerChangeProposalDiff) => {
     it("navigates 1 -> N and N -> 1 through the same target ids", () => {
       renderReview(diff);
-      const expected = expectedTargetIds(diff);
+      const mode = diff.type === "markdown-document" ? "Source" : "Compare";
+      fireEvent.click(screen.getByRole("button", { name: mode }));
+      const expected = expectedModeTargetIds(
+        diff,
+        mode === "Source" ? "source" : "compare",
+      );
       expect(expected.length).toBeGreaterThan(1);
 
-      const { forward, backward } = navigateAll(diff);
+      const { forward, backward } = navigateAll(expected);
 
       expect(forward).toEqual(expected);
       expect(backward).toEqual([...expected].reverse());
@@ -236,7 +272,12 @@ describe("proposal review change navigation", () => {
 
     it("disables previous at the start and next at the end", () => {
       renderReview(diff);
-      const expected = expectedTargetIds(diff);
+      const mode = diff.type === "markdown-document" ? "Source" : "Compare";
+      fireEvent.click(screen.getByRole("button", { name: mode }));
+      const expected = expectedModeTargetIds(
+        diff,
+        mode === "Source" ? "source" : "compare",
+      );
       const previous = screen.getByTestId("change-previous");
       const next = screen.getByTestId("change-next");
 

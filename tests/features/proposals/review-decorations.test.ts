@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { decorateReviewSvg } from "../../../src/features/proposals/review-decorations";
 
 describe("review SVG decoration", () => {
-  it("marks a modified sequence interaction as removed in BASE and added in PROPOSED", () => {
+  it("marks a syntactically modified sequence interaction on both sides", () => {
     const svg =
       '<g class="sequence-message" data-sequence-message="1"><line data-node-id="message@0:1"/><polygon points="0,0 1,1"/><text>x</text></g>';
     const change = {
@@ -18,10 +18,10 @@ describe("review SVG decoration", () => {
     };
 
     expect(decorateReviewSvg(svg, "sequence", [change], "base")).toContain(
-      'class="sequence-message review-change--removed"',
+      'class="sequence-message review-change--syntactic"',
     );
     expect(decorateReviewSvg(svg, "sequence", [change], "proposed")).toContain(
-      'class="sequence-message review-change--added"',
+      'class="sequence-message review-change--syntactic"',
     );
     expect(decorateReviewSvg(svg, "sequence", [change])).toContain(
       'data-review-change="interaction:message:1-1"',
@@ -61,7 +61,7 @@ describe("review SVG decoration", () => {
       identity: "Stage",
     };
     const decorated = decorateReviewSvg(svg, "sequence", [change], "proposed");
-    expect(decorated).toContain("review-change--added");
+    expect(decorated).toContain("review-change--syntactic");
     expect(decorated).toContain('data-review-change="participant:Stage"');
   });
 

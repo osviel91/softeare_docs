@@ -128,8 +128,7 @@ describe("sequence proposal review fixture", () => {
       "interaction:message:2-2",
       "interaction:message:3-3",
       "interaction:message:4-4",
-      "interaction:message:6-0",
-      "interaction:message:0-6",
+      "interaction:replacement:6-6",
     ]);
   });
 
@@ -141,11 +140,10 @@ describe("sequence proposal review fixture", () => {
     const count = (id: string) =>
       container.querySelectorAll(`[data-review-change="${id}"]`).length;
 
-    // Removed changes exist only in BASE, added only in PROPOSED.
+    // Removed and added replacements share one target across both panes.
     expect(count("participant:C")).toBe(1);
-    expect(count("interaction:message:6-0")).toBe(1);
     expect(count("participant:D")).toBe(1);
-    expect(count("interaction:message:0-6")).toBe(1);
+    expect(count("interaction:replacement:6-6")).toBe(2);
     // Modifications are decorated on both sides.
     for (const id of [
       "interaction:message:2-2",

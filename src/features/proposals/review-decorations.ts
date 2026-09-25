@@ -20,11 +20,11 @@ function eventOf(change: SemanticChange): string | null {
 
 /** Which add/remove colour a decoration takes on a given side of the diff. */
 function visualClass(
-  kind: SequenceDiffDecoration["kind"],
-  side: "base" | "proposed",
+  decoration: SequenceDiffDecoration,
 ): string {
+  const kind = decoration.kind;
   if (kind === "modified-interaction" || kind === "modified-participant")
-    return side === "base" ? "review-change--removed" : "review-change--added";
+    return `review-change--${decoration.category}`;
   return kind.startsWith("added")
     ? "review-change--added"
     : "review-change--removed";
@@ -55,7 +55,7 @@ function decorateSequence(
 ): string {
   let result = svg;
   for (const decoration of sequenceDiffDecorations(changes)) {
-    const kind = visualClass(decoration.kind, side);
+    const kind = visualClass(decoration);
     const marker = ` data-review-change="${xml(decoration.targetId)}"`;
     if (
       decoration.kind === "added-participant" ||
@@ -93,9 +93,9 @@ export function decorateReviewSvg(
     const identity = eventOf(change);
     const visualKind =
       change.kind === "modified"
-        ? side === "base"
-          ? "removed"
-          : "added"
+        ? change.entity === "event-metadata"
+          ? "syntactic"
+          : "semantic"
         : change.kind;
     const kind = `review-change--${visualKind}`;
     const targetIdentity = reviewTargetId(change);

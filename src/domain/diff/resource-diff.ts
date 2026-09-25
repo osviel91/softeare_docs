@@ -570,9 +570,22 @@ function sequenceDiff(
           },
         });
       } else if (oldMessage && newMessage) {
-        // Aligned but not confidently the same message: report both sides.
-        changes.push(removedInteraction(oldMessage, baseNumber));
-        changes.push(addedInteraction(newMessage, proposedNumber));
+        // Keep replacements together so review can highlight both sides.
+        const replacementId = `${baseNumber}-${proposedNumber}`;
+        changes.push({
+          ...removedInteraction(oldMessage, baseNumber),
+          details: {
+            ...removedInteraction(oldMessage, baseNumber).details,
+            replacementId,
+          },
+        });
+        changes.push({
+          ...addedInteraction(newMessage, proposedNumber),
+          details: {
+            ...addedInteraction(newMessage, proposedNumber).details,
+            replacementId,
+          },
+        });
       } else if (oldMessage) {
         changes.push(removedInteraction(oldMessage, baseNumber));
       } else if (newMessage) {

@@ -16,11 +16,12 @@ export interface SequenceInteractionDimensions {
  * ordinals on each side; zero means the element is absent on that side.
  */
 export type SequenceDiffDecoration =
-  | {
-      kind: "added-participant" | "removed-participant" | "modified-participant";
-      targetId: string;
-      participantId: string;
-    }
+   | {
+       kind: "added-participant" | "removed-participant" | "modified-participant";
+       targetId: string;
+       participantId: string;
+       category?: "syntactic" | "semantic";
+     }
   | {
       kind: "added-interaction" | "removed-interaction";
       targetId: string;
@@ -29,10 +30,11 @@ export type SequenceDiffDecoration =
   | {
       kind: "modified-interaction";
       targetId: string;
-      baseNumber: number;
-      proposedNumber: number;
-      dimensions: SequenceInteractionDimensions;
-    };
+       baseNumber: number;
+       proposedNumber: number;
+       dimensions: SequenceInteractionDimensions;
+       category: "syntactic" | "semantic";
+     };
 
 interface InteractionShape {
   from: string;
@@ -81,12 +83,25 @@ export function sequenceDiffDecorations(
         change.kind === "added" ||
         change.kind === "removed" ||
         change.kind === "modified"
-      )
+      ) {
+        const oldValue = change.details?.old;
+        const newValue = change.details?.new;
+        const participantTypeChanged =
+          typeof oldValue === "object" &&
+          oldValue !== null &&
+          typeof newValue === "object" &&
+          newValue !== null &&
+          (oldValue as Record<string, unknown>).participantType !==
+            (newValue as Record<string, unknown>).participantType;
         decorations.push({
           kind: `${change.kind}-participant`,
           targetId: reviewTargetId(change),
           participantId: change.identity,
+          ...(change.kind === "modified"
+            ? { category: participantTypeChanged ? "semantic" : "syntactic" }
+            : {}),
         });
+      }
       continue;
     }
     if (change.entity !== "interaction") continue;
@@ -100,20 +115,27 @@ export function sequenceDiffDecorations(
         oldShape.from !== oldShape.to &&
         oldShape.from === newShape.to &&
         oldShape.to === newShape.from;
+      const dimensions = {
+        messageChanged: oldShape.label !== newShape.label,
+        sourceChanged: oldShape.from !== newShape.from,
+        targetChanged: oldShape.to !== newShape.to,
+        directionChanged: swapped,
+        interactionKindChanged:
+          oldShape.arrowStyle !== newShape.arrowStyle ||
+          oldShape.lineStyle !== newShape.lineStyle,
+      };
       decorations.push({
         kind: "modified-interaction",
         targetId: reviewTargetId(change),
         baseNumber,
         proposedNumber,
-        dimensions: {
-          messageChanged: oldShape.label !== newShape.label,
-          sourceChanged: oldShape.from !== newShape.from,
-          targetChanged: oldShape.to !== newShape.to,
-          directionChanged: swapped,
-          interactionKindChanged:
-            oldShape.arrowStyle !== newShape.arrowStyle ||
-            oldShape.lineStyle !== newShape.lineStyle,
-        },
+        dimensions,
+        category:
+          dimensions.sourceChanged ||
+          dimensions.targetChanged ||
+          dimensions.directionChanged
+            ? "semantic"
+            : "syntactic",
       });
     } else if (change.kind === "added" && proposedNumber > 0) {
       decorations.push({

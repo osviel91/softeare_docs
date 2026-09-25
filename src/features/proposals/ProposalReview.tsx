@@ -428,11 +428,8 @@ export default function ProposalReview({
     [reviewTargets],
   );
   const semanticChanges = useMemo(
-    () =>
-      semanticTargets
-        .map((target) => target.change)
-        .filter((change): change is SemanticChange => change != null),
-    [semanticTargets],
+    () => (diff.content.available ? diff.content.changes : []),
+    [diff.content.available, diff.content.changes],
   );
   // Only the targets the active mode can actually reveal are navigable, so
   // Previous/Next never lands on a phantom location.
@@ -458,10 +455,11 @@ export default function ProposalReview({
 
   useEffect(() => {
     if (!currentTarget) return;
+    if (view === "changes") return;
     const element = document.getElementById(`review-target-${currentTarget.id}`);
     element?.scrollIntoView?.({ block: "nearest" });
     element?.focus();
-  }, [currentTarget]);
+  }, [currentTarget, view]);
 
   const handleBaseCamera = useCallback(
     (transform: DiagramViewportTransform) =>
@@ -677,11 +675,6 @@ export default function ProposalReview({
               Semantic changes are truncated. More changes exist.
             </p>
           )}
-          <ChangeNavigator
-            targets={navigable}
-            currentIndex={currentTargetIndex}
-            onChange={setChangeIndex}
-          />
         </div>
       )}
       {view === "compare" && (

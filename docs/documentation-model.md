@@ -172,6 +172,28 @@ the domain model now also carries explicit named handlers, effects, and
 handler-specific resulting-event edges. No existing projection infers those
 causal facts or changes its legacy appearance.
 
+The canonical authoring form is line-oriented and reference-based:
+
+```text
+event TransactionReceived {
+  provenance: external
+}
+event TransactionCreated
+handler TransactionHandler in TransactionsService
+TransactionReceived handled by TransactionHandler
+effect persist-transaction on TransactionHandler kind state-update: Persist transaction
+TransactionHandler causes TransactionCreated
+```
+
+The `effect` line has no resulting message requirement, so terminal handlers and
+partially documented branches remain valid.
+
+Semantic-diff handoff: causal declarations already have stable identities in the
+domain model (`handler.id`, `effect.id`, and handler/message pairs) and source
+ranges for evidence. A later diff can therefore report handler, input, output,
+effect, and provenance additions/removals/changes without changing persistence;
+the causal diff UI and proposal-specific presentation remain future work.
+
 ### Event annotations
 
 Add annotations or metadata when they materially affect understanding. Useful
@@ -221,22 +243,22 @@ subscriptions are edges; causal ordering and cycles are derived in the Flow
 projection. The topology projection also groups mediated producer-to-consumer
 connections by event and preserves source node IDs.
 
-| Canonical need                                                           | Current status                           | Assessment                                                                                                              |
-| ------------------------------------------------------------------------ | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| Events, producers, consumers, channels, brokers                          | Supported                                | Native AST, validation, index, outline, projections, and renderer                                                       |
-| Event descriptions and schema/domain/version metadata                    | Supported                                | Open `key: value` metadata on event declarations; conventional keys include `domain`, `version`, and `schema`           |
-| Publication/subscription relationships and fan-out                       | Supported                                | Native edges; validation reports unknown names and missing producers/consumers                                          |
-| Derived causal ordering and cycle indication                             | Supported                                | Flow projection derives order and marks residual cycles                                                                 |
-| Source traceability                                                      | Supported                                | Source ranges and stable node IDs cover declarations and edges; metadata entries belong to their event node             |
-| Broker/channel topology                                                  | Supported                                | Channel kind and optional broker are represented and projected                                                          |
-| Provenance: external versus internal                                     | Supported                                | Optional normalized event field; unknown is explicit and no naming inference is performed                              |
-| Handler identity and handler location                                    | Supported                                | Causal handlers have stable identity and optional hosting service; topology subscriptions remain independent            |
-| Handler preconditions, reads, writes, and business effects               | Partially supported                      | Effects are first-class with open metadata; later phases may add richer structured semantics                           |
-| Produced events as explicit handler results                              | Supported                                | Explicit handler-output edges preserve independent fan-out branches                                                   |
-| Failure events, retries, idempotency, ordering, delivery semantics       | Expressible through annotations/metadata | No validation or structured semantics; unsupported claims must remain unknown                                           |
-| Correlation and causation identifiers                                    | Expressible through annotations/metadata | No dedicated event or edge fields                                                                                       |
-| Explicit event-to-handler-to-effect graph                                | Supported                                | Domain-only causal aggregate and pure queries; no new authoring syntax or projection/UI in this phase                  |
-| Trace exploration, fan-out investigation, missing-consumer investigation | Requires future visualization only       | Existing projections expose facts and cycles, but no dedicated trace UI or investigation interaction exists             |
+| Canonical need                                                           | Current status                           | Assessment                                                                                                                |
+| ------------------------------------------------------------------------ | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Events, producers, consumers, channels, brokers                          | Supported                                | Native AST, validation, index, outline, projections, and renderer                                                         |
+| Event descriptions and schema/domain/version metadata                    | Supported                                | Open `key: value` metadata on event declarations; conventional keys include `domain`, `version`, and `schema`             |
+| Publication/subscription relationships and fan-out                       | Supported                                | Native edges; validation reports unknown names and missing producers/consumers                                            |
+| Derived causal ordering and cycle indication                             | Supported                                | Flow projection derives order and marks residual cycles                                                                   |
+| Source traceability                                                      | Supported                                | Source ranges and stable node IDs cover declarations and edges; metadata entries belong to their event node               |
+| Broker/channel topology                                                  | Supported                                | Channel kind and optional broker are represented and projected                                                            |
+| Provenance: external versus internal                                     | Supported                                | Optional normalized event field; unknown is explicit and no naming inference is performed                                 |
+| Handler identity and handler location                                    | Supported                                | Causal handlers have stable identity and optional hosting service; topology subscriptions remain independent              |
+| Handler preconditions, reads, writes, and business effects               | Partially supported                      | Effects are first-class with open metadata; later phases may add richer structured semantics                              |
+| Produced events as explicit handler results                              | Supported                                | Explicit handler-output edges preserve independent fan-out branches                                                       |
+| Failure events, retries, idempotency, ordering, delivery semantics       | Expressible through annotations/metadata | No validation or structured semantics; unsupported claims must remain unknown                                             |
+| Correlation and causation identifiers                                    | Expressible through annotations/metadata | No dedicated event or edge fields                                                                                         |
+| Explicit event-to-handler-to-effect graph                                | Supported                                | Explicit `handler`, `handled by`, `causes`, and `effect` lines populate the causal aggregate; no causal visualization yet |
+| Trace exploration, fan-out investigation, missing-consumer investigation | Requires future visualization only       | Existing projections expose facts and cycles, but no dedicated trace UI or investigation interaction exists               |
 
 This gap analysis is descriptive, not an implementation plan. D01 does not
 change the DSL, AST, persistence, MCP surface, or renderer. Later evolution

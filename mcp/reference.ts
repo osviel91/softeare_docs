@@ -102,7 +102,7 @@ export function documentationModelText(): string {
     "",
     "INCOMPLETE means the representation and semantic boundary are correct, but important knowledge is missing. MISREPRESENTED means the representation's semantics do not match observed behavior. Synchronous HTTP routing represented as asynchronous Event Flow is MISREPRESENTED, not merely incomplete.",
     "",
-    "When real asynchronous behavior exists, use `Event -> Handler/consumer -> Effects -> Resulting events` as an investigation heuristic, not a mandatory shape. The absence of an asynchronous event context is a valid result: say `No asynchronous event context was observed` rather than inventing Event Flow coverage. The current DSL structurally supports events, producers, consumers/services, brokers, channels, publications, subscriptions, and open event metadata. Current projections derive fan-out, causal ordering, and cycle indication; they do not provide first-class handler, effect, provenance, or event-causation fields.",
+    "When real asynchronous behavior exists, use `Event -> Handler/consumer -> Effects -> Resulting events` as an investigation heuristic, not a mandatory shape. The absence of an asynchronous event context is a valid result: say `No asynchronous event context was observed` rather than inventing Event Flow coverage. Topology (`publishes`/`consumes`) is not causality. Use explicit `handler`, `handled by`, `causes`, and `effect` lines; never infer handler outputs from service publications. Partial causal knowledge is valid, and unknown provenance is preferable to invented provenance. Commands and events share the generic message-name slot.",
     "",
     "For each important event, document evidence-supported provenance (external, internal, or unknown), publisher, consumer/handler, reads, writes, external effects, resulting events, cycles, fan-outs, missing consumers, and relevant retry/idempotency/order semantics. Do not invent absent behavior or unsupported syntax.",
     "",
@@ -169,9 +169,9 @@ export function eventFlowDslText(): string {
   return constructsToMarkdown(
     "Event flow language",
     [
-      "The language for `*.eventseq` files: it documents an event-driven system",
-      "as declarations of events, services and channels, then the publish and",
-      "consume edges between them. Both edge spellings parse to the same model.",
+      "The language for `*.eventseq` files: topology declarations describe events,",
+      "services, channels, publications, and subscriptions; optional causal lines",
+      "explicitly connect events, handlers, effects, and resulting messages.",
     ].join(" "),
     EVENT_FLOW_CONSTRUCTS,
   );

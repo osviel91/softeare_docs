@@ -235,13 +235,17 @@ describe("event-flow parser", () => {
   });
 
   it("normalizes empty descriptions and reports unclosed quotes", () => {
-    const empty = eventsOf(parseEventFlow('event A {\n  description: ""\n}').flow)[0];
+    const empty = eventsOf(
+      parseEventFlow('event A {\n  description: ""\n}').flow,
+    )[0];
     expect(empty.description).toBeUndefined();
 
-    const malformed = parseEventFlow('event A {\n  description: "unfinished\n}');
-    expect(malformed.diagnostics.map((diagnostic) => diagnostic.code)).toContain(
-      EventFlowDiagnosticCode.MalformedDescription,
+    const malformed = parseEventFlow(
+      'event A {\n  description: "unfinished\n}',
     );
+    expect(
+      malformed.diagnostics.map((diagnostic) => diagnostic.code),
+    ).toContain(EventFlowDiagnosticCode.MalformedDescription);
   });
 
   it("reports a malformed declaration instead of guessing", () => {
@@ -457,5 +461,120 @@ describe("event-flow validation", () => {
     const codes = diagnostics.map((diagnostic) => diagnostic.code);
     expect(codes).toContain(EventFlowDiagnosticCode.UnsupportedSyntax);
     expect(codes).toContain(EventFlowDiagnosticCode.UnknownService);
+  });
+});
+
+describe("event-flow causal syntax", () => {
+  it("keeps independent handler branches explicit", () => {
+    const source = [
+      "event UpOneTransactionRaisedEvent",
+      "event SaveUpOneTransactionCommand",
+      "event AddAccountCommand",
+      "event AddCorporateAccountCommand",
+      "handler TransactionsHandler",
+      "handler AccountsHandler",
+      "UpOneTransactionRaisedEvent handled by TransactionsHandler",
+      "UpOneTransactionRaisedEvent handled by AccountsHandler",
+      "TransactionsHandler causes SaveUpOneTransactionCommand",
+      "AccountsHandler causes AddAccountCommand",
+      "AccountsHandler causes AddCorporateAccountCommand",
+    ].join("\n");
+    const { flow, diagnostics } = analyzeEventFlow(source);
+    expect(
+      diagnostics.filter((diagnostic) => diagnostic.severity === "error"),
+    ).toEqual([]);
+    expect(flow.causal?.handlers.map((handler) => handler.id)).toEqual([
+      "TransactionsHandler",
+      "AccountsHandler",
+    ]);
+    expect(
+      flow.causal?.outputs
+        .filter((output) => output.handlerId === "AccountsHandler")
+        .map((output) => output.event),
+    ).toEqual(["AddAccountCommand", "AddCorporateAccountCommand"]);
+  });
+
+  it("supports provenance, service ownership, effects, and terminal handlers", () => {
+    const source = [
+      "event TransactionReceived {",
+      "  provenance: unknown",
+      "}",
+      "handler TransactionHandler in TransactionsService",
+      "handler SendEmailHandler",
+      "TransactionReceived handled by TransactionHandler",
+      "effect persist-transaction on TransactionHandler kind state-update: Persist transaction",
+      "TransactionHandler causes TransactionCreated",
+      "effect send-email on SendEmailHandler kind notification: Send email",
+    ].join("\n");
+    const { flow, diagnostics } = analyzeEventFlow(source);
+    expect(diagnostics.map((diagnostic) => diagnostic.code)).toContain(
+      EventFlowDiagnosticCode.CausalUnknownEvent,
+    );
+    expect(flow.causal?.handlers[0]).toMatchObject({
+      id: "TransactionHandler",
+      service: "TransactionsService",
+    });
+    expect(flow.causal?.effects).toMatchObject([
+      {
+        id: "persist-transaction",
+        kind: "state-update",
+        description: "Persist transaction",
+      },
+      { id: "send-email", kind: "notification", description: "Send email" },
+    ]);
+    expect(flow.causal?.outputs).toHaveLength(1);
+    expect(flow.causal?.handlers[1].range).toBeDefined();
+  });
+
+  it("reports causal duplicates, bad references, and invalid provenance", () => {
+    const { diagnostics } = analyzeEventFlow(
+      [
+        "event A {",
+        "  provenance: invented",
+        "}",
+        "handler H",
+        "handler H",
+        "A handled by Missing",
+        "A handled by Missing",
+        "H causes MissingEvent",
+        "H causes MissingEvent",
+        "effect e on H: one",
+        "effect e on H: two",
+      ].join("\n"),
+    );
+    const codes = diagnostics.map((diagnostic) => diagnostic.code);
+    expect(codes).toEqual(
+      expect.arrayContaining([
+        EventFlowDiagnosticCode.InvalidProvenance,
+        EventFlowDiagnosticCode.DuplicateHandler,
+        EventFlowDiagnosticCode.UnknownHandler,
+        EventFlowDiagnosticCode.CausalUnknownEvent,
+        EventFlowDiagnosticCode.DuplicateCausalInput,
+        EventFlowDiagnosticCode.DuplicateCausalOutput,
+        EventFlowDiagnosticCode.DuplicateEffect,
+      ]),
+    );
+    expect(diagnostics.every((diagnostic) => diagnostic.range)).toBe(true);
+  });
+
+  it("does not infer causal facts from topology", () => {
+    const { flow } = analyzeEventFlow(
+      ["event A", "consumer Service", "Service consumes A"].join("\n"),
+    );
+    expect(flow.causal).toBeUndefined();
+  });
+
+  it("parses the same causal source deterministically", () => {
+    const source = [
+      "event A {",
+      "  provenance: external",
+      "}",
+      "handler H {",
+      "  description: Handles A",
+      "}",
+      "A handled by H",
+      "effect e on H kind state: Save state",
+    ].join("\n");
+    expect(parseEventFlow(source).flow).toEqual(parseEventFlow(source).flow);
   });
 });

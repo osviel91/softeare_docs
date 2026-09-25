@@ -103,4 +103,20 @@ describe("collectEventFlowMentions", () => {
     const mentions = collectEventFlowMentions(flow, source);
     expect(mentions.map((mention) => mention.name)).toEqual(["Kafka"]);
   });
+
+  it("keeps causal references source-addressable", () => {
+    const source = [
+      "event A",
+      "handler H in Service",
+      "A handled by H",
+      "effect save on H kind state: Save state",
+    ].join("\n");
+    const { flow } = analyzeEventFlow(source);
+    const mentions = collectEventFlowMentions(flow, source);
+    expect(
+      mentions
+        .filter((mention) => mention.context === "handler")
+        .map((mention) => mention.name),
+    ).toEqual(["H", "H", "H"]);
+  });
 });

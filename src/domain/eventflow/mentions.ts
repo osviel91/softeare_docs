@@ -17,7 +17,7 @@ import { tokenizeEventFlow } from "../../language/eventflow/lexer";
 
 /** Where an event-flow document writes a name. */
 export type EventFlowMentionContext =
-  "declaration" | "event" | "service" | "channel" | "broker";
+  "declaration" | "event" | "service" | "channel" | "broker" | "handler";
 
 /** One occurrence of a name, with the exact span it occupies. */
 export interface EventFlowMention extends SourceMention {
@@ -86,6 +86,25 @@ export function collectEventFlowMentions(
         }
         break;
     }
+  }
+
+  for (const handler of flow.causal?.handlers ?? []) {
+    if (handler.range) add(handler.range.start.line, handler.id, "handler");
+    if (handler.service && handler.range)
+      add(handler.range.start.line, handler.service, "service");
+  }
+  for (const input of flow.causal?.inputs ?? []) {
+    if (!input.range) continue;
+    add(input.range.start.line, input.event, "event");
+    add(input.range.start.line, input.handlerId, "handler");
+  }
+  for (const output of flow.causal?.outputs ?? []) {
+    if (!output.range) continue;
+    add(output.range.start.line, output.event, "event");
+    add(output.range.start.line, output.handlerId, "handler");
+  }
+  for (const effect of flow.causal?.effects ?? []) {
+    if (effect.range) add(effect.range.start.line, effect.handlerId, "handler");
   }
 
   return mentions;

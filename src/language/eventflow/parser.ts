@@ -41,6 +41,11 @@ import type {
   EventFlow,
   EventFlowStatement,
   EventFlowTitle,
+  EventFlowHandler,
+  EventProvenance,
+  HandlerEffect,
+  HandlerInput,
+  HandlerOutput,
   EventMetadataEntry,
   EventPublication,
   EventSubscription,
@@ -48,6 +53,7 @@ import type {
   ServiceRole,
   SourceRange,
 } from "../../domain/eventflow/ast";
+import { validateEventFlowCausality } from "../../domain/eventflow/causality";
 import { tokenizeEventFlow, type EventFlowLine } from "./lexer";
 
 /** Stable, machine-readable event-flow diagnostic identifiers. */
@@ -90,6 +96,15 @@ export enum EventFlowDiagnosticCode {
   ChannelWithoutConsumer = "eventflow.channel-without-consumer",
   /** A service is declared but neither publishes nor consumes. */
   UnusedService = "eventflow.unused-service",
+  DuplicateHandler = "eventflow.duplicate-handler",
+  DuplicateEffect = "eventflow.duplicate-effect",
+  DuplicateCausalInput = "eventflow.duplicate-causal-input",
+  DuplicateCausalOutput = "eventflow.duplicate-causal-output",
+  UnknownHandler = "eventflow.unknown-handler",
+  CausalUnknownEvent = "eventflow.causal-unknown-event",
+  EffectWithoutHandler = "eventflow.effect-without-handler",
+  InvalidProvenance = "eventflow.invalid-provenance",
+  MalformedCausalRelationship = "eventflow.malformed-causal-relationship",
 }
 
 /** How serious an event-flow diagnostic is. */
@@ -204,6 +219,12 @@ const CHANNEL_KINDS: Record<string, ChannelKind> = {
   stream: "stream",
 };
 
+const PROVENANCES = new Set<EventProvenance>([
+  "external",
+  "internal",
+  "unknown",
+]);
+
 /**
  * Parse an event-flow document.
  *
@@ -218,10 +239,15 @@ export function parseEventFlow(source: string): EventFlowParseResult {
   const seenServices = new Set<string>();
   const seenChannels = new Set<string>();
   const seenBrokers = new Set<string>();
+  const handlers: EventFlowHandler[] = [];
+  const inputs: HandlerInput[] = [];
+  const outputs: HandlerOutput[] = [];
+  const effects: HandlerEffect[] = [];
   let title: EventFlowTitle | undefined;
 
   /** The event whose metadata block is open, if any. */
-  let metadataTarget: EventDeclaration | null = null;
+  let metadataTarget:
+    EventDeclaration | EventFlowHandler | HandlerEffect | null = null;
   let metadataKeys = new Set<string>();
 
   const closeMetadata = (): void => {
@@ -236,9 +262,9 @@ export function parseEventFlow(source: string): EventFlowParseResult {
 
     // Inside `event X { … }` every line is `key: value` or the closing brace.
     if (metadataTarget) {
+      const target = metadataTarget;
       if (first.type === "braceClose") {
-        const target = metadataTarget;
-        target.range = { start: target.range.start, end: first.range.end };
+        target.range = { start: target.range!.start, end: first.range.end };
         closeMetadata();
         continue;
       }
@@ -261,7 +287,7 @@ export function parseEventFlow(source: string): EventFlowParseResult {
         if (metadataKeys.has(key.toLowerCase())) {
           diagnostics.push({
             severity: "warning",
-            message: `Event "${metadataTarget.name}" sets "${key}" more than once`,
+            message: `"${"name" in metadataTarget ? metadataTarget.name : metadataTarget.id}" sets "${key}" more than once`,
             code: EventFlowDiagnosticCode.DuplicateMetadataKey,
             range: lineRange(line),
           });
@@ -271,18 +297,33 @@ export function parseEventFlow(source: string): EventFlowParseResult {
           value,
           range: lineRange(line),
         };
-        metadataTarget.metadata.push(entry);
+        target.metadata.push(entry);
         if (
           key.toLowerCase() === "description" &&
           !metadataKeys.has("description") &&
           normalizedDescription.valid &&
           normalizedDescription.value !== ""
         ) {
-          metadataTarget.description = normalizedDescription.value;
+          target.description = normalizedDescription.value;
+        }
+        if (target.type === "event" && key.toLowerCase() === "provenance") {
+          if (!PROVENANCES.has(value as EventProvenance)) {
+            diagnostics.push({
+              severity: "error",
+              message: `Invalid event provenance "${value}"; use external, internal, or unknown`,
+              code: EventFlowDiagnosticCode.InvalidProvenance,
+              range: entry.range,
+            });
+          } else if (!metadataKeys.has("provenance")) {
+            target.provenance = value as EventProvenance;
+          }
+        }
+        if (target.type === "effect" && key.toLowerCase() === "kind") {
+          target.kind = value;
         }
         metadataKeys.add(key.toLowerCase());
-        metadataTarget.range = {
-          start: metadataTarget.range.start,
+        target.range = {
+          start: metadataTarget.range!.start,
           end: entry.range.end,
         };
         continue;
@@ -290,7 +331,7 @@ export function parseEventFlow(source: string): EventFlowParseResult {
       diagnostics.push(
         lineDiagnostic(
           line,
-          "Inside an event's metadata block each line is `key: value`, or `}` to close it",
+          "Inside a metadata block each line is `key: value`, or `}` to close it",
           EventFlowDiagnosticCode.MalformedMetadata,
         ),
       );
@@ -451,6 +492,36 @@ export function parseEventFlow(source: string): EventFlowParseResult {
       continue;
     }
 
+    const causal = parseCausalLine(line);
+    if (causal === "malformed") {
+      diagnostics.push(
+        lineDiagnostic(
+          line,
+          "Malformed causal relationship; use `event handled by handler`, `handler causes event`, or `handler effect id on handler: description`",
+          EventFlowDiagnosticCode.MalformedCausalRelationship,
+        ),
+      );
+      continue;
+    }
+    if (causal) {
+      if (causal.kind === "handler") {
+        handlers.push(causal.value);
+        if (causal.opensMetadata) {
+          metadataTarget = causal.value;
+          metadataKeys = new Set();
+        }
+      } else if (causal.kind === "input") inputs.push(causal.value);
+      else if (causal.kind === "output") outputs.push(causal.value);
+      else {
+        effects.push(causal.value);
+        if (causal.opensMetadata) {
+          metadataTarget = causal.value;
+          metadataKeys = new Set();
+        }
+      }
+      continue;
+    }
+
     // Edge statements, in either spelling.
     const edge = parseEdge(line);
     if (edge) {
@@ -468,16 +539,126 @@ export function parseEventFlow(source: string): EventFlowParseResult {
   }
 
   if (metadataTarget) {
-    const open = metadataTarget as EventDeclaration;
+    const open = metadataTarget;
     diagnostics.push({
       severity: "error",
-      message: `Event "${open.name}" opens a metadata block that is never closed with \`}\``,
+      message: `"${"name" in open ? open.name : open.id}" opens a metadata block that is never closed with \`}\``,
       code: EventFlowDiagnosticCode.UnclosedMetadata,
       range: open.range,
     });
   }
 
-  return { flow: { title, statements }, diagnostics };
+  return {
+    flow: {
+      title,
+      statements,
+      ...(handlers.length || inputs.length || outputs.length || effects.length
+        ? { causal: { handlers, inputs, outputs, effects } }
+        : {}),
+    },
+    diagnostics,
+  };
+}
+
+type CausalLine =
+  | { kind: "handler"; value: EventFlowHandler; opensMetadata: boolean }
+  | { kind: "input"; value: HandlerInput; opensMetadata: false }
+  | { kind: "output"; value: HandlerOutput; opensMetadata: false }
+  | { kind: "effect"; value: HandlerEffect; opensMetadata: boolean };
+
+/** Causal lines use explicit references; no topology or adjacency is consulted. */
+function parseCausalLine(line: EventFlowLine): CausalLine | "malformed" | null {
+  const words = line.tokens.filter((token) => token.type === "word");
+  const values = words.map((word) => word.value.toLowerCase());
+  const range = lineRange(line);
+  const opensMetadata = line.tokens.some((token) => token.type === "braceOpen");
+
+  if (values[0] === "handler") {
+    const id = words[1];
+    if (!id || (words[2] && !["in", "as"].includes(values[2])))
+      return "malformed";
+    const service = values[2] === "in" ? words[3]?.value : undefined;
+    if (values[2] === "in" && !service) return "malformed";
+    return {
+      kind: "handler",
+      opensMetadata,
+      value: { type: "handler", id: id.value, service, metadata: [], range },
+    };
+  }
+
+  if (values[1] === "handled" && values[2] === "by" && words[3]) {
+    return {
+      kind: "input",
+      opensMetadata: false,
+      value: {
+        type: "handler-input",
+        event: words[0].value,
+        handlerId: words[3].value,
+        range,
+      },
+    };
+  }
+  if (values[1] === "handles" && words[2]) {
+    return {
+      kind: "input",
+      opensMetadata: false,
+      value: {
+        type: "handler-input",
+        handlerId: words[0].value,
+        event: words[2].value,
+        range,
+      },
+    };
+  }
+  if (values[1] === "causes" && words[2]) {
+    return {
+      kind: "output",
+      opensMetadata: false,
+      value: {
+        type: "handler-output",
+        handlerId: words[0].value,
+        event: words[2].value,
+        range,
+      },
+    };
+  }
+
+  const effectAt = values[0] === "effect" ? 0 : values[1] === "effect" ? 1 : -1;
+  if (effectAt !== -1) {
+    const id = words[effectAt + 1];
+    const on = values.indexOf("on");
+    const handler =
+      on > effectAt ? words[on + 1] : effectAt === 1 ? words[0] : undefined;
+    const colon = line.tokens.find((token) => token.type === "colon");
+    if (!id || !handler || (!colon && !opensMetadata)) return "malformed";
+    const kindAt = values.indexOf("kind");
+    const kind = kindAt === -1 ? undefined : words[kindAt + 1]?.value;
+    const description = colon
+      ? line.text.slice(colon.range.end.column).trim()
+      : "";
+    return {
+      kind: "effect",
+      opensMetadata,
+      value: {
+        type: "effect",
+        id: id.value,
+        handlerId: handler.value,
+        kind,
+        description,
+        metadata: [],
+        range,
+      },
+    };
+  }
+
+  if (
+    ["handler", "handled", "handles", "causes", "effect"].includes(
+      values[0] ?? "",
+    ) ||
+    values.includes("handled")
+  )
+    return "malformed";
+  return null;
 }
 
 /** Normalize the one conventional metadata value with user-facing semantics. */
@@ -682,6 +863,24 @@ export function validateEventFlow(flow: EventFlow): EventFlowDiagnostic[] {
         range: declaration.range,
       });
     }
+  }
+
+  for (const violation of validateEventFlowCausality(flow)) {
+    const code: EventFlowDiagnosticCode = {
+      "duplicate-handler": EventFlowDiagnosticCode.DuplicateHandler,
+      "duplicate-input": EventFlowDiagnosticCode.DuplicateCausalInput,
+      "duplicate-output": EventFlowDiagnosticCode.DuplicateCausalOutput,
+      "duplicate-effect": EventFlowDiagnosticCode.DuplicateEffect,
+      "unknown-handler": EventFlowDiagnosticCode.UnknownHandler,
+      "unknown-event": EventFlowDiagnosticCode.CausalUnknownEvent,
+      "effect-without-handler": EventFlowDiagnosticCode.EffectWithoutHandler,
+    }[violation.code];
+    diagnostics.push({
+      severity: "error",
+      message: violation.message,
+      code,
+      range: violation.reference.range,
+    });
   }
 
   return diagnostics;

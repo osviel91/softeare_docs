@@ -130,7 +130,8 @@ describe("MCP reference resources", () => {
       "Change Proposals",
       "observed, inferred, or unknown",
       "Event -> Handler/consumer -> Effects -> Resulting events",
-      "Current projections derive",
+      "Topology (`publishes`/`consumes`) is not causality",
+      "unknown provenance is preferable",
       "asynchronous/event-driven",
       "No asynchronous event context was observed",
       "MISREPRESENTED",
@@ -147,7 +148,9 @@ describe("MCP reference resources", () => {
     const guidance = documentationModelText();
     expect(guidance).toContain("Synchronous HTTP routing");
     expect(guidance).toContain("do not establish an Event Flow");
-    expect(guidance).toContain("legitimately contain no Event Flow documentation");
+    expect(guidance).toContain(
+      "legitimately contain no Event Flow documentation",
+    );
   });
 
   it("offers one resource template for reading project files", () => {

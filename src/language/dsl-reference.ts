@@ -232,6 +232,42 @@ export const EVENT_FLOW_CONSTRUCTS: DslConstruct[] = [
       "publish OrderCreated from OrderService to orders\nconsume OrderCreated by BillingService from orders",
   },
   {
+    name: "Handler",
+    syntax: "handler <id> [in <service>] [{ metadata }]",
+    summary:
+      "Declares a causal responsibility with a stable identity. Hosting service and metadata are optional; a handler does not need a service declaration.",
+    example: "handler TransactionsHandler in TransactionsService",
+  },
+  {
+    name: "Causal input",
+    syntax: "<event> handled by <handler>",
+    summary:
+      "Explicitly connects one message to one handler. Repeat it for fan-out; it never derives from a topology subscription.",
+    example: "UpOneTransactionRaisedEvent handled by TransactionsHandler",
+  },
+  {
+    name: "Resulting message",
+    syntax: "<handler> causes <event>",
+    summary:
+      "Explicitly records a handler-owned resulting message. A handler may have zero, one, or many outputs.",
+    example: "TransactionsHandler causes SaveUpOneTransactionCommand",
+  },
+  {
+    name: "Effect",
+    syntax: "effect <id> on <handler> [kind <kind>] : <description>",
+    summary:
+      "Records a meaningful non-message consequence owned by one handler. The kind is open-ended and technology-neutral.",
+    example:
+      "effect persist-transaction on TransactionsHandler kind state-update: Persist transaction",
+  },
+  {
+    name: "Provenance",
+    syntax: "provenance: external|internal|unknown",
+    summary:
+      "Optional event metadata. Omission preserves legacy undocumented semantics; unknown is explicit and is never inferred.",
+    example: "event PaymentReceived {\n  provenance: external\n}",
+  },
+  {
     name: "Comment",
     syntax: "# <text>",
     summary:

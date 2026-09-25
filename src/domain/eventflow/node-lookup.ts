@@ -100,6 +100,36 @@ export function eventFlowNodes(flow: EventFlow): EventFlowNode[] {
         break;
     }
   }
+  for (const causal of [
+    ...(flow.causal?.handlers ?? []).map((entry) => ({
+      kind: "handler" as const,
+      range: entry.range!,
+      label: entry.id,
+    })),
+    ...(flow.causal?.inputs ?? []).map((entry) => ({
+      kind: "handler-input" as const,
+      range: entry.range!,
+      label: `${entry.event} handled by ${entry.handlerId}`,
+    })),
+    ...(flow.causal?.outputs ?? []).map((entry) => ({
+      kind: "handler-output" as const,
+      range: entry.range!,
+      label: `${entry.handlerId} causes ${entry.event}`,
+    })),
+    ...(flow.causal?.effects ?? []).map((entry) => ({
+      kind: "effect" as const,
+      range: entry.range!,
+      label: entry.id,
+    })),
+  ]) {
+    if (!causal.range) continue;
+    nodes.push({
+      id: nodeIdOf(causal.kind, causal.range),
+      kind: causal.kind,
+      range: causal.range,
+      label: causal.label,
+    });
+  }
   return nodes;
 }
 

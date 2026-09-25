@@ -59,7 +59,11 @@ export type AstNodeKind =
   | "channel"
   | "service"
   | "publication"
-  | "subscription";
+  | "subscription"
+  | "handler"
+  | "handler-input"
+  | "handler-output"
+  | "effect";
 
 /**
  * A deterministic id for a node: `<kind>@<line>:<column>` (both 0-based).
@@ -241,7 +245,7 @@ export function nodeRangeById(
 export function parseNodeId(
   id: AstNodeId,
 ): { kind: AstNodeKind; line: number; column: number } | null {
-  const match = /^([a-z]+)@(\d+):(\d+)$/.exec(id);
+  const match = /^([a-z-]+)@(\d+):(\d+)$/.exec(id);
   if (!match) return null;
   const kind = match[1] as AstNodeKind;
   return {

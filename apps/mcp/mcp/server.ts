@@ -64,12 +64,16 @@ A project contains sequence diagrams (\`.seq\`), event flows (\`.eventseq\`) and
 
 Work in this order:
 1. list_projects — the project ids every other tool addresses. If it is empty and the credential has project:create, call create_project.
-2. get_project_index or list_resources — see what exists and what your token may do.
-3. read_diagram, read_documentation or read_resource — get the text, semantic metadata and current revision.
+2. get_project_index or list_resources — see what exists and what your token may do; these responses include semantic metadata when present.
+3. read_diagram, read_documentation or read_resource — get the text, semantic metadata and current revision. Use get_resource_metadata when you need metadata without reading the contents; search_project also returns matched descriptions and tags.
 4. Prefer the semantic tools for writing: upsert_sequence_diagram, upsert_event_flow and upsert_documentation parse and validate before they persist, and apply the revision for you. Use create_resource/update_resource only when you need raw control.
 5. Every write names the revision it read as \`expectedRevision\`. A stale value is refused with a conflict: re-read, then retry at the new revision. Never invent a revision.
 6. Resource descriptions and tags are documentary metadata. Use get_resource_metadata to inspect them or update_resource_metadata to replace them without changing text; an empty metadata object clears them.
 7. After changing a diagram, call validate_project to see problems.
+
+Event Flow represents asynchronous/event-driven causal behavior. HTTP requests, synchronous calls, reverse-proxy routing, cron invocation, logs/telemetry, and infrastructure topology do not establish an Event Flow by themselves. A project may legitimately contain no Event Flow documentation. Do not force synchronous or structural behavior into Event Flow. When real asynchronous behavior exists, use Event -> Handler -> Effects -> Resulting Events as an investigation heuristic, not a mandatory shape. You may conclude: "No asynchronous event context was observed."
+
+Assessment guidance: INCOMPLETE means the representation and semantic boundary are correct but important knowledge is missing. MISREPRESENTED means the representation's semantics do not match observed behavior; synchronous HTTP routing represented as asynchronous Event Flow is MISREPRESENTED, not merely incomplete.
 
 A token carries scopes. A read-only token cannot write; project membership always applies, so a token can never act outside the projects its owner belongs to. Mutating tools accept an \`idempotencyKey\`; a retry with the same key performs the mutation once.`;
 

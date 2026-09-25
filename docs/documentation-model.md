@@ -48,6 +48,14 @@ view can show proposal relationships, and a future Database view can show
 persistence. They complement one another; they are not duplicate accounts of
 the same fact.
 
+### Assessment guidance
+
+An **INCOMPLETE** representation uses the correct representation and semantic
+boundary, but important knowledge is missing. A **MISREPRESENTED** resource uses
+a representation whose semantics do not match the observed system behavior.
+For example, synchronous HTTP routing represented as an asynchronous Event Flow
+is MISREPRESENTED, not merely incomplete.
+
 ## Sequence Diagrams
 
 ### Contract
@@ -115,11 +123,18 @@ within a meaningful event context. It answers:
 - What causes what in the asynchronous system?
 - How does the system react when an event occurs?
 
+HTTP requests, synchronous calls, reverse-proxy routing, cron invocation,
+logs/telemetry, and infrastructure topology do not establish an Event Flow by
+themselves. A project may legitimately contain no Event Flow documentation.
+Keep synchronous or structural behavior in its appropriate representation; do
+not force it into Event Flow.
+
 It is not merely `producer -> topic -> consumer`. The important model is:
 
-```text
-Event -> Handler -> Effects -> Resulting Events
-```
+`Event -> Handler -> Effects -> Resulting Events` is an investigation heuristic
+when real asynchronous behavior exists, not a mandatory shape for every Event
+Flow or every event-like trigger. No asynchronous event context observed is a
+valid result, and is preferable to inventing Event Flow coverage.
 
 Effects may include database mutations, external API calls, command dispatch,
 notifications, state transitions, and resource creation or deletion.
@@ -138,11 +153,11 @@ unknown or omit the claim.
 
 ### Handlers and causal semantics
 
-Handlers or consumers are first-class semantic concepts in the desired model.
-For every important event, a reader should be able to discover who consumes it,
-where it is handled, what the handler does, what side effects occur, and what
-events can result. A broker or channel is infrastructure context, not a
-substitute for handler responsibility.
+Handlers or consumers are useful semantic concepts in the desired model. When
+real asynchronous behavior exists, a reader should be able to discover who
+consumes an important event, where it is handled, what the handler does, what
+side effects occur, and what events can result. A broker or channel is
+infrastructure context, not a substitute for handler responsibility.
 
 The current representation can show services consuming events and can derive
 event-to-event ordering when a service consumes one event and publishes

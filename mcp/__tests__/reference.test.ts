@@ -21,6 +21,7 @@ import {
   staticResourceText,
   staticResources,
 } from "../reference";
+import { createTools } from "../tools";
 
 describe("MCP reference resources", () => {
   it("advertises every static resource with a unique URI", () => {
@@ -105,6 +106,17 @@ describe("MCP reference resources", () => {
     expect(SERVER_INSTRUCTIONS).toContain(DOCUMENTATION_MODEL_URI);
   });
 
+  it("does not reference tools outside the stdio catalog", () => {
+    const tools = new Set(createTools().map((tool) => tool.definition.name));
+    const guidance = [
+      SERVER_INSTRUCTIONS,
+      documentingGuideText(),
+      documentationModelText(),
+    ].join("\n");
+    const referenced = new Set(guidance.match(/\b[a-z]+_[a-z_]+\b/g) ?? []);
+    expect([...referenced].filter((name) => !tools.has(name))).toEqual([]);
+  });
+
   it("exposes bounded canonical representation guidance", () => {
     const guidance = documentationModelText();
     for (const phrase of [
@@ -119,12 +131,23 @@ describe("MCP reference resources", () => {
       "observed, inferred, or unknown",
       "Event -> Handler/consumer -> Effects -> Resulting events",
       "Current projections derive",
+      "asynchronous/event-driven",
+      "No asynchronous event context was observed",
+      "MISREPRESENTED",
+      "INCOMPLETE",
     ]) {
       expect(guidance).toContain(phrase);
     }
     expect(guidance.length).toBeLessThan(10000);
     expect(guidance).not.toContain("kind: conceptual");
     expect(guidance).not.toContain("kind: database");
+  });
+
+  it("does not qualify synchronous HTTP routing as an Event Flow", () => {
+    const guidance = documentationModelText();
+    expect(guidance).toContain("Synchronous HTTP routing");
+    expect(guidance).toContain("do not establish an Event Flow");
+    expect(guidance).toContain("legitimately contain no Event Flow documentation");
   });
 
   it("offers one resource template for reading project files", () => {

@@ -11,6 +11,8 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { MCP_INSTRUCTIONS } from "../../apps/mcp/mcp/server";
+import { createMcpTools } from "../../apps/mcp/mcp/tools";
 import { startHarness, type McpHarness } from "./harness";
 
 let harness: McpHarness;
@@ -51,6 +53,22 @@ function structured(result: unknown): Record<string, any> {
 }
 
 describe("the remote MCP service over Streamable HTTP", () => {
+  it("keeps initialize guidance aligned with exposed tool names", () => {
+    const tools = new Set(createMcpTools().map((tool) => tool.name));
+    const numberedTools = [
+      ...MCP_INSTRUCTIONS.matchAll(/^\d+\.\s+([a-z_]+)/gm),
+    ].map((match) => match[1]);
+    expect(numberedTools.length).toBeGreaterThan(0);
+    expect(numberedTools.filter((name) => !tools.has(name))).toEqual([]);
+  });
+
+  it("guides agents to the existing metadata discovery operations", () => {
+    expect(MCP_INSTRUCTIONS).toContain("get_resource_metadata");
+    expect(MCP_INSTRUCTIONS).toContain("search_project");
+    expect(MCP_INSTRUCTIONS).toContain("semantic metadata");
+    expect(MCP_INSTRUCTIONS).toContain("descriptions and tags");
+  });
+
   it("negotiates a protocol version the SDK implements", async () => {
     const client = await connect(token);
     const version = client.getServerVersion();

@@ -194,6 +194,24 @@ ranges for evidence. A later diff can therefore report handler, input, output,
 effect, and provenance additions/removals/changes without changing persistence;
 the causal diff UI and proposal-specific presentation remain future work.
 
+### Causal investigation view
+
+The Event Flow **Causal** view is a presentation of explicit causal facts, not
+another semantic model. Flow shows event movement, Catalog shows event facts,
+and Topology shows service connectivity; Causal shows message-to-handler,
+handler-to-message, and handler-to-effect relationships.
+
+Selecting an event, handler, or effect keeps the full graph in place while
+emphasizing its immediate causal neighborhood. Upstream means explicit paths
+that may produce or precede the selection; downstream means explicit paths that
+may follow it. Effects remain owned by their handler and are not rendered as
+events in the causal chain. External, internal, and unknown provenance are
+shown as message context, not as a causal claim.
+
+Legacy topology-only flows intentionally have an empty Causal view. The view
+explains that topology is documented but explicit Handler-based causality is
+not; it does not infer relationships from `publishes` and `consumes`.
+
 ### Event annotations
 
 Add annotations or metadata when they materially affect understanding. Useful

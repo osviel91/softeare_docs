@@ -8,10 +8,12 @@
  * and it means source↔diagram selection works identically in both languages —
  * the viewport only knows about `data-node-id`, not about what produced it.
  */
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { analyzeEventFlow } from "../../language/eventflow/parser";
 import { renderEventFlowDocument } from "../../renderer/pipeline/eventflow-to-svg";
 import { renderEventFlowTopologyDocument } from "../../renderer/pipeline/eventflow-to-topology-svg";
+import { renderEventFlowCausalDocument } from "../../renderer/pipeline/eventflow-to-causal-svg";
+import { effectsForHandler, inputsForHandler, outputsForHandler, projectEventFlowToCausalView, type CausalNodeId } from "../../domain/eventflow/causal-projection";
 import { projectEventFlowToCatalog } from "../../domain/eventflow/catalog-projection";
 import { projectEventFlowToTopology } from "../../domain/eventflow/topology-projection";
 import {
@@ -24,7 +26,7 @@ import type { DiagramViewportTransform } from "./DiagramViewport";
 import type { SemanticChange } from "../../domain/diff/resource-diff";
 import { decorateReviewSvg } from "../proposals/review-decorations";
 
-export type EventFlowView = "flow" | "catalog" | "topology";
+export type EventFlowView = "flow" | "catalog" | "topology" | "causal";
 
 export interface EventFlowPreviewProps {
   /** The event-flow DSL source. */
@@ -77,8 +79,15 @@ export default function EventFlowPreview({
     [document.svg, reviewChanges, reviewSide],
   );
   const flow = providedFlow ?? analyzeEventFlow(source).flow;
+  const [selectedCausalId, setSelectedCausalId] = useState<CausalNodeId | null>(null);
+  useEffect(() => setSelectedCausalId(null), [source]);
   const catalog = useMemo(() => projectEventFlowToCatalog(flow), [flow]);
   const topology = useMemo(() => projectEventFlowToTopology(flow), [flow]);
+  const causal = useMemo(() => projectEventFlowToCausalView(flow), [flow]);
+  const causalDocument = useMemo(
+    () => renderEventFlowCausalDocument(flow, selectedCausalId),
+    [flow, selectedCausalId],
+  );
   const topologyDocument = useMemo(
     () => renderEventFlowTopologyDocument(flow),
     [flow],
@@ -113,6 +122,14 @@ export default function EventFlowPreview({
         onClick={() => onViewChange?.("topology")}
       >
         Topology
+      </button>
+      <button
+        type="button"
+        className={view === "causal" ? "is-active" : ""}
+        aria-pressed={view === "causal"}
+        onClick={() => onViewChange?.("causal")}
+      >
+        Causal
       </button>
     </div>
   );
@@ -319,6 +336,55 @@ export default function EventFlowPreview({
     );
   }
 
+  if (view === "causal") {
+    const selected = causal.messages.find((item) => item.id === selectedCausalId)
+      ?? causal.handlers.find((item) => item.id === selectedCausalId)
+      ?? causal.effects.find((item) => item.id === selectedCausalId);
+    const selectCausal = (id: string) => {
+      const causalId = id as CausalNodeId;
+      setSelectedCausalId(causalId);
+      const item = causal.messages.find((entry) => entry.id === causalId)
+        ?? causal.handlers.find((entry) => entry.id === causalId)
+        ?? causal.effects.find((entry) => entry.id === causalId);
+      const sourceId = item?.sourceNodeIds[0];
+      if (sourceId) onNodeSelect?.(sourceId);
+    };
+    return (
+      <div className="preview" data-testid="event-flow-preview">
+        {selector}
+        <div className="event-causal" data-testid="event-causal">
+          {causal.messages.length + causal.handlers.length + causal.effects.length === 0 ? (
+            <p className="preview__empty" data-testid="event-causal-empty">
+              Topology is documented, but explicit causal relationships are not. Add Handler-based causal documentation to investigate what handles and causes each event.
+            </p>
+          ) : (
+            <>
+              <DiagramViewport
+                svg={causalDocument.svg}
+                size={{ width: causalDocument.width, height: causalDocument.height }}
+                svgTestId="causal-svg"
+                resetKey={source}
+                onNodeSelect={onNodeSelect}
+                onCausalNodeSelect={selectCausal}
+                activeNodeId={activeNodeId}
+                maximized={maximized}
+                onToggleMaximize={onToggleMaximize}
+                reviewMode={reviewMode}
+                linkedTransform={linkedTransform}
+                onTransformChange={onTransformChange}
+                activeReviewChange={activeReviewChange}
+                focusReviewChange={focusReviewChange}
+              />
+              {selected && (
+                <CausalDetails item={selected} view={causal} onSourceSelect={onNodeSelect} />
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   if (document.width === 0 || document.height === 0) {
     return (
       <div className="preview" data-testid="event-flow-preview">
@@ -349,6 +415,27 @@ export default function EventFlowPreview({
         focusReviewChange={focusReviewChange}
       />
     </div>
+  );
+}
+
+function CausalDetails({ item, view, onSourceSelect }: { item: NonNullable<ReturnType<typeof projectEventFlowToCausalView>["messages"]>[number] | NonNullable<ReturnType<typeof projectEventFlowToCausalView>["handlers"]>[number] | NonNullable<ReturnType<typeof projectEventFlowToCausalView>["effects"]>[number]; view: ReturnType<typeof projectEventFlowToCausalView>; onSourceSelect?: (nodeId: string) => void }) {
+  const source = item.sourceNodeIds[0];
+  const label = "displayName" in item ? item.displayName : "name" in item ? item.name : item.description;
+  return (
+    <aside className="event-causal__details" aria-label="Causal selection details">
+      <strong>{"displayName" in item ? "Handler" : "name" in item ? "Event" : "Effect"}</strong>
+      <h2>{label}</h2>
+      {"provenance" in item && <p>Provenance: {item.provenance}</p>}
+      {"service" in item && item.service && <p>Service: {item.service}</p>}
+      {"kind" in item && item.kind && <p>Kind: {item.kind}</p>}
+      {"displayName" in item && <>
+        <p>Inputs: {inputsForHandler(view, item.id).map((entry) => entry.name).join(", ") || "not documented"}</p>
+        <p>Outputs: {outputsForHandler(view, item.id).map((entry) => entry.name).join(", ") || "not documented"}</p>
+        <p>Effects: {effectsForHandler(view, item.id).map((entry) => entry.description).join(", ") || "not documented"}</p>
+      </>}
+      {source && <button type="button" onClick={() => onSourceSelect?.(source)}>Reveal in source</button>}
+      <p className="event-causal__focus-note">Immediate upstream and downstream causal neighbors are highlighted.</p>
+    </aside>
   );
 }
 

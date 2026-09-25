@@ -60,6 +60,7 @@ export interface DiagramViewportProps {
    * without matching any text.
    */
   onNodeSelect?: (nodeId: string) => void;
+  onCausalNodeSelect?: (nodeId: string) => void;
   /**
    * The node to highlight — the statement the editor's caret is on. Highlighting
    * is a class toggle on the injected markup rather than a re-render, so it never
@@ -142,6 +143,7 @@ export default function DiagramViewport({
   svgTestId = "viewport-content",
   onNoteToggle,
   onNodeSelect,
+  onCausalNodeSelect,
   activeNodeId = null,
   maximized = false,
   onToggleMaximize,
@@ -354,9 +356,13 @@ export default function DiagramViewport({
     }
     // A pan ends with a click on the content element, so a selection only counts
     // when the pointer stayed put.
-    if (!onNodeSelect || movedSincePointerDown.current) return;
+    if ((!onNodeSelect && !onCausalNodeSelect) || movedSincePointerDown.current) return;
+    const causalNode = event.target instanceof Element
+      ? event.target.closest("[data-causal-id]")?.getAttribute("data-causal-id")
+      : null;
+    if (causalNode) onCausalNodeSelect?.(causalNode);
     const nodeId = nodeIdFromTarget(event.target);
-    if (nodeId !== null) onNodeSelect(nodeId);
+    if (nodeId !== null) onNodeSelect?.(nodeId);
   };
 
   // Highlight the active node by toggling a class on the injected SVG. Doing it
@@ -409,8 +415,16 @@ export default function DiagramViewport({
   }, [focusReviewChange, svg, updateTransform]);
 
   const onContentKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-    if (!onNoteToggle) return;
     if (event.key !== "Enter" && event.key !== " ") return;
+    const causalNode = event.target instanceof Element
+      ? event.target.closest("[data-causal-id]")?.getAttribute("data-causal-id")
+      : null;
+    if (causalNode) {
+      event.preventDefault();
+      onCausalNodeSelect?.(causalNode);
+      return;
+    }
+    if (!onNoteToggle) return;
     const index = noteIndexFromTarget(event.target);
     if (index === null) return;
     // Keep the page from scrolling on Space, which is the reason to reject the

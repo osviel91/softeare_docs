@@ -63,11 +63,15 @@ export default function DslReference() {
         The editor owns two small documentation languages, both parsed,
         validated and drawn by this project rather than delegated to a library.
         A sequence diagram shows the order of interactions; an event flow shows
-        which services produce and consume which events. All three Event Flow
-        views are projections of that one semantic resource: Flow emphasizes
-        event movement, Catalog documents event facts and metadata, and Topology
-        summarizes service connectivity through mediated event relationships.
-        Channels and brokers remain available as transport context on those
+         which services produce and consume which events. All four Event Flow
+         views are projections of that one semantic resource: Flow emphasizes
+         event movement, Catalog documents event facts and metadata, Topology
+         summarizes service connectivity, and Causal investigates explicit
+         Event-to-Handler-to-Effect relationships. Causal focus highlights the
+         selected entity and its immediate upstream/downstream neighborhood;
+         unknown provenance and partial knowledge remain visible as unknown or
+         undocumented rather than being inferred from topology.
+         Channels and brokers remain available as transport context on those
         relationships rather than becoming a second graph language.
       </p>
       <p className="docs__intro">

@@ -234,6 +234,33 @@ describe("App — event flows", () => {
     expect(editor).toHaveValue(source);
   });
 
+  it("opens the causal investigation view and focuses a handler", async () => {
+    render(<App />);
+    await createProject();
+    await newEventFlow();
+    const source = [
+      "event Received", "event Created", "handler TransactionHandler in TransactionsService",
+      "Received handled by TransactionHandler", "TransactionHandler causes Created",
+      "effect persist on TransactionHandler kind state: persist transaction",
+    ].join("\n");
+    fireEvent.change(screen.getByTestId("dsl-textarea"), { target: { value: source } });
+    fireEvent.click(screen.getByRole("button", { name: "Causal" }));
+    expect(screen.getByTestId("causal-svg").querySelector("svg")).toHaveAttribute("aria-label", "Causal event flow");
+    const handler = screen.getByTestId("causal-svg").querySelector('[data-causal-id="handler:TransactionHandler"]');
+    expect(handler).not.toBeNull();
+    fireEvent.click(handler!);
+    expect(screen.getByLabelText("Causal selection details")).toHaveTextContent("TransactionHandler");
+  });
+
+  it("explains why a legacy topology-only flow has no causal view", async () => {
+    render(<App />);
+    await createProject();
+    await newEventFlow();
+    fireEvent.change(screen.getByTestId("dsl-textarea"), { target: { value: FLOW } });
+    fireEvent.click(screen.getByRole("button", { name: "Causal" }));
+    expect(screen.getByTestId("event-causal-empty")).toHaveTextContent("Topology is documented");
+  });
+
   it("outlines what the flow declares and what happens", async () => {
     render(<App />);
     await createProject();

@@ -83,7 +83,7 @@ export default function EventFlowPreview({
   useEffect(() => setSelectedCausalId(null), [source]);
   const catalog = useMemo(() => projectEventFlowToCatalog(flow), [flow]);
   const topology = useMemo(() => projectEventFlowToTopology(flow), [flow]);
-  const [topologyDetailsOpen, setTopologyDetailsOpen] = useState(true);
+  const [topologyDetailsOpen, setTopologyDetailsOpen] = useState(false);
   const causal = useMemo(() => projectEventFlowToCausalView(flow), [flow]);
   const causalDocument = useMemo(
     () => renderEventFlowCausalDocument(flow, selectedCausalId),
@@ -132,6 +132,17 @@ export default function EventFlowPreview({
       >
         Causal
       </button>
+      {view === "topology" && (
+        <button
+          type="button"
+          className="event-flow-details-toggle"
+          aria-pressed={topologyDetailsOpen}
+          aria-controls="topology-relationships"
+          onClick={() => setTopologyDetailsOpen((open) => !open)}
+        >
+          {topologyDetailsOpen ? "Hide details" : "Details"}
+        </button>
+      )}
     </div>
   );
 
@@ -270,15 +281,6 @@ export default function EventFlowPreview({
                 activeReviewChange={activeReviewChange}
                 focusReviewChange={focusReviewChange}
               />
-              <button
-                type="button"
-                className="event-topology__details-toggle"
-                aria-expanded={topologyDetailsOpen}
-                aria-controls="topology-relationships"
-                onClick={() => setTopologyDetailsOpen((open) => !open)}
-              >
-                {topologyDetailsOpen ? "Hide details" : "Show details"}
-              </button>
               {topologyDetailsOpen && <div
                 id="topology-relationships"
                 className="event-topology__details"

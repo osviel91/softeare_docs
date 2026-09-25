@@ -74,6 +74,28 @@ describe("Explorer", () => {
     expect(screen.getByLabelText("Load diagram Welcome")).toBeInTheDocument();
   });
 
+  it("identifies sequence and event-flow diagrams with different icons", () => {
+    const eventFlow: DiagramFile = {
+      id: "diag-2",
+      name: "notifications.eventseq",
+      source: "title Notifications",
+      projectId: "proj-1",
+    };
+    render(
+      <Explorer
+        projects={[project]}
+        diagrams={[diagram, eventFlow]}
+        selectedProjectId={project.id}
+        selectedDiagramId={null}
+        isLoading={false}
+        onCreateProject={vi.fn()}
+        onLoadDiagram={vi.fn()}
+      />,
+    );
+    expect(screen.getByTitle("Sequence diagram")).toHaveTextContent("○");
+    expect(screen.getByTitle("Event Flow")).toHaveTextContent("□");
+  });
+
   it("shows a diagram by the title in its source, not its file name", () => {
     const named: DiagramFile = {
       id: "diag-9",
@@ -513,103 +535,6 @@ describe("Explorer — collapsing projects", () => {
     expect(screen.getByLabelText("Load diagram Welcome")).toBeInTheDocument();
   });
 
-  it("hides a collapsed project's files behind its header", () => {
-    render(
-      <Explorer
-        projects={[project]}
-        diagrams={[diagram]}
-        selectedProjectId={project.id}
-        selectedDiagramId={diagram.id}
-        isLoading={false}
-        onCreateProject={vi.fn()}
-        collapsedProjectIds={[project.id]}
-        onToggleProjectCollapse={vi.fn()}
-        onLoadDiagram={vi.fn()}
-      />,
-    );
-    // The header stays; the file lists are gone.
-    expect(screen.getByTestId("project-name")).toHaveTextContent("Onboarding");
-    expect(screen.queryByTestId("explorer-diagrams")).toBeNull();
-    expect(screen.queryByTestId("select-diagram-button")).toBeNull();
-  });
-
-  it("reports a collapse toggle with the project id", () => {
-    const onToggleProjectCollapse = vi.fn();
-    render(
-      <Explorer
-        projects={[project]}
-        diagrams={[diagram]}
-        selectedProjectId={project.id}
-        selectedDiagramId={diagram.id}
-        isLoading={false}
-        onCreateProject={vi.fn()}
-        collapsedProjectIds={[]}
-        onToggleProjectCollapse={onToggleProjectCollapse}
-        onLoadDiagram={vi.fn()}
-      />,
-    );
-    const toggle = screen.getByTestId("project-collapse-button");
-    expect(toggle).toHaveAttribute("aria-expanded", "true");
-    fireEvent.click(toggle);
-    expect(onToggleProjectCollapse).toHaveBeenCalledWith(project.id);
-  });
-
-  it("reports a collapsed project as collapsed to assistive tech", () => {
-    render(
-      <Explorer
-        projects={[project]}
-        diagrams={[diagram]}
-        selectedProjectId={project.id}
-        selectedDiagramId={diagram.id}
-        isLoading={false}
-        onCreateProject={vi.fn()}
-        collapsedProjectIds={[project.id]}
-        onToggleProjectCollapse={vi.fn()}
-        onLoadDiagram={vi.fn()}
-      />,
-    );
-    expect(screen.getByTestId("project-collapse-button")).toHaveAttribute(
-      "aria-expanded",
-      "false",
-    );
-  });
-
-  it("shows matching files even while a project is collapsed", () => {
-    render(
-      <Explorer
-        projects={[project]}
-        diagrams={[diagram]}
-        allDiagrams={[diagram]}
-        selectedProjectId={project.id}
-        selectedDiagramId={diagram.id}
-        isLoading={false}
-        onCreateProject={vi.fn()}
-        collapsedProjectIds={[project.id]}
-        onToggleProjectCollapse={vi.fn()}
-        onLoadDiagram={vi.fn()}
-      />,
-    );
-    fireEvent.change(screen.getByTestId("diagram-search-input"), {
-      target: { value: "welcome" },
-    });
-    // Searching is how a collapsed file is found, so the match must be visible.
-    expect(screen.getByLabelText("Load diagram Welcome")).toBeInTheDocument();
-  });
-
-  it("omits the chevron when no toggle handler is provided", () => {
-    render(
-      <Explorer
-        projects={[project]}
-        diagrams={[diagram]}
-        selectedProjectId={project.id}
-        selectedDiagramId={diagram.id}
-        isLoading={false}
-        onCreateProject={vi.fn()}
-        onLoadDiagram={vi.fn()}
-      />,
-    );
-    expect(screen.queryByTestId("project-collapse-button")).toBeNull();
-  });
 });
 
 describe("Explorer — paths removed from the app", () => {

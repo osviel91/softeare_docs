@@ -1861,6 +1861,10 @@ body {
   background: var(--bg-inset);
 }
 
+.event-flow-details-toggle {
+  border-left: 1px solid var(--border);
+}
+
 .event-catalog {
   flex: 1 1 auto;
   min-width: 0;
@@ -1979,9 +1983,9 @@ body {
 .event-topology__details {
   position: absolute;
   top: 64px;
-  right: 16px;
+  left: 16px;
   z-index: 1;
-  width: min(250px, calc(100% - 32px));
+  width: min(320px, calc(100% - 32px));
   max-height: calc(100% - 80px);
   overflow: auto;
   padding: 12px;
@@ -1989,26 +1993,6 @@ body {
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-pop);
-}
-.event-topology__details-toggle {
-  position: absolute;
-  top: 14px;
-  right: 16px;
-  z-index: 2;
-  padding: 6px 9px;
-  color: var(--text-muted);
-  background: var(--bg-elevated);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
-  box-shadow: var(--shadow-card);
-  cursor: pointer;
-  font: inherit;
-  font-size: 11px;
-}
-.event-topology__details-toggle:hover,
-.event-topology__details-toggle:focus-visible {
-  color: var(--text);
-  border-color: var(--accent);
 }
 
 .event-topology__connection + .event-topology__connection {
@@ -2439,12 +2423,7 @@ body {
 }
 
 .explorer__project {
-  margin-bottom: 4px;
-  border-radius: var(--radius-sm);
-}
-
-.explorer__project--selected {
-  background: var(--accent-soft);
+  margin-bottom: 12px;
 }
 
 .explorer__project-header {
@@ -2463,10 +2442,7 @@ body {
   font-weight: 600;
 }
 
-/* The project collapse chevron and actions menu sit on the right of the header,
-   beside the add button. Both stay visible: a project row has no hover-revealed
-   affordances, unlike a file row. */
-.explorer__project-collapse,
+/* The project actions menu stays visible; file actions remain hover-revealed. */
 .explorer__project-menu {
   flex: 0 0 auto;
   display: inline-flex;
@@ -2485,13 +2461,11 @@ body {
   cursor: pointer;
 }
 
-.explorer__project-collapse:hover,
 .explorer__project-menu:hover {
   color: var(--text);
   background: var(--bg-hover);
 }
 
-.explorer__project-collapse:focus-visible,
 .explorer__project-menu:focus-visible {
   color: var(--text);
   outline: 2px solid var(--accent);
@@ -2967,6 +2941,8 @@ body {
   position: absolute;
   bottom: 14px;
   left: 14px;
+  top: auto;
+  right: auto;
   z-index: 2;
   display: flex;
   align-items: center;
@@ -3086,6 +3062,22 @@ body {
   margin-right: 6px;
   color: var(--text-faint);
   font-size: 10px;
+}
+
+.explorer__diagram-kind {
+  display: inline-flex;
+  flex: 0 0 14px;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  color: var(--text-faint);
+  font-size: 15px;
+  line-height: 1;
+}
+
+.explorer__diagram-kind--event-flow {
+  font-size: 13px;
 }
 
 .explorer__diagram-menu,

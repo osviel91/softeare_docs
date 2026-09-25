@@ -141,20 +141,6 @@ export const COMMAND_CATALOG: CommandSpec[] = [
     binding: chord("v"),
   },
   {
-    id: "collapse-all-projects",
-    label: "Collapse All Projects",
-    description: "Fold every project in the explorer to its header row.",
-    category: "Project",
-    binding: chord("c"),
-  },
-  {
-    id: "expand-all-projects",
-    label: "Expand All Projects",
-    description: "Expand every project in the explorer back to its files.",
-    category: "Project",
-    binding: chord("c", true),
-  },
-  {
     id: "find-references",
     label: "Find References",
     description:

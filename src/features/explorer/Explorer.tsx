@@ -7,9 +7,9 @@
  * supplies them. Selection is driven by the parent (it owns the editor buffer),
  * so clicking a row just reports the file.
  *
- * Every project header offers three affordances: a `▾`/`▸` that collapses the
- * project to its header, a `＋` that opens the add menu (diagram, note, event
- * flow), and a `⋯` that opens the project's own actions menu (rename, delete).
+ * Every project header offers a `＋` that opens the add menu (diagram, note,
+ * event flow) and a `⋯` that opens the project's own actions menu (rename,
+ * delete).
  * Right-clicking the header opens the same actions menu. Project and file
  * deletion therefore live in menus, never on a bare row button.
  *
@@ -82,16 +82,6 @@ export interface ExplorerProps {
    */
   onProjectMenu?: (project: Project, position: MenuPosition) => void;
   /**
-   * Ids of the projects currently collapsed to their header. Optional so the
-   * explorer still renders as a plain, always-expanded list in tests.
-   */
-  collapsedProjectIds?: string[];
-  /**
-   * Toggle one project between collapsed and expanded. When it is absent no
-   * chevron is rendered, which keeps the explorer usable without collapse state.
-   */
-  onToggleProjectCollapse?: (projectId: string) => void;
-  /**
    * How many paths the user has removed from the app but left on disk. When
    * greater than zero the header offers to restore them, so a "remove from app"
    * is never a dead end.
@@ -148,8 +138,6 @@ export default function Explorer({
   onDiagramMenu,
   onNoteMenu,
   onProjectMenu,
-  collapsedProjectIds = [],
-  onToggleProjectCollapse,
   hiddenCount = 0,
   onUnhideAll,
   onOpenFolder,
@@ -170,8 +158,6 @@ export default function Explorer({
       setPendingName("");
     }
   };
-
-  const collapsed = new Set(collapsedProjectIds);
 
   // With a non-empty query, match names across every project; otherwise keep the
   // normal view of the selected project's files. Matching is a case-insensitive
@@ -325,10 +311,6 @@ export default function Explorer({
           {projects.map((project) => {
             const projectDiagrams = diagramsOf(project.id);
             const projectNotes = notesOf(project.id);
-            // A collapsed project hides its file lists, but a search always wins:
-            // the point of searching is to see matches wherever they live.
-            const isCollapsed = collapsed.has(project.id);
-            const showFiles = query !== "" || !isCollapsed;
             return (
               <li
                 key={project.id}
@@ -336,7 +318,7 @@ export default function Explorer({
                   project.id === selectedProjectId
                     ? " explorer__project--selected"
                     : ""
-                }${isCollapsed ? " explorer__project--collapsed" : ""}`}
+                }`}
                 data-testid="explorer-project"
                 aria-current={
                   project.id === selectedProjectId ? "true" : undefined
@@ -374,23 +356,6 @@ export default function Explorer({
                       ＋
                     </button>
                   )}
-                  {onToggleProjectCollapse && (
-                    <button
-                      type="button"
-                      className="explorer__project-collapse"
-                      data-testid="project-collapse-button"
-                      aria-expanded={!isCollapsed}
-                      aria-label={`${
-                        isCollapsed ? "Expand" : "Collapse"
-                      } project ${project.name}`}
-                      title={
-                        isCollapsed ? "Expand project" : "Collapse project"
-                      }
-                      onClick={() => onToggleProjectCollapse(project.id)}
-                    >
-                      <span aria-hidden="true">{isCollapsed ? "▸" : "▾"}</span>
-                    </button>
-                  )}
                   {onProjectMenu && (
                     <button
                       type="button"
@@ -411,8 +376,7 @@ export default function Explorer({
                   )}
                 </div>
 
-                {showFiles && (
-                  <ul
+                <ul
                     className="explorer__diagrams"
                     data-testid="explorer-diagrams"
                   >
@@ -459,10 +423,21 @@ export default function Explorer({
                             onClick={() => onLoadDiagram(diagram)}
                           >
                             <span
-                              className="explorer__item-icon"
+                              className={`explorer__diagram-kind ${
+                                diagram.name.toLowerCase().endsWith(".eventseq")
+                                  ? "explorer__diagram-kind--event-flow"
+                                  : "explorer__diagram-kind--sequence"
+                              }`}
                               aria-hidden="true"
+                              title={
+                                diagram.name.toLowerCase().endsWith(".eventseq")
+                                  ? "Event Flow"
+                                  : "Sequence diagram"
+                              }
                             >
-                              ▦
+                              {diagram.name.toLowerCase().endsWith(".eventseq")
+                                ? "□"
+                                : "○"}
                             </span>
                             <span className="explorer__item-name">
                               {diagramName(diagram)}
@@ -508,10 +483,8 @@ export default function Explorer({
                       ))
                     )}
                   </ul>
-                )}
 
-                {showFiles && (
-                  <ul className="explorer__notes" data-testid="explorer-notes">
+                <ul className="explorer__notes" data-testid="explorer-notes">
                     {projectNotes.length === 0 &&
                     query === "" &&
                     selectedProjectId === project.id ? (
@@ -600,7 +573,6 @@ export default function Explorer({
                       ))
                     )}
                   </ul>
-                )}
               </li>
             );
           })}

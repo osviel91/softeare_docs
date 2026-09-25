@@ -99,25 +99,6 @@ describe("App — project management", () => {
     }
   });
 
-  it("collapses and re-expands a project from its header chevron", async () => {
-    render(<App />);
-    await createProject("Notes");
-
-    const toggle = screen.getByTestId("project-collapse-button");
-    expect(toggle).toHaveAttribute("aria-expanded", "true");
-    expect(screen.getByTestId("explorer-diagrams")).toBeInTheDocument();
-
-    fireEvent.click(toggle);
-    expect(screen.getByTestId("project-collapse-button")).toHaveAttribute(
-      "aria-expanded",
-      "false",
-    );
-    expect(screen.queryByTestId("explorer-diagrams")).toBeNull();
-
-    fireEvent.click(screen.getByTestId("project-collapse-button"));
-    expect(screen.getByTestId("explorer-diagrams")).toBeInTheDocument();
-  });
-
   it("keeps showing a project's files after another project is selected", async () => {
     render(<App />);
     await createProject("Default");
@@ -142,11 +123,6 @@ describe("App — project management", () => {
     expect(screen.getByTestId("explorer-diagram")).toBeInTheDocument();
     expect(screen.getByTestId("select-diagram-button")).toBeInTheDocument();
 
-    // ...and its chevron still folds it away and back.
-    fireEvent.click(screen.getAllByTestId("project-collapse-button")[0]);
-    expect(screen.queryByTestId("explorer-diagram")).toBeNull();
-    fireEvent.click(screen.getAllByTestId("project-collapse-button")[0]);
-    expect(screen.getByTestId("explorer-diagram")).toBeInTheDocument();
   });
 
   it("adds a file to the project you clicked without copying the selected project's files", async () => {
@@ -210,29 +186,8 @@ describe("App — project management", () => {
     });
     // Project2's file survives, and Default's header is still expanded.
     expect(diagramsInProject(1)).toHaveLength(1);
-    expect(screen.getAllByTestId("project-collapse-button")[0]).toHaveAttribute(
-      "aria-expanded",
-      "true",
-    );
   });
 
-  it("collapses and expands every project from the command shortcuts", async () => {
-    render(<App />);
-    await createProject("Notes");
-
-    // Ctrl/Cmd+Alt+C — "Collapse All Projects".
-    fireEvent.keyDown(document, { key: "c", ctrlKey: true, altKey: true });
-    expect(screen.queryByTestId("explorer-diagrams")).toBeNull();
-
-    // Ctrl/Cmd+Alt+Shift+C — "Expand All Projects".
-    fireEvent.keyDown(document, {
-      key: "c",
-      ctrlKey: true,
-      altKey: true,
-      shiftKey: true,
-    });
-    expect(screen.getByTestId("explorer-diagrams")).toBeInTheDocument();
-  });
 });
 
 describe("App — command shortcuts", () => {

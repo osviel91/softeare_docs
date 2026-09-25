@@ -24,8 +24,6 @@ function mockContext(
   const exportProject = overrides.exportProject ?? vi.fn();
   const importProject = overrides.importProject ?? vi.fn();
   const openFolder = overrides.openFolder ?? vi.fn();
-  const collapseAllProjects = overrides.collapseAllProjects ?? vi.fn();
-  const expandAllProjects = overrides.expandAllProjects ?? vi.fn();
 
   const context = {
     createEmptyDiagram,
@@ -47,8 +45,6 @@ function mockContext(
     openFolder,
     folderOpen: false,
     folderSupported: true,
-    collapseAllProjects,
-    expandAllProjects,
     ...overrides,
   };
 
@@ -68,8 +64,6 @@ function mockContext(
     exportProject,
     importProject,
     openFolder,
-    collapseAllProjects,
-    expandAllProjects,
   };
 }
 
@@ -206,18 +200,4 @@ describe("useCommands", () => {
     }
   });
 
-  it("runs Collapse All and Expand All Projects through the provided callbacks", async () => {
-    const collapseAllProjects = vi.fn();
-    const expandAllProjects = vi.fn();
-    const { context } = mockContext({
-      collapseAllProjects,
-      expandAllProjects,
-    });
-    const { result } = renderHook(() => useCommands(context));
-
-    await result.current.run("collapse-all-projects");
-    expect(collapseAllProjects).toHaveBeenCalledTimes(1);
-    await result.current.run("expand-all-projects");
-    expect(expandAllProjects).toHaveBeenCalledTimes(1);
-  });
 });

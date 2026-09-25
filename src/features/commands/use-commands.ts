@@ -66,10 +66,6 @@ export interface CommandContext {
   folderOpen: boolean;
   /** Whether the File System Access API is available in this browser. */
   folderSupported: boolean;
-  /** Collapse every project in the explorer to a header row. */
-  collapseAllProjects: () => void;
-  /** Expand every project in the explorer back to its file list. */
-  expandAllProjects: () => void;
 }
 
 /** Build the app's command registry from its current state. */
@@ -93,8 +89,6 @@ export function useCommands({
   openFolder,
   folderOpen,
   folderSupported,
-  collapseAllProjects,
-  expandAllProjects,
 }: CommandContext): CommandRegistry {
   const newDiagram = useCallback(() => {
     // Nothing to create a diagram in until a project is selected. The command
@@ -132,8 +126,6 @@ export function useCommands({
       "show-overview": () => showView("overview"),
       "open-docs": openDocs,
       "validate-project": () => showView("problems"),
-      "collapse-all-projects": collapseAllProjects,
-      "expand-all-projects": expandAllProjects,
       "find-references": findReferences,
       "rename-symbol": renameSymbol,
       "export-diagram": exportDiagram,
@@ -165,8 +157,6 @@ export function useCommands({
     openQuickOpen,
     showView,
     openDocs,
-    collapseAllProjects,
-    expandAllProjects,
     findReferences,
     renameSymbol,
     exportDiagram,

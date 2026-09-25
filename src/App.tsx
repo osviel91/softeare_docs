@@ -427,11 +427,6 @@ export default function App() {
   // Quick open, and the caret/preview-sync state that drives the outline
   // highlight, hover cards and source↔diagram selection.
   const [quickOpenOpen, setQuickOpenOpen] = useState(false);
-  // Projects the user has collapsed to their header in the explorer. Session
-  // state, like the explorer's search box: a reload starts fully expanded.
-  const [collapsedProjects, setCollapsedProjects] = useState<
-    ReadonlySet<string>
-  >(() => new Set<string>());
   const [caretOffset, setCaretOffset] = useState(0);
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
   // A find-references result, shown in the same overlay the project search uses
@@ -1191,25 +1186,6 @@ export default function App() {
     void exportActiveProject();
   }, [exportActiveProject]);
 
-  // Collapse is a property of one project's header; the shell owns the set so
-  // the palette's "Collapse/Expand All Projects" commands can drive it too.
-  const toggleProjectCollapse = useCallback((projectId: string): void => {
-    setCollapsedProjects((current) => {
-      const next = new Set(current);
-      if (next.has(projectId)) next.delete(projectId);
-      else next.add(projectId);
-      return next;
-    });
-  }, []);
-
-  const collapseAllProjects = useCallback((): void => {
-    setCollapsedProjects(new Set(projects.map((project) => project.id)));
-  }, [projects]);
-
-  const expandAllProjects = useCallback((): void => {
-    setCollapsedProjects(new Set<string>());
-  }, []);
-
   // Project-wide search. The searchable set is built only while the overlay is
   // open, so editing a diagram never pays for indexing the whole workspace.
   const buildDocuments = useCallback(
@@ -1805,7 +1781,13 @@ export default function App() {
 
   // Rendered once for the export dialog's preview and its size, rather than
   // three times in the markup.
-  const exportPreview = useMemo(() => renderDiagramDocument(ast), [ast]);
+  const exportPreview = useMemo(
+    () =>
+      isEventFlow
+        ? renderEventFlowDocument(eventFlow)
+        : renderDiagramDocument(ast),
+    [ast, eventFlow, isEventFlow],
+  );
 
   /** The file name stem for an export: the active document's own name. */
   const activeDocumentName = noteMode
@@ -1956,8 +1938,6 @@ export default function App() {
     openFolder,
     folderOpen: openedFolder !== null,
     folderSupported: supportsFileSystemAccess(),
-    collapseAllProjects,
-    expandAllProjects,
   });
 
   /**
@@ -2649,8 +2629,6 @@ export default function App() {
                   onProjectMenu={(project, position) =>
                     setMenu({ kind: "project", project, ...position })
                   }
-                  collapsedProjectIds={[...collapsedProjects]}
-                  onToggleProjectCollapse={toggleProjectCollapse}
                   hiddenCount={hiddenPaths.size}
                   onUnhideAll={unhideAll}
                   onOpenFolder={openFolder}

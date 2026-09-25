@@ -37,6 +37,14 @@ describe("App — export", () => {
     "",
     "Cart ->> Payment: Authorize",
   ].join("\n");
+  const EVENT_FLOW = [
+    "title Order Processing",
+    "event OrderCreated",
+    "producer OrderService",
+    "consumer BillingService",
+    "OrderService publishes OrderCreated",
+    "BillingService consumes OrderCreated",
+  ].join("\n");
 
   afterEach(() => {
     transfer.downloads.length = 0;
@@ -83,6 +91,36 @@ describe("App — export", () => {
       fireEvent.click(screen.getByTestId("palette-item-button"));
     });
   }
+
+  it("exports the current Event Flow as a rendered SVG document", async () => {
+    render(<App />);
+    fireEvent.change(screen.getByTestId("project-name-input"), {
+      target: { value: "Payments" },
+    });
+    fireEvent.click(screen.getByTestId("create-project-button"));
+    await waitFor(() => {
+      expect(screen.getByTestId("project-name")).toHaveTextContent("Payments");
+    });
+    await runCommand("New Event Flow");
+    fireEvent.change(screen.getByTestId("dsl-textarea"), {
+      target: { value: EVENT_FLOW },
+    });
+
+    fireEvent.click(screen.getByTestId("resource-export-action"));
+    expect(screen.getByTestId("export-preview")).toHaveAttribute(
+      "src",
+      expect.stringContaining("Order%20Processing"),
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("export-confirm"));
+    });
+
+    await waitFor(() => expect(transfer.downloads).toHaveLength(1));
+    const text = new TextDecoder().decode(transfer.downloads[0].bytes);
+    expect(text.startsWith("<svg")).toBe(true);
+    expect(text).toContain("Order Processing");
+    expect(text).toContain("OrderCreated");
+  });
 
   it("exports the current diagram as an SVG document", async () => {
     render(<App />);

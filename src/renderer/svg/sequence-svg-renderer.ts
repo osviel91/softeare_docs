@@ -353,7 +353,10 @@ function renderSemanticBadge(
 ): string {
   if (!msg.semantics) return "";
   const text = `${msg.semantics.kind.toUpperCase()} · ${msg.semantics.operation}`;
-  return `<text class="semantic-message-badge" x="${x.toFixed(2)}" y="${y.toFixed(2)}" text-anchor="${anchor}" font-size="9" font-weight="600" fill="${palette.label}">${escapeXml(text)}</text>`;
+  const target = msg.semantics.messageRef
+    ? `${nodeIdAttribute(msg.nodeId)} data-semantic-message-id="${escapeXml(msg.semantics.messageRef)}" data-semantic-kind="${msg.semantics.kind}" data-semantic-operation="${msg.semantics.operation}" tabindex="0" role="button" aria-label="Inspect ${escapeXml(text)} ${escapeXml(msg.semantics.name)}"`
+    : "";
+  return `<text class="semantic-message-badge" x="${x.toFixed(2)}" y="${y.toFixed(2)}" text-anchor="${anchor}" font-size="9" font-weight="600" fill="${palette.label}"${target}>${escapeXml(text)}</text>`;
 }
 
 /**
@@ -385,7 +388,7 @@ function renderMessage(
 ): string {
   // A self-message is a loop, not a horizontal arrow.
   if (msg.selfLoop)
-    return `<g class="sequence-message" data-sequence-message="${number}">${renderSelfMessage(msg, number, palette)}</g>`;
+    return `<g class="sequence-message" data-sequence-message="${number}"${msg.semantics?.messageRef ? ` data-semantic-message-id="${escapeXml(msg.semantics.messageRef)}"` : ""}>${renderSelfMessage(msg, number, palette)}</g>`;
 
   const dashed = msg.lineStyle === "dashed" ? ' stroke-dasharray="5 4"' : "";
   // `dashed` must sit inside the tag, before the self-closing slash: emitting it
@@ -419,7 +422,10 @@ function renderMessage(
   // The group is the addressable unit for review decoration: one wrapper covers
   // the arrow, its heads, the step badge, and the label. It changes no drawing
   // geometry and is independent of `data-node-id`, which stays source-derived.
-  return `<g class="sequence-message" data-sequence-message="${number}">${line}${head}${renderSequenceBadge(msg, number, palette)}${label}${semantic}</g>`;
+  const semanticId = msg.semantics?.messageRef
+    ? ` data-semantic-message-id="${escapeXml(msg.semantics.messageRef)}"`
+    : "";
+  return `<g class="sequence-message" data-sequence-message="${number}"${semanticId}>${line}${head}${renderSequenceBadge(msg, number, palette)}${label}${semantic}</g>`;
 }
 
 /** Size of the dog-ear fold on a note's top-right corner, in pixels. */

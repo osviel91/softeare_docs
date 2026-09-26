@@ -32,6 +32,6 @@ describe("SemanticMessageInspector", () => {
     render(<SemanticMessageInspector index={index} sequence={sequence} activeResourceId="seq" activeNodeId={nodeId} onOpenResource={open} />);
     expect(screen.getAllByText("Created").length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole("button", { name: "created.eventseq" }));
-    expect(open).toHaveBeenCalledWith("flow");
+    expect(open).toHaveBeenCalledWith("flow", expect.any(String));
   });
 });

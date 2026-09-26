@@ -339,6 +339,9 @@ function renderEventBox(
   const className = row.declaredOnly
     ? "eventflow-event eventflow-event--declared-only"
     : "eventflow-event";
+  const semantic = row.messageRef
+    ? ` data-semantic-message-id="${escapeXml(row.messageRef)}" tabindex="0" role="button" aria-label="Inspect semantic message ${escapeXml(row.event)}"`
+    : "";
   return (
     boxRect(
       row.eventBox,
@@ -347,7 +350,7 @@ function renderEventBox(
       palette.ink,
       row.eventNodeId,
       row.declaredOnly,
-    ) + boxText(row.eventBox, row.event, 12, palette.ink, "600")
+    ).replace("/>", `${semantic}/>`)+ boxText(row.eventBox, row.event, 12, palette.ink, "600")
   );
 }
 

@@ -103,11 +103,14 @@ describe("renderDiagramToSvg — structure", () => {
       name: "ExportCorporateBalanceProcessEndedEvent",
       kind: "event",
       operation: "publish",
+      messageRef: "msg-exported",
       range: { start: { line: 0, column: 0 }, end: { line: 0, column: 1 } },
     };
     const svg = renderDiagramToSvg(layout);
     expect(svg).toContain('class="semantic-message-badge"');
     expect(svg).toContain("EVENT · publish");
+    expect(svg).toContain('data-semantic-message-id="msg-exported"');
+    expect(svg).toContain('role="button"');
   });
 
   it("never parses source text — it only consumes the layout", () => {

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import Preview from "../../../src/features/preview/Preview";
 
@@ -30,6 +30,21 @@ function bullet(index: number): Element {
 }
 
 describe("Preview", () => {
+  it("selects a bound semantic badge with pointer and keyboard activation", () => {
+    const select = vi.fn();
+    render(
+      <Preview
+        source={`participant A\nparticipant B\nA -> B: Created\nsemantic event publish Created messageRef msg-created\n`}
+        onSemanticMessageSelect={select}
+      />,
+    );
+    const badge = screen.getByText("EVENT · publish");
+    fireEvent.click(badge);
+    fireEvent.keyDown(badge, { key: "Enter" });
+    expect(select).toHaveBeenCalledTimes(2);
+    expect(select).toHaveBeenCalledWith("msg-created", expect.any(String));
+  });
+
   it("renders the diagram svg when the source is valid", () => {
     render(<Preview source={VALID} />);
     const svg = screen.getByTestId("preview-svg");

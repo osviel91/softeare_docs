@@ -154,6 +154,8 @@ export interface EventRowLayout {
   event: string;
   /** Id of the event declaration node, so a click maps back to a statement. */
   eventNodeId: AstNodeId;
+  /** Explicit project-scoped identity, when the declaration is bound. */
+  messageRef?: string;
   /** Top edge of the row's band. */
   y: number;
   /** Height of the row's band, grown to fit the consumer stack. */
@@ -304,6 +306,7 @@ export function layoutEventFlow(flow: FlowViewModel): EventFlowLayout {
     rows.push({
       event: name,
       eventNodeId: row.eventNodeId,
+      messageRef: row.messageRef,
       y: cursorY,
       height,
       producer: producer

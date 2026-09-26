@@ -37,6 +37,7 @@ export interface FlowEndpoint {
 export interface FlowRow {
   event: string;
   eventNodeId: AstNodeId;
+  messageRef?: string;
   description?: string;
   metadata: EventMetadataEntry[];
   producer: FlowEndpoint | null;
@@ -181,6 +182,7 @@ export function projectEventFlowToFlowView(flow: EventFlow): FlowViewModel {
         eventNodeId: declaration
           ? nodeIdOf("event", declaration.range)
           : nodeIdOf(mention?.kind ?? "event", mention?.range ?? emptyRange()),
+        messageRef: declaration?.messageRef,
         description: declaration?.description,
         metadata: declaration?.metadata ?? [],
         producer: producer

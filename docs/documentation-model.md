@@ -96,6 +96,14 @@ are deliberately omitted. Selecting a listed resource follows the existing
 workspace navigation path, so refresh/revalidation can surface the same persisted
 bindings without a browser reload.
 
+`SemanticMessageIdentity` is the navigation bridge between ordered execution
+documentation and causal Event Flow documentation, not merely storage metadata.
+The inspector preserves each target's resource id and local node or step so
+navigation focuses the exact occurrence. This differs from a resource
+relationship: the relationship connects complementary documents, while the
+semantic identity connects representations or occurrences of the same
+architectural message.
+
 Similarly, `Merge Change Proposal.seq` can show execution, a proposal
 collaboration Event Flow can show asynchronous reactions, a future conceptual
 view can show proposal relationships, and a future Database view can show

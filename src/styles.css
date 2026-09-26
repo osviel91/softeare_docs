@@ -1873,6 +1873,23 @@ body {
   text-align: left;
 }
 
+.semantic-message-badge[data-semantic-message-id] {
+  cursor: pointer;
+  outline: none;
+}
+.semantic-message-badge[data-semantic-message-id]:hover,
+.semantic-message-badge[data-semantic-message-id]:focus {
+  fill: var(--accent);
+  text-decoration: underline;
+}
+.semantic-message--active {
+  filter: drop-shadow(0 0 3px color-mix(in srgb, var(--accent) 70%, transparent));
+}
+.semantic-message--active .semantic-message-badge,
+.semantic-message--active.semantic-message-badge {
+  fill: var(--accent);
+}
+
 .event-flow-view-selector button {
   padding: 5px 12px;
   color: var(--text-muted);

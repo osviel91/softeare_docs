@@ -33,8 +33,10 @@ export interface EventFlowPreviewProps {
   source: string;
   /** Called with a node id when the user clicks the element it represents. */
   onNodeSelect?: (nodeId: string) => void;
+  onSemanticMessageSelect?: (messageId: string, nodeId: string | null) => void;
   /** The node to highlight, following the editor's caret. */
   activeNodeId?: string | null;
+  activeSemanticMessageId?: string | null;
   /** Whether the preview is the only visible app pane. */
   maximized?: boolean;
   /** Toggles the preview-only app layout. */
@@ -54,7 +56,9 @@ export interface EventFlowPreviewProps {
 export default function EventFlowPreview({
   source,
   onNodeSelect,
+  onSemanticMessageSelect,
   activeNodeId = null,
+  activeSemanticMessageId = null,
   maximized = false,
   onToggleMaximize,
   flow: providedFlow,
@@ -279,7 +283,9 @@ export default function EventFlowPreview({
                 svgTestId="topology-svg"
                 resetKey={source}
                 onNodeSelect={onNodeSelect}
+                onSemanticMessageSelect={onSemanticMessageSelect}
                 activeNodeId={activeNodeId}
+                activeSemanticMessageId={activeSemanticMessageId}
                 maximized={maximized}
                 onToggleMaximize={onToggleMaximize}
                 reviewMode={reviewMode}
@@ -389,8 +395,10 @@ export default function EventFlowPreview({
                 svgTestId="causal-svg"
                 resetKey={source}
                 onNodeSelect={onNodeSelect}
+                onSemanticMessageSelect={onSemanticMessageSelect}
                 onCausalNodeSelect={selectCausal}
                 activeNodeId={activeNodeId}
+                activeSemanticMessageId={activeSemanticMessageId}
                 maximized={maximized}
                 onToggleMaximize={onToggleMaximize}
                 reviewMode={reviewMode}
@@ -429,7 +437,9 @@ export default function EventFlowPreview({
         svgTestId="preview-svg"
         resetKey={source}
         onNodeSelect={onNodeSelect}
+        onSemanticMessageSelect={onSemanticMessageSelect}
         activeNodeId={activeNodeId}
+        activeSemanticMessageId={activeSemanticMessageId}
         maximized={maximized}
         onToggleMaximize={onToggleMaximize}
         reviewMode={reviewMode}

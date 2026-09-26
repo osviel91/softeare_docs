@@ -430,6 +430,7 @@ export default function App() {
   const [quickOpenOpen, setQuickOpenOpen] = useState(false);
   const [caretOffset, setCaretOffset] = useState(0);
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
+  const [activeSemanticMessageId, setActiveSemanticMessageId] = useState<string | null>(null);
   // A find-references result, shown in the same overlay the project search uses
   // so there is one result surface rather than two.
   const [referenceMatches, setReferenceMatches] = useState<
@@ -924,12 +925,13 @@ export default function App() {
   );
 
   const openResourceById = useCallback(
-    (resourceId: string): void => {
+    (resourceId: string, nodeId?: string): void => {
       const resource = index?.resources.find((entry) => entry.id === resourceId);
       if (!resource) return;
       const diagram = allDiagrams.find((entry) => resourceIdForFile(entry) === resource.id);
       if (diagram) {
         setView("code");
+        if (nodeId) setActiveNodeId(nodeId);
         loadDiagram(diagram);
       }
     },
@@ -1493,6 +1495,7 @@ export default function App() {
           ? nodeRangeById(ast, nodeId)
           : null;
       if (!range) return;
+      setActiveSemanticMessageId(null);
       const offsets = rangeToOffsets(source, range);
       revealToken.current += 1;
       setReveal({
@@ -1509,6 +1512,21 @@ export default function App() {
     },
     [isEventFlow, eventFlow, ast, source],
   );
+
+  const onSemanticMessageSelect = useCallback(
+    (messageId: string, nodeId: string | null) => {
+      if (!(index?.semanticMessages ?? []).some((message) => message.id === messageId)) return;
+      setActiveSemanticMessageId(messageId);
+      if (nodeId) setActiveNodeId(nodeId);
+    },
+    [index],
+  );
+
+  useEffect(() => {
+    if (activeSemanticMessageId && !(index?.semanticMessages ?? []).some((message) => message.id === activeSemanticMessageId)) {
+      setActiveSemanticMessageId(null);
+    }
+  }, [index, activeSemanticMessageId]);
 
   /** The participant name the caret is on, for find-references and rename. */
   const symbolAtCaret = useCallback((): string | null => {
@@ -2994,13 +3012,15 @@ export default function App() {
                         view={eventFlowView}
                         onViewChange={changeEventFlowView}
                         onNodeSelect={onNodeSelect}
+                        onSemanticMessageSelect={onSemanticMessageSelect}
                         activeNodeId={activeNodeId}
+                        activeSemanticMessageId={activeSemanticMessageId}
                         maximized={previewMaximized}
                         onToggleMaximize={() =>
                           setPreviewMaximized((value) => !value)
                         }
                       />
-                      <SemanticMessageInspector index={index} eventFlow={eventFlow} activeResourceId={activeResourceId} activeNodeId={activeNodeId} onOpenResource={openResourceById} />
+                      <SemanticMessageInspector index={index} eventFlow={eventFlow} activeResourceId={activeResourceId} activeNodeId={activeNodeId} activeSemanticMessageId={activeSemanticMessageId} onOpenResource={openResourceById} />
                     </>
                   ) : (
                     <>
@@ -3010,13 +3030,15 @@ export default function App() {
                         isStale={isStale}
                         onRender={() => setRenderedSource(source)}
                         onNodeSelect={onNodeSelect}
+                        onSemanticMessageSelect={onSemanticMessageSelect}
                         activeNodeId={activeNodeId}
+                        activeSemanticMessageId={activeSemanticMessageId}
                         maximized={previewMaximized}
                         onToggleMaximize={() =>
                           setPreviewMaximized((value) => !value)
                         }
                       />
-                      <SemanticMessageInspector index={index} sequence={ast} activeResourceId={activeResourceId} activeNodeId={activeNodeId} onOpenResource={openResourceById} />
+                      <SemanticMessageInspector index={index} sequence={ast} activeResourceId={activeResourceId} activeNodeId={activeNodeId} activeSemanticMessageId={activeSemanticMessageId} onOpenResource={openResourceById} />
                     </>
                   )}
                 </section>

@@ -60,6 +60,7 @@ export interface DiagramViewportProps {
    * without matching any text.
    */
   onNodeSelect?: (nodeId: string) => void;
+  onSemanticMessageSelect?: (messageId: string, nodeId: string | null) => void;
   onCausalNodeSelect?: (nodeId: string) => void;
   /**
    * The node to highlight — the statement the editor's caret is on. Highlighting
@@ -67,6 +68,7 @@ export interface DiagramViewportProps {
    * disturbs the diagram or the pan/zoom transform.
    */
   activeNodeId?: string | null;
+  activeSemanticMessageId?: string | null;
   /** Whether the shell has expanded this preview to its full workspace. */
   maximized?: boolean;
   /** Toggles the preview-only app layout. */
@@ -143,8 +145,10 @@ export default function DiagramViewport({
   svgTestId = "viewport-content",
   onNoteToggle,
   onNodeSelect,
+  onSemanticMessageSelect,
   onCausalNodeSelect,
   activeNodeId = null,
+  activeSemanticMessageId = null,
   maximized = false,
   onToggleMaximize,
   reviewMode = false,
@@ -356,7 +360,18 @@ export default function DiagramViewport({
     }
     // A pan ends with a click on the content element, so a selection only counts
     // when the pointer stayed put.
-    if ((!onNodeSelect && !onCausalNodeSelect) || movedSincePointerDown.current) return;
+    if (movedSincePointerDown.current) return;
+    const semantic = event.target instanceof Element
+      ? event.target.closest("[data-semantic-message-id]")
+      : null;
+    if (semantic) {
+      onSemanticMessageSelect?.(
+        semantic.getAttribute("data-semantic-message-id") ?? "",
+        nodeIdFromTarget(semantic),
+      );
+      return;
+    }
+    if (!onNodeSelect && !onCausalNodeSelect) return;
     const causalNode = event.target instanceof Element
       ? event.target.closest("[data-causal-id]")?.getAttribute("data-causal-id")
       : null;
@@ -380,6 +395,17 @@ export default function DiagramViewport({
     );
     target?.classList.add("svg-node--active");
   }, [activeNodeId, svg]);
+
+  useEffect(() => {
+    const content = contentRef.current;
+    if (!content) return;
+    for (const element of content.querySelectorAll(".semantic-message--active"))
+      element.classList.remove("semantic-message--active");
+    if (!activeSemanticMessageId) return;
+    for (const element of content.querySelectorAll(
+      `[data-semantic-message-id="${CSS.escape(activeSemanticMessageId)}"]`,
+    )) element.classList.add("semantic-message--active");
+  }, [activeSemanticMessageId, svg]);
 
   useEffect(() => {
     const content = contentRef.current;
@@ -416,6 +442,17 @@ export default function DiagramViewport({
 
   const onContentKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     if (event.key !== "Enter" && event.key !== " ") return;
+    const semantic = event.target instanceof Element
+      ? event.target.closest("[data-semantic-message-id]")
+      : null;
+    if (semantic) {
+      event.preventDefault();
+      onSemanticMessageSelect?.(
+        semantic.getAttribute("data-semantic-message-id") ?? "",
+        nodeIdFromTarget(semantic),
+      );
+      return;
+    }
     const causalNode = event.target instanceof Element
       ? event.target.closest("[data-causal-id]")?.getAttribute("data-causal-id")
       : null;

@@ -38,6 +38,58 @@ describe("DiagramViewport", () => {
     expect(screen.getByTestId("viewport-content").innerHTML).toContain("<svg");
   });
 
+  it("activates bound semantic badges without starting a pan", () => {
+    const onSemanticMessageSelect = vi.fn();
+    const svg =
+      '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300">' +
+      '<g data-node-id="message:1"><text class="semantic-message-badge" data-semantic-message-id="msg-1" tabindex="0" role="button">EVENT · publish</text></g></svg>';
+    render(
+      <DiagramViewport
+        svg={svg}
+        size={SIZE}
+        onSemanticMessageSelect={onSemanticMessageSelect}
+      />,
+    );
+    const badge = document.querySelector(".semantic-message-badge")!;
+    fireEvent.pointerDown(badge, { button: 0, pointerId: 1, clientX: 10, clientY: 10 });
+    fireEvent.click(badge);
+    expect(onSemanticMessageSelect).toHaveBeenCalledWith("msg-1", "message:1");
+    expect(screen.getByTestId("viewport-pane")).not.toHaveClass("viewport__pane--panning");
+    fireEvent.keyDown(badge, { key: "Enter" });
+    fireEvent.keyDown(badge, { key: " " });
+    expect(onSemanticMessageSelect).toHaveBeenCalledTimes(3);
+  });
+
+  it("highlights every current-resource occurrence by identity", () => {
+    const svg =
+      '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300">' +
+      '<g data-node-id="message:1" data-semantic-message-id="msg-1"><text data-semantic-message-id="msg-1">EVENT · publish</text></g>' +
+      '<g data-node-id="message:2" data-semantic-message-id="msg-1"><text data-semantic-message-id="msg-1">EVENT · consume</text></g>' +
+      '<g data-node-id="message:3" data-semantic-message-id="other"><text data-semantic-message-id="other">EVENT · publish</text></g></svg>';
+    render(<DiagramViewport svg={svg} size={SIZE} activeSemanticMessageId="msg-1" />);
+    expect(document.querySelectorAll(".semantic-message--active")).toHaveLength(4);
+    expect(document.querySelector('[data-semantic-message-id="other"]')).not.toHaveClass(
+      "semantic-message--active",
+    );
+  });
+
+  it.each(["EVENT · consume", "COMMAND · dispatch"])(
+    "activates an unbound semantic badge through node selection: %s",
+    (label) => {
+      const onNodeSelect = vi.fn();
+      const svg =
+        `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300">` +
+        `<g data-node-id="message:1"><text class="semantic-message-badge" data-semantic-message-name="Message" tabindex="0" role="button">${label}</text></g></svg>`;
+      render(<DiagramViewport svg={svg} size={SIZE} onNodeSelect={onNodeSelect} />);
+      const badge = document.querySelector(".semantic-message-badge")!;
+      fireEvent.click(badge);
+      expect(onNodeSelect).toHaveBeenCalledWith("message:1");
+      fireEvent.keyDown(badge, { key: "Enter" });
+      fireEvent.keyDown(badge, { key: " " });
+      expect(onNodeSelect).toHaveBeenCalledTimes(3);
+    },
+  );
+
   it("honours a caller-supplied test id for the svg element", () => {
     render(<DiagramViewport svg={SVG} size={SIZE} svgTestId="preview-svg" />);
     expect(screen.getByTestId("preview-svg").innerHTML).toContain("<svg");

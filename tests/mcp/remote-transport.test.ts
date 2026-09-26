@@ -433,6 +433,8 @@ describe("the remote MCP service over Streamable HTTP", () => {
       expect.arrayContaining([
         expect.objectContaining({
           kind: "complementary-view",
+          sourceId: sequenceId,
+          targetId: flowId,
           sourceRole: "execution",
           targetRole: "causal",
         }),
@@ -443,7 +445,13 @@ describe("the remote MCP service over Streamable HTTP", () => {
       arguments: { projectId },
     });
     expect(structured(listed).relationships).toEqual(
-      expect.arrayContaining([expect.objectContaining({ kind: "complementary-view" })]),
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "complementary-view",
+          sourceId: sequenceId,
+          targetId: flowId,
+        }),
+      ]),
     );
 
     const self = await client.callTool({

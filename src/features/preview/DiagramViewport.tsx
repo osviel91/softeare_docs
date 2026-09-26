@@ -137,6 +137,12 @@ export function participantDragName(target: EventTarget | null): string | null {
   return group?.getAttribute("data-participant-id") ?? null;
 }
 
+/** The semantic badge carrying the pointer or keyboard event, if any. */
+function semanticTarget(target: EventTarget | null): Element | null {
+  if (!(target instanceof Element)) return null;
+  return target.closest("[data-semantic-message-id], [data-semantic-message-name]");
+}
+
 export default function DiagramViewport({
   svg,
   size,
@@ -281,6 +287,9 @@ export default function DiagramViewport({
     // would retarget the follow-up click at the pane, so the delegated toggle
     // would never see it — and a press on a bullet should not pan anyway.
     if (onNoteToggle && noteIndexFromTarget(event.target) !== null) return;
+    // Semantic badges are controls inside the draggable canvas. Pointer capture
+    // would retarget their click to the pane and lose the delegated activation.
+    if (semanticTarget(event.target)) return;
     movedSincePointerDown.current = false;
     dragRef.current = {
       pointerId: event.pointerId,
@@ -361,14 +370,14 @@ export default function DiagramViewport({
     // A pan ends with a click on the content element, so a selection only counts
     // when the pointer stayed put.
     if (movedSincePointerDown.current) return;
-    const semantic = event.target instanceof Element
-      ? event.target.closest("[data-semantic-message-id]")
-      : null;
+    const semantic = semanticTarget(event.target);
     if (semantic) {
-      onSemanticMessageSelect?.(
-        semantic.getAttribute("data-semantic-message-id") ?? "",
-        nodeIdFromTarget(semantic),
-      );
+      const messageId = semantic.getAttribute("data-semantic-message-id");
+      if (messageId) onSemanticMessageSelect?.(messageId, nodeIdFromTarget(semantic));
+      else {
+        const nodeId = nodeIdFromTarget(semantic);
+        if (nodeId) onNodeSelect?.(nodeId);
+      }
       return;
     }
     if (!onNodeSelect && !onCausalNodeSelect) return;
@@ -442,15 +451,15 @@ export default function DiagramViewport({
 
   const onContentKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     if (event.key !== "Enter" && event.key !== " ") return;
-    const semantic = event.target instanceof Element
-      ? event.target.closest("[data-semantic-message-id]")
-      : null;
+    const semantic = semanticTarget(event.target);
     if (semantic) {
       event.preventDefault();
-      onSemanticMessageSelect?.(
-        semantic.getAttribute("data-semantic-message-id") ?? "",
-        nodeIdFromTarget(semantic),
-      );
+      const messageId = semantic.getAttribute("data-semantic-message-id");
+      if (messageId) onSemanticMessageSelect?.(messageId, nodeIdFromTarget(semantic));
+      else {
+        const nodeId = nodeIdFromTarget(semantic);
+        if (nodeId) onNodeSelect?.(nodeId);
+      }
       return;
     }
     const causalNode = event.target instanceof Element

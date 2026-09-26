@@ -15,12 +15,17 @@ export interface CausalNodeLayout {
   lines: string[];
 }
 export interface CausalEdgeLayout { edge: CausalEdge; from: CausalBox; to: CausalBox }
+export interface HandlerEffectGroup {
+  handlerId: CausalNodeId;
+  effectIds: CausalNodeId[];
+}
 export interface CausalLayout {
   width: number;
   height: number;
   title?: string;
   nodes: CausalNodeLayout[];
   edges: CausalEdgeLayout[];
+  effectGroups: HandlerEffectGroup[];
 }
 
 const GAP_X = 72;
@@ -98,6 +103,12 @@ export function layoutCausalView(view: CausalViewModel): CausalLayout {
   // Effects are owned annotations, not another causal rank. Place them under
   // their handler and move them down on collision with the main graph.
   const effects = view.effects.map((item) => ({ id: item.id, type: "effect" as const, label: item.description, sourceNodeIds: item.sourceNodeIds }));
+  const effectGroups = view.handlers
+    .map((handler) => ({
+      handlerId: handler.id,
+      effectIds: view.effects.filter((effect) => effect.handlerId === handler.id).map((effect) => effect.id),
+    }))
+    .filter((group) => group.effectIds.length > 0);
   for (const effect of effects) {
     const handler = boxes.get(view.effects.find((item) => item.id === effect.id)!.handlerId);
     if (!handler) continue;
@@ -113,6 +124,7 @@ export function layoutCausalView(view: CausalViewModel): CausalLayout {
     height: Math.max(MARGIN * 2, maxY),
     ...(view.title === undefined ? {} : { title: view.title }),
     nodes: all.map((item) => ({ ...item, box: boxes.get(item.id)!, lines: nodeGeometry(item.label, item.type).lines })),
+    effectGroups,
     edges: view.edges.flatMap((edge) => {
       const from = boxes.get(edge.from);
       const to = boxes.get(edge.to);

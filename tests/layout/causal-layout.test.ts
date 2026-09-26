@@ -69,4 +69,37 @@ describe("layoutCausalView", () => {
     expect(result.nodes.some((node) => node.lines.length > 1)).toBe(true);
     expect(Math.max(...result.nodes.map((node) => node.box.width))).toBeLessThanOrEqual(260);
   });
+
+  it("groups several effects under their owning handler", () => {
+    const result = layout([
+      "event Raised", "handler Accounts", "Raised handled by Accounts",
+      "effect save on Accounts: save transaction",
+      "effect account on Accounts: update account",
+      "effect audit on Accounts: write a very long audit record label that wraps",
+      "effect notify on Accounts: notify downstream system",
+    ].join("\n"));
+    const handler = result.nodes.find((node) => node.id === "handler:Accounts")!;
+    const group = result.effectGroups.find((entry) => entry.handlerId === handler.id)!;
+    expect(group.effectIds).toHaveLength(4);
+    for (const id of group.effectIds) {
+      const effect = result.nodes.find((node) => node.id === id)!;
+      expect(effect.box.y).toBeGreaterThan(handler.box.y + handler.box.height);
+    }
+    const effectEdges = result.edges.filter(({ edge }) => edge.type === "HANDLER_HAS_EFFECT");
+    expect(effectEdges).toHaveLength(4);
+    expect(new Set(effectEdges.map(({ edge }) => edge.from)).size).toBe(1);
+  });
+
+  it("keeps multiple handler effect groups separate", () => {
+    const result = layout([
+      "event Raised", "handler A", "handler B", "Raised handled by A", "Raised handled by B",
+      "effect a1 on A: first", "effect a2 on A: second", "effect b1 on B: first", "effect b2 on B: second",
+    ].join("\n"));
+    expect(result.effectGroups.map((group) => group.effectIds.length)).toEqual([2, 2]);
+    for (let left = 0; left < result.nodes.length; left++) {
+      for (let right = left + 1; right < result.nodes.length; right++) {
+        expect(overlaps(result.nodes[left].box, result.nodes[right].box)).toBe(false);
+      }
+    }
+  });
 });

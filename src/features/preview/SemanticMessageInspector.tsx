@@ -7,6 +7,7 @@ import type { ProjectIndex } from "../../domain/project/project-index";
 import { traceSemanticMessage } from "../../domain/project/semantic-message-trace";
 import { semanticMessageCandidates } from "../../domain/project/semantic-message-trace";
 import type { TraceDirection, TraceQueryStart } from "../../domain/project/architecture-trace";
+import type { ComparisonOccurrence } from "./semantic-comparison";
 
 interface Props {
   index: ProjectIndex | null;
@@ -19,6 +20,9 @@ interface Props {
   onBind?: (messageId: string, name: string, step?: number) => void;
   onCreateIdentity?: (name: string, kind: "event" | "command", step?: number) => void;
   onTrace?: (start: TraceQueryStart, direction: TraceDirection) => void;
+  counterpartResourceId?: string | null;
+  counterpartOccurrences?: ComparisonOccurrence[];
+  onFocusOccurrence?: (occurrence: ComparisonOccurrence) => void;
 }
 
 /** Compact, authoritative-only cross-view details for the selected message. */
@@ -33,6 +37,9 @@ export default function SemanticMessageInspector({
   onBind,
   onCreateIdentity,
   onTrace,
+  counterpartResourceId = null,
+  counterpartOccurrences = [],
+  onFocusOccurrence,
 }: Props) {
   if (!index || !activeResourceId || !activeNodeId) return null;
   const occurrence = sequence
@@ -82,6 +89,11 @@ export default function SemanticMessageInspector({
           <button type="button" onClick={() => onTrace?.({ messageId }, "both")}>Trace both</button>
         </div>
       </div>
+      {counterpartResourceId ? <div className="semantic-message-inspector__section" aria-label="Authoritative counterpart">
+        <span className="semantic-message-inspector__label">Authoritative counterpart</span>
+        <span>{counterpartOccurrences.length} occurrence{counterpartOccurrences.length === 1 ? "" : "s"} in {resources.get(counterpartResourceId)?.title ?? counterpartResourceId}</span>
+        {counterpartOccurrences.map((counterpart) => <button key={counterpart.nodeId} type="button" onClick={() => onFocusOccurrence?.(counterpart)}>Focus {counterpart.operation ?? "event"} occurrence{counterpart.step ? ` ${counterpart.step}` : ""}</button>)}
+      </div> : null}
       <div className="semantic-message-inspector__section">
         <span className="semantic-message-inspector__label">Execution</span>
         {trace.occurrences.length === 0 ? <span>No execution occurrence documented</span> : trace.occurrences.map((entry) => (

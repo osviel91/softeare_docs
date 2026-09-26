@@ -81,4 +81,15 @@ describe("App — dual viewer foundation", () => {
     fireEvent.click(screen.getByRole("button", { name: "Restore Viewer A" }));
     expect(screen.getByTestId("comparison-pane-b")).toBeInTheDocument();
   });
+
+  it("shows a semantic comparison summary without treating names as identities", async () => {
+    render(<App />);
+    await project();
+    await command("New Diagram");
+    await command("New Diagram");
+    fireEvent.click(screen.getByTestId("compare-mode-button"));
+
+    expect(screen.getByTestId("semantic-comparison-summary")).toHaveTextContent("Shared identities: 0");
+    expect(screen.getByTestId("semantic-comparison-summary")).toHaveTextContent("Candidates/unresolved: 0");
+  });
 });

@@ -10,6 +10,8 @@ import EventFlowPreview, { type EventFlowView } from "./EventFlowPreview";
 import SemanticMessageInspector from "./SemanticMessageInspector";
 import TraceExplorer from "./TraceExplorer";
 import { useDiagram } from "./use-diagram";
+import { semanticComparison, type ComparisonOccurrence, type ComparisonPane as ComparisonPaneId, type SemanticComparison } from "./semantic-comparison";
+import type { ResourceRelationship } from "../../domain/workspace/resource-relationship";
 
 export interface ComparisonViewProps {
   primary: DiagramFile;
@@ -22,6 +24,7 @@ export interface ComparisonViewProps {
   maximizedPane: "a" | "b" | null;
   onMaximize: (pane: "a" | "b") => void;
   onRestore: () => void;
+  relationships?: ResourceRelationship[];
 }
 
 type Pane = "a" | "b";
@@ -45,6 +48,12 @@ function ComparisonPane({
   onMaximize,
   onRestore,
   onOpenResource,
+  comparison,
+  counterpartMessageId,
+  selectedMessageId,
+  onSelectIdentity,
+  focusOccurrence,
+  onFocusOccurrence,
 }: {
   pane: Pane;
   session: Session;
@@ -54,6 +63,12 @@ function ComparisonPane({
   onMaximize: () => void;
   onRestore: () => void;
   onOpenResource: (resourceId: string, nodeId?: string) => void;
+  comparison: SemanticComparison;
+  counterpartMessageId: string | null;
+  selectedMessageId: string | null;
+  onSelectIdentity: (messageId: string) => void;
+  focusOccurrence: ComparisonOccurrence | null;
+  onFocusOccurrence: (occurrence: ComparisonOccurrence) => void;
 }) {
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
   const [activeSemanticMessageId, setActiveSemanticMessageId] = useState<string | null>(null);
@@ -75,12 +90,19 @@ function ComparisonPane({
     setTraceStart(null);
   }, [session.resource.id, session.source]);
 
+  useEffect(() => {
+    if (focusOccurrence?.resourceId !== resourceId) return;
+    setActiveNodeId(focusOccurrence.nodeId);
+    setActiveSemanticMessageId(focusOccurrence.messageId ?? null);
+  }, [focusOccurrence, resourceId]);
+
   const selectNode = (nodeId: string) => {
     setActiveNodeId(nodeId);
     setActiveSemanticMessageId(null);
   };
   const selectIdentity = (messageId: string, nodeId: string | null) => {
     setActiveSemanticMessageId(messageId);
+    onSelectIdentity(messageId);
     if (nodeId) setActiveNodeId(nodeId);
   };
   const selectOccurrence = (name: string, nodeId: string | null) => {
@@ -115,7 +137,7 @@ function ComparisonPane({
             onSemanticMessageSelect={selectIdentity}
             onSemanticOccurrenceSelect={selectOccurrence}
             activeNodeId={activeNodeId}
-            activeSemanticMessageId={activeSemanticMessageId}
+            activeSemanticMessageId={activeSemanticMessageId ?? selectedMessageId ?? counterpartMessageId}
           />
         ) : (
           <Preview
@@ -124,7 +146,7 @@ function ComparisonPane({
             onSemanticMessageSelect={selectIdentity}
             onSemanticOccurrenceSelect={selectOccurrence}
             activeNodeId={activeNodeId}
-            activeSemanticMessageId={activeSemanticMessageId}
+            activeSemanticMessageId={activeSemanticMessageId ?? selectedMessageId ?? counterpartMessageId}
           />
         )}
       </div>
@@ -137,6 +159,9 @@ function ComparisonPane({
         activeSemanticMessageId={activeSemanticMessageId}
         onOpenResource={onOpenResource}
         onTrace={openTrace}
+        counterpartResourceId={counterpartMessageId ? (pane === "a" ? comparison.occurrences.b[0]?.resourceId : comparison.occurrences.a[0]?.resourceId) ?? null : null}
+        counterpartOccurrences={activeSemanticMessageId ? (pane === "a" ? comparison.occurrences.b : comparison.occurrences.a).filter((entry) => entry.messageId === activeSemanticMessageId) : []}
+        onFocusOccurrence={onFocusOccurrence}
       />
       {traceStart && index ? <TraceExplorer index={index} start={traceStart} direction={traceDirection} onClose={() => setTraceStart(null)} onOpenResource={onOpenResource} /> : null}
     </section>
@@ -154,6 +179,7 @@ export default function ComparisonView({
   maximizedPane,
   onMaximize,
   onRestore,
+  relationships = [],
 }: ComparisonViewProps) {
   const [secondaryId, setSecondaryId] = useState<string | null>(() => diagrams.find((diagram) => diagram.id !== primary.id)?.id ?? null);
   const secondary = diagrams.find((diagram) => diagram.id === secondaryId) ?? null;
@@ -173,6 +199,29 @@ export default function ComparisonView({
     source: secondary.source,
     representation: resourceRepresentationOfName(secondary.name) === "event-flow" ? "event-flow" : "sequence",
   } satisfies Session : null;
+  const comparison = useMemo(
+    () => semanticComparison(index, resourceIdForFile(primary), secondary ? resourceIdForFile(secondary) : null, relationships),
+    [index, primary, resourceIdForFile, relationships, secondary],
+  );
+  const [selected, setSelected] = useState<{ pane: ComparisonPaneId; messageId: string } | null>(null);
+  const [focused, setFocused] = useState<ComparisonOccurrence | null>(null);
+  const selectedCounterparts = selected
+    ? (selected.pane === "a" ? comparison.occurrences.b : comparison.occurrences.a).filter((entry) => entry.messageId === selected.messageId)
+    : [];
+  const focusNext = (direction: 1 | -1) => {
+    if (!selected || selectedCounterparts.length === 0) return;
+    const current = selectedCounterparts.findIndex((entry) => entry.nodeId === focused?.nodeId);
+    const next = selectedCounterparts[(current + direction + selectedCounterparts.length) % selectedCounterparts.length];
+    setFocused(next);
+  };
+  useEffect(() => {
+    if (selected && !comparison.identities.has(selected.messageId)) setSelected(null);
+    if (focused && !comparison.occurrences.a.concat(comparison.occurrences.b).some((entry) => entry.nodeId === focused.nodeId)) setFocused(null);
+  }, [comparison, focused, selected]);
+  const inspectIdentity = (pane: ComparisonPaneId, messageId: string) => {
+    setSelected({ pane, messageId });
+    setFocused(comparison.occurrences[pane].find((entry) => entry.messageId === messageId) ?? null);
+  };
 
   return (
     <div className={`comparison${maximizedPane ? " comparison--maximized" : ""}`} data-testid="comparison-view">
@@ -184,12 +233,35 @@ export default function ComparisonView({
         </select></label>
         <button type="button" className="button button--ghost" onClick={onExit}>Close comparison</button>
       </header>
+      <ComparisonSummary comparison={comparison} selected={selected} onSelect={inspectIdentity} onFocus={setFocused} onStep={focusNext} />
       <div className="comparison__panes">
         <div className={maximizedPane === "b" ? "comparison__slot comparison__slot--hidden" : "comparison__slot"}>
-          <ComparisonPane pane="a" session={primarySession} index={index} resourceIdForFile={resourceIdForFile} maximized={maximizedPane === "a"} onMaximize={() => onMaximize("a")} onRestore={onRestore} onOpenResource={onOpenResource} />
+          <ComparisonPane pane="a" session={primarySession} index={index} resourceIdForFile={resourceIdForFile} maximized={maximizedPane === "a"} onMaximize={() => onMaximize("a")} onRestore={onRestore} onOpenResource={onOpenResource} comparison={comparison} selectedMessageId={selected?.pane === "a" ? selected.messageId : null} counterpartMessageId={selected?.pane === "b" ? selected.messageId : null} onSelectIdentity={(messageId) => { setSelected({ pane: "a", messageId }); setFocused(null); }} focusOccurrence={focused} onFocusOccurrence={setFocused} />
         </div>
-        {secondarySession ? <div className={maximizedPane === "a" ? "comparison__slot comparison__slot--hidden" : "comparison__slot"}><ComparisonPane pane="b" session={secondarySession} index={index} resourceIdForFile={resourceIdForFile} maximized={maximizedPane === "b"} onMaximize={() => onMaximize("b")} onRestore={onRestore} onOpenResource={onOpenResource} /></div> : <div className="comparison__empty">{secondaryId ? `Viewer B resource ${secondaryId} is no longer available.` : "Choose a second diagram to compare."}</div>}
+        {secondarySession ? <div className={maximizedPane === "a" ? "comparison__slot comparison__slot--hidden" : "comparison__slot"}><ComparisonPane pane="b" session={secondarySession} index={index} resourceIdForFile={resourceIdForFile} maximized={maximizedPane === "b"} onMaximize={() => onMaximize("b")} onRestore={onRestore} onOpenResource={onOpenResource} comparison={comparison} selectedMessageId={selected?.pane === "b" ? selected.messageId : null} counterpartMessageId={selected?.pane === "a" ? selected.messageId : null} onSelectIdentity={(messageId) => { setSelected({ pane: "b", messageId }); setFocused(null); }} focusOccurrence={focused} onFocusOccurrence={setFocused} /></div> : <div className="comparison__empty">{secondaryId ? `Viewer B resource ${secondaryId} is no longer available.` : "Choose a second diagram to compare."}</div>}
       </div>
     </div>
   );
+}
+
+function ComparisonSummary({ comparison, selected, onSelect, onFocus, onStep }: { comparison: SemanticComparison; selected: { pane: ComparisonPaneId; messageId: string } | null; onSelect: (pane: ComparisonPaneId, id: string) => void; onFocus: (occurrence: ComparisonOccurrence) => void; onStep: (direction: 1 | -1) => void }) {
+  const rows = [
+    ["Shared identities", comparison.shared, "both"],
+    ["Only in A", comparison.onlyA, "a"],
+    ["Only in B", comparison.onlyB, "b"],
+  ] as const;
+  return <aside className="comparison__summary" aria-label="Semantic comparison summary" data-testid="semantic-comparison-summary">
+    <div className="comparison__counts">{rows.map(([label, identities]) => <span key={label}>{label}: <strong>{identities.length}</strong></span>)}<span>Candidates/unresolved: <strong>{new Set(comparison.candidates.map((entry) => `${entry.kind}:${entry.name}`)).size}</strong></span></div>
+    {comparison.relationship ? <p className="comparison__relationship">Complementary view: {comparison.relationship.sourceRole ?? "other"} ↔ {comparison.relationship.targetRole ?? "other"}</p> : null}
+    {[...comparison.shared, ...comparison.onlyA, ...comparison.onlyB].map((identity) => {
+      const pane = comparison.shared.includes(identity) ? ("both" as const) : comparison.onlyA.includes(identity) ? ("a" as const) : ("b" as const);
+      const occurrences = pane === "both" ? [...comparison.occurrences.a, ...comparison.occurrences.b] : comparison.occurrences[pane];
+      const matched = occurrences.filter((entry) => entry.messageId === identity.id);
+      return <div className="comparison__identity" key={identity.id}>
+        <button type="button" aria-label={`Inspect ${identity.kind} ${identity.name}`} onClick={() => onSelect(pane === "both" ? "a" : pane, identity.id)}>{identity.name} <small>{identity.kind} · {matched.length} occurrence{matched.length === 1 ? "" : "s"}</small></button>
+        {selected?.messageId === identity.id && comparison.shared.includes(identity) ? <div className="comparison__sync-actions" aria-label={`Synchronization actions for ${identity.name}`}><button type="button" onClick={() => { const occurrence = comparison.occurrences[selected.pane === "a" ? "b" : "a"].find((entry) => entry.messageId === identity.id); if (occurrence) onFocus(occurrence); }}>Focus matching occurrence</button><button type="button" onClick={() => onStep(-1)} disabled={matched.length < 2}>Previous</button><button type="button" onClick={() => onStep(1)} disabled={matched.length < 2}>Next</button></div> : null}
+      </div>;
+    })}
+    {comparison.candidates.length > 0 ? <p className="comparison__candidates">Unresolved candidates: {[...new Set(comparison.candidates.map((entry) => `${entry.kind} ${entry.name}`))].join(", ")}</p> : null}
+  </aside>;
 }

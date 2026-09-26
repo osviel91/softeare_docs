@@ -3101,6 +3101,7 @@ export default function App() {
                       maximizedPane={comparisonMaximizedPane}
                       onMaximize={setComparisonMaximizedPane}
                       onRestore={() => setComparisonMaximizedPane(null)}
+                      relationships={metadata?.relationships ?? []}
                     />
                   ) : noteMode ? (
                     <MarkdownView

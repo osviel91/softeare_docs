@@ -923,6 +923,14 @@ body {
 .comparison__toolbar strong { margin-right: auto; }
 .comparison__toolbar label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-muted); }
 .comparison__toolbar select { max-width: 260px; min-width: 150px; }
+.comparison__summary { padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--surface-raised); font-size: 11px; }
+.comparison__counts { display: flex; flex-wrap: wrap; gap: 10px; color: var(--text-muted); }
+.comparison__counts strong { color: var(--text); }
+.comparison__relationship, .comparison__candidates { margin: 6px 0 0; color: var(--text-muted); }
+.comparison__identity { display: inline-flex; align-items: center; gap: 4px; margin: 6px 6px 0 0; }
+.comparison__identity button, .comparison__sync-actions button { font-size: 11px; }
+.comparison__identity small { color: var(--text-muted); }
+.comparison__sync-actions { display: inline-flex; gap: 3px; }
 
 .comparison__panes {
   display: flex;

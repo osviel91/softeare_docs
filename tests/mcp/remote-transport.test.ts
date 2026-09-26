@@ -294,6 +294,66 @@ describe("the remote MCP service over Streamable HTTP", () => {
     await client.close();
   });
 
+  it("resolves block-form Event Flow bindings through the remote trace", async () => {
+    const client = await connect(token);
+    const sequence = await client.callTool({
+      name: "upsert_sequence_diagram",
+      arguments: {
+        projectId,
+        path: "semantic-block-trace.seq",
+        content: [
+          "participant Producer",
+          "participant Consumer",
+          "Producer ->> Consumer: ExampleEvent",
+          "semantic event publish ExampleEvent messageRef semantic-example",
+        ].join("\n"),
+      },
+    });
+    expect(sequence.isError).toBeFalsy();
+    const flow = await client.callTool({
+      name: "upsert_event_flow",
+      arguments: {
+        projectId,
+        path: "semantic-block-trace.eventseq",
+        content: [
+          "event ExampleEvent {",
+          "  messageRef: semantic-example",
+          "}",
+          "event SendEmailCommand {",
+          "  kind: command",
+          "  messageRef: semantic-command",
+          "}",
+        ].join("\n"),
+      },
+    });
+    expect(flow.isError).toBeFalsy();
+
+    const created = await client.callTool({
+      name: "create_semantic_message",
+      arguments: { projectId, id: "semantic-example", name: "ExampleEvent", kind: "event", expectedManifestRevision: 2 },
+    });
+    expect(created.isError, JSON.stringify(created)).toBeFalsy();
+    const command = await client.callTool({
+      name: "create_semantic_message",
+      arguments: { projectId, id: "semantic-command", name: "SendEmailCommand", kind: "command", expectedManifestRevision: 3 },
+    });
+    expect(command.isError, JSON.stringify(command)).toBeFalsy();
+
+    const trace = await client.callTool({ name: "get_semantic_message", arguments: { projectId, messageId: "semantic-example" } });
+    expect(structured(trace).occurrences).toHaveLength(1);
+    expect(structured(trace).eventFlowEntities).toEqual([
+      expect.objectContaining({
+        projectId,
+        resourcePath: "semantic-block-trace.eventseq",
+        nodeId: "event@0:0",
+        messageRef: "semantic-example",
+      }),
+    ]);
+    const commandTrace = await client.callTool({ name: "get_semantic_message", arguments: { projectId, messageId: "semantic-command" } });
+    expect(structured(commandTrace).eventFlowEntities).toHaveLength(1);
+    await client.close();
+  });
+
   it("lets an external client discover, create, validate and rediscover typed complementary views", async () => {
     const client = await connect(token);
     expect(client.getInstructions()).toContain(

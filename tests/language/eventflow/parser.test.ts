@@ -97,6 +97,21 @@ describe("event-flow parser", () => {
     const result = analyzeEventFlow("event Created messageRef msg-created\n");
     expect(result.flow.statements[0]).toMatchObject({ type: "event", name: "Created", messageRef: "msg-created" });
   });
+  it("parses event and command identity references in metadata blocks", () => {
+    const result = analyzeEventFlow([
+      "event Created {",
+      "  messageRef: msg-created",
+      "}",
+      "event SendEmailCommand {",
+      "  kind: command",
+      "  messageRef: msg-command",
+      "}",
+    ].join("\n"));
+    expect(eventsOf(result.flow)).toMatchObject([
+      { name: "Created", messageRef: "msg-created" },
+      { name: "SendEmailCommand", messageRef: "msg-command", kind: "command" },
+    ]);
+  });
   it("parses the declarations of a document", () => {
     const flow = parse(FLOW);
     expect(flow.title?.value).toBe("Order Processing");

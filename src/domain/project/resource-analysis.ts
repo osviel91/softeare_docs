@@ -42,6 +42,7 @@ import {
   servicesOf,
   subscriptionsOf,
 } from "../eventflow/ast";
+import { nodeIdOf } from "../diagram/node-id";
 import { diagramTitle } from "../../language/diagram-title";
 import {
   markdownReferences,
@@ -414,6 +415,9 @@ export function analyzeResource(
       usages: [],
       semanticOccurrences: [],
       eventFlowMessages: eventsOf(flow).map((event) => ({
+        nodeId: nodeIdOf("event", event.range),
+        projectId: descriptor.projectId,
+        resourcePath: descriptor.path,
         name: event.name,
         kind: event.kind ?? "event",
         messageRef: event.messageRef,

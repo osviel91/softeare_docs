@@ -203,6 +203,24 @@ describe("analyzeResource", () => {
     ).toBe(true);
   });
 
+  it("carries Event Flow semantic bindings into the resource analysis", () => {
+    const analysis = analyzeResource(
+      { id: "flow", projectId: "p", path: "flow.eventseq", type: "event-flow", title: "flow.eventseq" },
+      "event Created {\n  messageRef: msg-created\n}\n",
+    );
+    expect(analysis.eventFlowMessages).toEqual([
+      expect.objectContaining({
+        projectId: "p",
+        resourceId: "flow",
+        resourcePath: "flow.eventseq",
+        name: "Created",
+        kind: "event",
+        messageRef: "msg-created",
+        nodeId: "event@0:0",
+      }),
+    ]);
+  });
+
   it("fingerprints content so an unchanged file is not re-analysed", () => {
     expect(fingerprintContent("abc")).toBe(fingerprintContent("abc"));
     expect(fingerprintContent("abc")).not.toBe(fingerprintContent("abd"));

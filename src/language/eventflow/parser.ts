@@ -396,6 +396,19 @@ export function parseEventFlow(source: string): EventFlowParseResult {
             target.kind = value as MessageKind;
           }
         }
+        if (target.type === "event" && key.toLowerCase() === "messageref") {
+          if (value === "") {
+            diagnostics.push(
+              lineDiagnostic(
+                line,
+                "messageRef requires a stable semantic message id",
+                EventFlowDiagnosticCode.MalformedDeclaration,
+              ),
+            );
+          } else if (!metadataKeys.has("messageref")) {
+            target.messageRef = value;
+          }
+        }
         if (target.type === "effect" && key.toLowerCase() === "kind") {
           target.kind = value;
         }

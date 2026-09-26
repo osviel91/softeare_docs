@@ -42,8 +42,13 @@ import type { MarkdownReferenceKind } from "../../language/markdown/markdown";
 import type { SemanticMessageOccurrence } from "../diagram/semantic-messages";
 import type { MessageKind } from "../eventflow/ast";
 import type { SemanticMessageIdentity } from "../workspace/metadata";
+import type { AstNodeId } from "../diagram/node-id";
 
 export interface EventFlowMessageEntity {
+  /** The Event Flow node identity; never replaced by the semantic identity. */
+  nodeId?: AstNodeId;
+  projectId?: string;
+  resourcePath?: string;
   name: string;
   kind: MessageKind;
   messageRef?: string;

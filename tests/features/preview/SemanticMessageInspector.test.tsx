@@ -34,4 +34,22 @@ describe("SemanticMessageInspector", () => {
     fireEvent.click(screen.getByRole("button", { name: "created.eventseq" }));
     expect(open).toHaveBeenCalledWith("flow", expect.any(String));
   });
+
+  it("surfaces an unbound occurrence and compatible identity action", () => {
+    const source = "participant A\nparticipant B\nA -> B: Created\nsemantic event publish Created\n";
+    const metadata = {
+      ...createEmptyMetadata(),
+      resources: [{ id: "seq", path: "created.seq", type: "sequence-diagram" as const }],
+      semanticMessages: [{ id: "msg-created", name: "Created", kind: "event" as const }],
+    };
+    const sequence = analyze(source).ast!;
+    const analyses = [analyzeResource({ id: "seq", projectId: "p", path: "created.seq", type: "sequence-diagram", title: "created.seq" }, source)];
+    const index = buildProjectIndex("p", analyses, metadata, (core) => validateProject(core, analyses.flatMap((entry) => entry.diagnostics), metadata));
+    const nodeId = nodeIdOf("message", semanticMessagesOf(sequence)[0].range);
+    const bind = vi.fn();
+    render(<SemanticMessageInspector index={index} sequence={sequence} activeResourceId="seq" activeNodeId={nodeId} onOpenResource={vi.fn()} onBind={bind} onCreateIdentity={vi.fn()} />);
+    expect(screen.getByText("No semantic identity")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Bind compatible identity/ }));
+    expect(bind).toHaveBeenCalledWith("msg-created", "Created", 1);
+  });
 });

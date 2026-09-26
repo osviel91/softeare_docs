@@ -51,6 +51,26 @@ export const SEQUENCE_SNIPPETS: EditorSnippet[] = [
     text: "User ->> API: Request",
   },
   {
+    label: "Semantic Event - Publish",
+    hint: "mark an evidence-backed event publication",
+    text: "API ->> API: EventName\nsemantic event publish EventName",
+  },
+  {
+    label: "Semantic Event - Consume",
+    hint: "mark an evidence-backed event consumption",
+    text: "API ->> API: EventName\nsemantic event consume EventName",
+  },
+  {
+    label: "Semantic Command - Dispatch",
+    hint: "mark an evidence-backed command dispatch",
+    text: "API ->> API: CommandName\nsemantic command dispatch CommandName",
+  },
+  {
+    label: "Semantic Command - Consume",
+    hint: "mark an evidence-backed command consumption",
+    text: "API ->> API: CommandName\nsemantic command consume CommandName",
+  },
+  {
     label: "Response",
     hint: "dashed arrow with a head",
     text: "API -->> User: Response",
@@ -141,6 +161,21 @@ export const EVENT_FLOW_SNIPPETS: EditorSnippet[] = [
     label: "Event",
     hint: "a fact others react to, with metadata",
     text: "event OrderCreated {\n  version: 1\n  domain: Orders\n}",
+  },
+  {
+    label: "Event Flow Event",
+    hint: "declare an event without inventing metadata",
+    text: "event EventName",
+  },
+  {
+    label: "Event Flow Command",
+    hint: "declare a command with explicit kind",
+    text: "event CommandName {\n  kind: command\n}",
+  },
+  {
+    label: "Message Reference / Semantic Binding",
+    hint: "bind only an established identity",
+    text: "event EventName messageRef existing-identity-id",
   },
   {
     label: "Broker",

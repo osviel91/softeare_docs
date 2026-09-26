@@ -52,6 +52,7 @@ import {
   publicationsOf,
   subscriptionsOf,
 } from "../../../src/domain/eventflow/ast";
+import { walkStatements } from "../../../src/domain/diagram/ast";
 import { diagramToSvg } from "../../../src/renderer/pipeline/diagram-to-svg";
 import { eventFlowSourceToSvg } from "../../../src/renderer/pipeline/eventflow-to-svg";
 import { buildProjectIndex } from "../../../src/domain/project/project-index";
@@ -423,6 +424,26 @@ function unbindSemanticReference(
   if (!lines[target.line].includes("messageRef")) throw invalid("The semantic occurrence is not bound.");
   lines[target.line] = lines[target.line].replace(/\s+messageRef\s+\S+/, "");
   return lines.join("\n");
+}
+
+/** Legacy leads only: naming signals are evidence to inspect, never identity. */
+async function legacySemanticCandidates(
+  toolContext: ToolContext,
+  projectIdValue: string,
+  resources: Awaited<ReturnType<ProjectCatalog["listResources"]>>,
+): Promise<Array<{ resourceId: string; path: string; label: string; evidence: string[] }>> {
+  const result: Array<{ resourceId: string; path: string; label: string; evidence: string[] }> = [];
+  for (const resource of resources.filter((entry) => entry.type === "sequence-diagram").slice(0, MAX_INDEXED_DOCUMENTS)) {
+    const { content } = await toolContext.catalog.readResource(toolContext.context, projectIdValue, resource.id);
+    const ast = analyze(content).ast;
+    for (const statement of ast ? walkStatements(ast.statements) : []) {
+      if (statement.type !== "message" || statement.semantics || statement.label.trim() === "") continue;
+      if (/(?:Event|Command)$/i.test(statement.label.trim()) || /\b(?:publish|consume|dispatch)\b/i.test(statement.label)) {
+        result.push({ resourceId: resource.id, path: resource.path, label: statement.label, evidence: ["message text or suffix signal"] });
+      }
+    }
+  }
+  return result;
 }
 
 /** The search documents for a project, reading each resource's text. */
@@ -1665,15 +1686,18 @@ export function createMcpTools(): McpTool[] {
     {
       name: "list_semantic_occurrences",
       title: "List semantic message occurrences",
-      description: "List structured Sequence occurrences and Event Flow message entities, including whether each has an authoritative explicit binding.",
+       description: "List structured Sequence occurrences and Event Flow message entities, including authoritative bindings, plus conservative legacy message-like leads. Candidate leads are evidence for inspection only, never identity.",
       inputSchema: { projectId: projectId() },
       annotations: { ...READ_ONLY, title: "List semantic message occurrences" },
       requiredPermissions: ["project:search"],
       async run(args, toolContext) {
-        const { index } = await semanticIndex(toolContext, stringArg(args, "projectId"));
+        const projectIdValue = stringArg(args, "projectId");
+        const indexed = await semanticIndex(toolContext, projectIdValue);
+        const legacyCandidates = await legacySemanticCandidates(toolContext, projectIdValue, indexed.resources);
+        const { index } = indexed;
         const occurrences = index.semanticOccurrences ?? [];
         const eventFlowMessages = index.eventFlowMessages ?? [];
-        return { text: JSON.stringify({ occurrences, eventFlowMessages }), structured: { occurrences, eventFlowMessages } };
+        return { text: JSON.stringify({ occurrences, eventFlowMessages, legacyCandidates }), structured: { occurrences, eventFlowMessages, legacyCandidates } };
       },
     },
     {

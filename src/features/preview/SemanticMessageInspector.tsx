@@ -5,6 +5,7 @@ import type { EventFlow } from "../../domain/eventflow/ast";
 import { eventsOf } from "../../domain/eventflow/ast";
 import type { ProjectIndex } from "../../domain/project/project-index";
 import { traceSemanticMessage } from "../../domain/project/semantic-message-trace";
+import { semanticMessageCandidates } from "../../domain/project/semantic-message-trace";
 
 interface Props {
   index: ProjectIndex | null;
@@ -14,6 +15,8 @@ interface Props {
   activeNodeId: string | null;
   activeSemanticMessageId?: string | null;
   onOpenResource: (resourceId: string, nodeId?: string) => void;
+  onBind?: (messageId: string, name: string, step?: number) => void;
+  onCreateIdentity?: (name: string, kind: "event" | "command", step?: number) => void;
 }
 
 /** Compact, authoritative-only cross-view details for the selected message. */
@@ -25,18 +28,36 @@ export default function SemanticMessageInspector({
   activeNodeId,
   activeSemanticMessageId,
   onOpenResource,
+  onBind,
+  onCreateIdentity,
 }: Props) {
   if (!index || !activeResourceId || !activeNodeId) return null;
   const occurrence = sequence
-    ? semanticMessagesOf(sequence).find((entry) => nodeIdOf("message", entry.range) === activeNodeId && entry.messageRef)
+    ? semanticMessagesOf(sequence).find((entry) => nodeIdOf("message", entry.range) === activeNodeId)
     : undefined;
   const event = eventFlow
-    ? eventsOf(eventFlow).find((entry) => nodeIdOf("event", entry.range) === activeNodeId && entry.messageRef)
+    ? eventsOf(eventFlow).find((entry) => nodeIdOf("event", entry.range) === activeNodeId)
     : undefined;
   const currentMessageId = occurrence?.messageRef ?? event?.messageRef;
   if (activeSemanticMessageId && currentMessageId !== activeSemanticMessageId) return null;
   const messageId = activeSemanticMessageId ?? currentMessageId;
-  if (!messageId) return null;
+  if (!messageId) {
+    const name = occurrence?.name ?? event?.name;
+    const kind = occurrence?.kind ?? event?.kind ?? "event";
+    if (!name) return null;
+    const candidates = semanticMessageCandidates(index).filter((candidate) => candidate.name === name && candidate.kind === kind);
+    const identities = (index.semanticMessages ?? []).filter((identity) => identity.name === name && identity.kind === kind);
+    return (
+      <aside className="semantic-message-inspector" aria-label="Semantic message trace" data-testid="semantic-message-inspector">
+        <div className="semantic-message-inspector__heading"><strong>{name}</strong><span>{kind} · {occurrence?.operation ?? "represented"}</span></div>
+        <div className="semantic-message-inspector__section"><span className="semantic-message-inspector__label">Semantic identity</span><span>No semantic identity</span>
+          {identities.map((identity) => <button type="button" key={identity.id} onClick={() => onBind?.(identity.id, name, occurrence?.step)}>Bind compatible identity {identity.id}</button>)}
+          {candidates.length > 0 && identities.length === 0 ? <span>Compatible names are candidates only; inspect evidence before creating an identity.</span> : null}
+          <button type="button" onClick={() => onCreateIdentity?.(name, kind, occurrence?.step)}>Create identity</button>
+        </div>
+      </aside>
+    );
+  }
   const trace = traceSemanticMessage(index, messageId);
   if (!trace.identity) return null;
   const resources = new Map(index.resources.map((resource) => [resource.id, resource]));

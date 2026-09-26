@@ -27,6 +27,7 @@ import { analyzeEventFlow } from "../src/language/eventflow/parser";
 import { effectsFor, handlersFor, resultingEventsFor } from "../src/domain/eventflow/causality";
 import { analyze } from "../src/language/analyze";
 import { semanticMessagesOf } from "../src/domain/diagram/semantic-messages";
+import { walkStatements } from "../src/domain/diagram/ast";
 import { semanticMessageCandidates, traceSemanticMessage } from "../src/domain/project/semantic-message-trace";
 
 /** What a tool handler returns before it is wrapped in an MCP result. */
@@ -957,7 +958,19 @@ export function createTools(): Tool[] {
         const index = await context.workspace.index(project);
         const occurrences = index.semanticOccurrences ?? [];
         const eventFlowMessages = index.eventFlowMessages ?? [];
-        return { text: JSON.stringify({ occurrences, eventFlowMessages }), structured: { occurrences, eventFlowMessages } };
+        const legacyCandidates = [];
+        for (const resource of await context.workspace.listResources(project)) {
+          if (resource.type !== "sequence-diagram") continue;
+          const { content } = await context.workspace.readResource(project, resource.id);
+          const ast = analyze(content).ast;
+          for (const statement of ast ? walkStatements(ast.statements) : []) {
+            if (statement.type !== "message" || statement.semantics || statement.label.trim() === "") continue;
+            if (/(?:Event|Command)$/i.test(statement.label.trim()) || /\b(?:publish|consume|dispatch)\b/i.test(statement.label)) {
+              legacyCandidates.push({ resourceId: resource.id, path: resource.path, label: statement.label, evidence: ["message text or suffix signal"] });
+            }
+          }
+        }
+        return { text: JSON.stringify({ occurrences, eventFlowMessages, legacyCandidates }), structured: { occurrences, eventFlowMessages, legacyCandidates } };
       },
     },
     {

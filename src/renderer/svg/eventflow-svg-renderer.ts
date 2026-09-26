@@ -341,16 +341,16 @@ function renderEventBox(
     : "eventflow-event";
   const semantic = row.messageRef
     ? ` data-semantic-message-id="${escapeXml(row.messageRef)}" tabindex="0" role="button" aria-label="Inspect semantic message ${escapeXml(row.event)}"`
-    : "";
+    : ` data-semantic-message-name="${escapeXml(row.event)}" tabindex="0" role="button" aria-label="Inspect unbound semantic message ${escapeXml(row.event)}"`;
   return (
-    boxRect(
+    `<g${nodeIdAttribute(row.eventNodeId)}${semantic}>${boxRect(
       row.eventBox,
       className,
       palette.eventFill,
       palette.ink,
-      row.eventNodeId,
+      undefined,
       row.declaredOnly,
-    ).replace("/>", `${semantic}/>`)+ boxText(row.eventBox, row.event, 12, palette.ink, "600")
+    )}${boxText(row.eventBox, row.event, 12, palette.ink, "600")}</g>`
   );
 }
 

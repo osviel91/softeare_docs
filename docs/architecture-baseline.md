@@ -168,6 +168,23 @@ architecture.
   such as flow, catalogue, topology, or matrix views. Those views do not create
   new resource kinds or representations.
 
+### Dual Viewer Foundation
+
+- Comparison mode is a shell composition over two ordinary viewer instances. It
+  does not introduce a comparison renderer or a second parsing/layout pipeline.
+- Each comparison pane is a viewer session identified by its resource reference
+  and owns its camera, Event Flow projection, node and semantic selection, note
+  expansion, inspector, and Trace Explorer state. The current editor remains the
+  only editable document; comparison is inspection-oriented.
+- The pane resource reference is intentionally independent of visibility or
+  publication. The current catalog supplies both panes, while a future private
+  resource source can implement the same reference contract without changing the
+  dual-view model.
+- Semantic identity navigation remains exact and pane-local. Comparison does not
+  synchronize panes, infer matches, create relationships, or calculate diffs.
+  Those are future semantic comparison responsibilities outside
+  `DiagramViewport`.
+
 ## Known Debt, Not H01 Work
 
 - `ARCHITECTURE.md` contains historical phase and ADR wording that does not

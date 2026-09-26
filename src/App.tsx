@@ -117,6 +117,7 @@ import OutlinePanel from "./features/outline/OutlinePanel";
 import EventFlowPreview, {
   type EventFlowView,
 } from "./features/preview/EventFlowPreview";
+import ComparisonView from "./features/preview/ComparisonView";
 import { renderEventFlowDocument } from "./renderer/pipeline/eventflow-to-svg";
 import { analyzeEventFlow } from "./language/eventflow/parser";
 import { eventsOf } from "./domain/eventflow/ast";
@@ -406,6 +407,8 @@ export default function App() {
   const [editorWidth, setEditorWidth] = useState<number | null>(null);
   const [explorerCollapsed, setExplorerCollapsed] = useState(false);
   const [previewMaximized, setPreviewMaximized] = useState(false);
+  const [comparisonOpen, setComparisonOpen] = useState(false);
+  const [comparisonMaximizedPane, setComparisonMaximizedPane] = useState<"a" | "b" | null>(null);
   const [eventFlowView, setEventFlowView] = useState<EventFlowView>("flow");
   const eventFlowViewTouched = useRef(false);
   const [resizing, setResizing] = useState<"explorer" | "editor" | null>(null);
@@ -536,13 +539,15 @@ export default function App() {
   );
 
   useEffect(() => {
-    if (!previewMaximized) return;
+    if (!previewMaximized && !comparisonMaximizedPane) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setPreviewMaximized(false);
+      if (event.key !== "Escape") return;
+      setPreviewMaximized(false);
+      setComparisonMaximizedPane(null);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [previewMaximized]);
+  }, [comparisonMaximizedPane, previewMaximized]);
 
   /**
    * Open a local folder (replacing the active repository) or, when a folder is
@@ -2581,6 +2586,19 @@ export default function App() {
               </span>
               <span className="switch__label">Auto-update</span>
             </label>
+            <button
+              type="button"
+              className="button"
+              data-testid="compare-mode-button"
+              aria-label="Compare current diagram with another diagram"
+              disabled={!selectedDiagram}
+              onClick={() => {
+                setComparisonOpen(true);
+                setComparisonMaximizedPane(null);
+              }}
+            >
+              Compare
+            </button>
           </>
         ) : (
           <span className="app__page-title" data-testid="docs-page-title">
@@ -2664,7 +2682,7 @@ export default function App() {
         <>
           <main
             ref={workspaceRef}
-            className={`app__workspace${previewMaximized ? " app__workspace--preview-maximized" : ""}`}
+            className={`app__workspace${previewMaximized || comparisonMaximizedPane ? " app__workspace--preview-maximized" : ""}`}
           >
             {explorerCollapsed ? (
               <button
@@ -3068,7 +3086,23 @@ export default function App() {
                         : "Diagram preview"
                   }
                 >
-                  {noteMode ? (
+                  {comparisonOpen && selectedDiagram ? (
+                    <ComparisonView
+                      primary={selectedDiagram}
+                      primarySource={source}
+                      diagrams={allDiagrams}
+                      index={index}
+                      resourceIdForFile={resourceIdForFile}
+                      onExit={() => {
+                        setComparisonOpen(false);
+                        setComparisonMaximizedPane(null);
+                      }}
+                      onOpenResource={openResourceById}
+                      maximizedPane={comparisonMaximizedPane}
+                      onMaximize={setComparisonMaximizedPane}
+                      onRestore={() => setComparisonMaximizedPane(null)}
+                    />
+                  ) : noteMode ? (
                     <MarkdownView
                       markdown={source}
                       resolveWikiLink={resolveWikiLink}

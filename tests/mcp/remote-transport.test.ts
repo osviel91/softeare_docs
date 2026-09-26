@@ -316,12 +316,10 @@ describe("the remote MCP service over Streamable HTTP", () => {
         projectId,
         path: "semantic-block-trace.eventseq",
         content: [
-          "event ExampleEvent {",
-          "  messageRef: semantic-example",
+          "event ExampleEvent { messageRef semantic-example",
           "}",
-          "event SendEmailCommand {",
+          "event SendEmailCommand { messageRef semantic-command",
           "  kind: command",
-          "  messageRef: semantic-command",
           "}",
         ].join("\n"),
       },
@@ -339,19 +337,30 @@ describe("the remote MCP service over Streamable HTTP", () => {
     });
     expect(command.isError, JSON.stringify(command)).toBeFalsy();
 
-    const trace = await client.callTool({ name: "get_semantic_message", arguments: { projectId, messageId: "semantic-example" } });
+    await client.close();
+    const reloaded = await connect(token);
+    const trace = await reloaded.callTool({ name: "get_semantic_message", arguments: { projectId, messageId: "semantic-example" } });
     expect(structured(trace).occurrences).toHaveLength(1);
     expect(structured(trace).eventFlowEntities).toEqual([
       expect.objectContaining({
         projectId,
         resourcePath: "semantic-block-trace.eventseq",
         nodeId: "event@0:0",
+        kind: "event",
         messageRef: "semantic-example",
       }),
     ]);
-    const commandTrace = await client.callTool({ name: "get_semantic_message", arguments: { projectId, messageId: "semantic-command" } });
-    expect(structured(commandTrace).eventFlowEntities).toHaveLength(1);
-    await client.close();
+    const commandTrace = await reloaded.callTool({ name: "get_semantic_message", arguments: { projectId, messageId: "semantic-command" } });
+    expect(structured(commandTrace).eventFlowEntities).toEqual([
+      expect.objectContaining({
+        projectId,
+        resourcePath: "semantic-block-trace.eventseq",
+        nodeId: "event@2:0",
+        kind: "command",
+        messageRef: "semantic-command",
+      }),
+    ]);
+    await reloaded.close();
   });
 
   it("lets an external client discover, create, validate and rediscover typed complementary views", async () => {

@@ -112,6 +112,21 @@ describe("event-flow parser", () => {
       { name: "SendEmailCommand", messageRef: "msg-command", kind: "command" },
     ]);
   });
+  it("parses the persisted inline messageRef form", () => {
+    const result = analyzeEventFlow([
+      "event MslTransactionCreatedEvent { messageRef a7d03b12-0001-4a11-8111-000000000001",
+      "  provenance: internal",
+      "}",
+      "event SendEmailCommand { messageRef a7d03b12-0003-4a11-8111-000000000003",
+      "  kind: command",
+      "}",
+    ].join("\n"));
+    expect(eventsOf(result.flow)).toMatchObject([
+      { name: "MslTransactionCreatedEvent", messageRef: "a7d03b12-0001-4a11-8111-000000000001" },
+      { name: "SendEmailCommand", kind: "command", messageRef: "a7d03b12-0003-4a11-8111-000000000003" },
+    ]);
+    expect(result.diagnostics.every((diagnostic) => diagnostic.severity !== "error")).toBe(true);
+  });
   it("parses the declarations of a document", () => {
     const flow = parse(FLOW);
     expect(flow.title?.value).toBe("Order Processing");

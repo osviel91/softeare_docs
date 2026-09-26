@@ -524,6 +524,22 @@ export function parseEventFlow(source: string): EventFlowParseResult {
         if (opensMetadata) {
           metadataTarget = declaration;
           metadataKeys = new Set();
+          // Persisted Event Flow documents use the compact form
+          // `event Name { messageRef id`, before the remaining metadata lines.
+          if (tokens[3]?.value.toLowerCase() === "messageref") {
+            const reference = tokens[4];
+            if (reference?.type === "word") {
+              declaration.messageRef = reference.value;
+              declaration.metadata.push({
+                key: "messageRef",
+                value: reference.value,
+                range: lineRange(line),
+              });
+              metadataKeys.add("messageref");
+            } else {
+              diagnostics.push(lineDiagnostic(line, "messageRef requires a stable semantic message id", EventFlowDiagnosticCode.MalformedDeclaration));
+            }
+          }
         }
         continue;
       }

@@ -206,7 +206,7 @@ describe("analyzeResource", () => {
   it("carries Event Flow semantic bindings into the resource analysis", () => {
     const analysis = analyzeResource(
       { id: "flow", projectId: "p", path: "flow.eventseq", type: "event-flow", title: "flow.eventseq" },
-      "event Created {\n  messageRef: msg-created\n}\n",
+      "event Created { messageRef msg-created\n}\n",
     );
     expect(analysis.eventFlowMessages).toEqual([
       expect.objectContaining({
@@ -219,6 +219,26 @@ describe("analyzeResource", () => {
         nodeId: "event@0:0",
       }),
     ]);
+  });
+
+  it("retains event and command bindings in the project index", () => {
+    const analysis = analyzeResource(
+      { id: "flow", projectId: "p", path: "flow.eventseq", type: "event-flow", title: "flow.eventseq" },
+      "event Created { messageRef msg-created\n}\nevent SendEmailCommand { messageRef msg-command\n  kind: command\n}\n",
+    );
+    expect(analysis.eventFlowMessages).toEqual([
+      expect.objectContaining({ name: "Created", kind: "event", messageRef: "msg-created" }),
+      expect.objectContaining({ name: "SendEmailCommand", kind: "command", messageRef: "msg-command" }),
+    ]);
+    const built = createProjectIndexer().update(
+      "p",
+      [{ descriptor: analysis.descriptor, content: "event Created { messageRef msg-created\n}\nevent SendEmailCommand { messageRef msg-command\n  kind: command\n}\n" }],
+      { ...metadata(), semanticMessages: [
+        { id: "msg-created", name: "Created", kind: "event" },
+        { id: "msg-command", name: "SendEmailCommand", kind: "command" },
+      ] },
+    );
+    expect((built.eventFlowMessages ?? []).map((entry) => entry.messageRef)).toEqual(["msg-created", "msg-command"]);
   });
 
   it("fingerprints content so an unchanged file is not re-analysed", () => {

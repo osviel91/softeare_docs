@@ -446,6 +446,13 @@ export class ServerApiClient {
     return body.messages ?? [];
   }
 
+  async createSemanticMessage(
+    projectId: string,
+    input: { name: string; kind: "event" | "command" },
+  ): Promise<{ message: SemanticMessageIdentity; manifestRevision: number }> {
+    return this.request("POST", `/api/projects/${encodeURIComponent(projectId)}/semantic-messages`, input);
+  }
+
   async updateSemanticMessages(
     projectId: string,
     messages: SemanticMessageIdentity[],

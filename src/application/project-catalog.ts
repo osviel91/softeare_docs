@@ -58,6 +58,7 @@ import {
 } from "../domain/workspace/metadata";
 import { validateResourceRelationship } from "../domain/workspace/resource-relationship";
 import { isOk } from "../shared/result/result";
+import { defaultIdFactory } from "../shared/ids/ids";
 
 /**
  * A resource as the API and MCP surface it: identity, path, type, revision.
@@ -230,6 +231,11 @@ export interface ProjectCatalog {
     context: ApplicationContext,
     projectId: string,
   ): Promise<SemanticMessageIdentity[]>;
+  createSemanticMessage(
+    context: ApplicationContext,
+    projectId: string,
+    input: { name: string; kind: "event" | "command" },
+  ): Promise<{ message: SemanticMessageIdentity; manifestRevision: number }>;
   updateSemanticMessages(
     context: ApplicationContext,
     projectId: string,
@@ -660,6 +666,28 @@ export function createProjectCatalog(
       await requirePermission(context, projectId, "project:read");
       const metadata = await readManifest(projectId);
       return metadata.semanticMessages ?? [];
+    },
+
+    async createSemanticMessage(context, projectId, input) {
+      await requirePermission(context, projectId, "project:update");
+      const current = await readManifest(projectId);
+      const revision = current.manifestRevision ?? 0;
+      const existing = current.semanticMessages ?? [];
+      let id = defaultIdFactory();
+      while (existing.some((message) => message.id === id)) id = defaultIdFactory();
+      const message: SemanticMessageIdentity = { id, name: input.name, kind: input.kind };
+      const { raw, ...metadata } = current;
+      const next: ProjectMetadata = {
+        ...metadata,
+        semanticMessages: [...existing, message],
+        manifestRevision: revision + 1,
+      };
+      const store = storage(projectId);
+      if (!store.writeIfUnchanged) throw new ApplicationError("internal", "This deployment cannot safely mutate the project manifest.");
+      const written = await store.writeIfUnchanged("project.json", raw, serializeProjectMetadata(next));
+      if (!isOk(written)) throw new ApplicationError("conflict", written.error.message);
+      await writeAudit(context, { action: "project.updated", projectId, detail: { kind: "semantic-message-created", messageId: id, manifestRevision: revision + 1 } });
+      return { message, manifestRevision: revision + 1 };
     },
 
     async updateSemanticMessages(context, projectId, messages, expectedManifestRevision) {

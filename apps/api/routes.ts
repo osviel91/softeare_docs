@@ -583,6 +583,16 @@ export function createRouter(dependencies: AppDependencies): Router {
     }),
   );
 
+  router.post("/api/projects/:projectId/semantic-messages", async (request, params) =>
+    guarded(correlationId(request), async () => {
+      const context = await contextOf(request);
+      const body = parseJsonBody(request.body);
+      if (typeof body.name !== "string" || body.name.trim() === "") return errorResponse(422, "invalid", "name must be a non-empty string.");
+      if (body.kind !== "event" && body.kind !== "command") return errorResponse(422, "invalid", "kind must be event or command.");
+      return json(201, await catalog.createSemanticMessage(context, params.projectId, { name: body.name, kind: body.kind }));
+    }),
+  );
+
   router.put("/api/projects/:projectId/semantic-messages", async (request, params) =>
     guarded(correlationId(request), async () => {
       const context = await contextOf(request);

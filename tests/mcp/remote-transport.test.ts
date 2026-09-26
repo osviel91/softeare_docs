@@ -228,37 +228,38 @@ describe("the remote MCP service over Streamable HTTP", () => {
 
     const created = await client.callTool({
       name: "create_semantic_message",
-      arguments: { projectId, id: "semantic-created", name: "Created", kind: "event", expectedManifestRevision: 0 },
+      arguments: { projectId, name: "Created", kind: "event" },
     });
     expect(created.isError, JSON.stringify(created)).toBeFalsy();
+    const createdMessageId = (structured(created).message as { id: string }).id;
 
     const sequenceResource = structured(sequence).resource as { id: string; revision: number };
     const flowResource = structured(flow).resource as { id: string; revision: number };
     const boundProducer = await client.callTool({
       name: "bind_semantic_message",
-      arguments: { projectId, resource: sequenceResource.id, messageId: "semantic-created", name: "Created", step: 1, expectedRevision: sequenceResource.revision },
+      arguments: { projectId, resource: sequenceResource.id, messageId: createdMessageId, name: "Created", step: 1, expectedRevision: sequenceResource.revision },
     });
     expect(boundProducer.isError).toBeFalsy();
     const boundConsumer = await client.callTool({
       name: "bind_semantic_message",
-      arguments: { projectId, resource: sequenceResource.id, messageId: "semantic-created", name: "Created", step: 2, expectedRevision: structured(boundProducer).resource.revision },
+      arguments: { projectId, resource: sequenceResource.id, messageId: createdMessageId, name: "Created", step: 2, expectedRevision: structured(boundProducer).resource.revision },
     });
     expect(boundConsumer.isError).toBeFalsy();
     const boundFlow = await client.callTool({
       name: "bind_semantic_message",
-      arguments: { projectId, resource: flowResource.id, messageId: "semantic-created", name: "Created", expectedRevision: flowResource.revision },
+      arguments: { projectId, resource: flowResource.id, messageId: createdMessageId, name: "Created", expectedRevision: flowResource.revision },
     });
     expect(boundFlow.isError).toBeFalsy();
 
     const listedMessages = await client.callTool({ name: "list_semantic_messages", arguments: { projectId } });
     expect(structured(listedMessages).messages).toEqual([
-      { id: "semantic-created", name: "Created", kind: "event" },
+      { id: createdMessageId, name: "Created", kind: "event" },
     ]);
-    const trace = await client.callTool({ name: "get_semantic_message", arguments: { projectId, messageId: "semantic-created" } });
-    expect(structured(trace).identity).toEqual(expect.objectContaining({ id: "semantic-created", kind: "event" }));
+    const trace = await client.callTool({ name: "get_semantic_message", arguments: { projectId, messageId: createdMessageId } });
+    expect(structured(trace).identity).toEqual(expect.objectContaining({ id: createdMessageId, kind: "event" }));
     expect(structured(trace).occurrences).toHaveLength(2);
     expect(structured(trace).eventFlowEntities).toHaveLength(1);
-    expect(structured(trace).eventFlowEntities[0]).toEqual(expect.objectContaining({ messageRef: "semantic-created", name: "Created" }));
+    expect(structured(trace).eventFlowEntities[0]).toEqual(expect.objectContaining({ messageRef: createdMessageId, name: "Created" }));
     expect(structured(trace).downstream).toEqual(expect.arrayContaining([expect.objectContaining({ handler: "CreatedHandler", messages: ["Followup"] })]));
     const candidates = await client.callTool({ name: "find_semantic_message_candidates", arguments: { projectId } });
     expect(structured(candidates).candidates).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Created", authoritative: true })]));
@@ -270,16 +271,16 @@ describe("the remote MCP service over Streamable HTTP", () => {
     const refreshed = await connect(token);
     const persisted = await refreshed.callTool({ name: "list_semantic_messages", arguments: { projectId } });
     expect(structured(persisted).messages).toEqual([
-      { id: "semantic-created", name: "Created", kind: "event" },
+      { id: createdMessageId, name: "Created", kind: "event" },
     ]);
-    const persistedTrace = await refreshed.callTool({ name: "get_semantic_message", arguments: { projectId, messageId: "semantic-created" } });
+    const persistedTrace = await refreshed.callTool({ name: "get_semantic_message", arguments: { projectId, messageId: createdMessageId } });
     expect(structured(persistedTrace).eventFlowEntities).toHaveLength(1);
     const persistedValidation = await refreshed.callTool({ name: "validate_project", arguments: { projectId } });
     expect(structured(persistedValidation).diagnostics).not.toEqual(expect.arrayContaining([
       expect.objectContaining({ code: "project.dangling-semantic-message-ref" }),
     ]));
     await refreshed.close();
-    const protectedDelete = await client.callTool({ name: "delete_semantic_message", arguments: { projectId, messageId: "semantic-created", expectedManifestRevision: 1 } });
+    const protectedDelete = await client.callTool({ name: "delete_semantic_message", arguments: { projectId, messageId: createdMessageId, expectedManifestRevision: 1 } });
     expect(protectedDelete.isError).toBe(true);
     const resources = structured(await client.callTool({ name: "list_resources", arguments: { projectId } })).resources as Array<{ id: string; path: string; revision: number }>;
     const sequenceCurrent = resources.find((resource) => resource.path === "semantic-trace.seq")!;
@@ -289,7 +290,7 @@ describe("the remote MCP service over Streamable HTTP", () => {
     const unboundFlow = await client.callTool({ name: "unbind_semantic_message", arguments: { projectId, resource: flowCurrent.id, name: "Created", expectedRevision: flowCurrent.revision } });
     expect(unboundConsumer.isError).toBeFalsy();
     expect(unboundFlow.isError).toBeFalsy();
-    const deleted = await client.callTool({ name: "delete_semantic_message", arguments: { projectId, messageId: "semantic-created", expectedManifestRevision: 1 } });
+    const deleted = await client.callTool({ name: "delete_semantic_message", arguments: { projectId, messageId: createdMessageId, expectedManifestRevision: 1 } });
     expect(deleted.isError).toBeFalsy();
     await client.close();
   });

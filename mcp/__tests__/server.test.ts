@@ -230,6 +230,22 @@ describe("McpServer", () => {
     expect(response.error?.message).toContain("Unknown tool");
   });
 
+  it("creates semantic identities with server-owned ids", async () => {
+    await start();
+    await callTool("create_project", { name: "Payments" });
+
+    const result = await callTool("create_semantic_message", {
+      project: "Payments",
+      name: "OrderCreated",
+      kind: "event",
+    });
+    const created = result.structuredContent as {
+      message: { id: string; name: string; kind: string };
+    };
+    expect(created.message).toMatchObject({ name: "OrderCreated", kind: "event" });
+    expect(created.message.id).toMatch(/^[0-9a-f-]{36}$/);
+  });
+
   it("returns a protocol error for an unknown method", async () => {
     await start();
     const response = await request("not/a/method");

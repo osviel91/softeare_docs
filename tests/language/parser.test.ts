@@ -23,6 +23,15 @@ describe("parse — valid input", () => {
       semantics: { name: "Created", kind: "event", operation: "publish", messageRef: "msg-created" },
     });
   });
+  it("parses UUID semantic message references", () => {
+    const { ast, diagnostics } = parse(
+      "participant A\nparticipant B\nA -> B: created\nsemantic event publish Created messageRef a7d03b12-0001-4a11-8111-000000000001\n",
+    );
+    expect(diagnostics).toEqual([]);
+    expect(ast?.statements.at(-1)).toMatchObject({
+      semantics: { messageRef: "a7d03b12-0001-4a11-8111-000000000001" },
+    });
+  });
   it("parses the login example into the expected AST", () => {
     const { ast, diagnostics } = parse(LOGIN_EXAMPLE);
     expect(diagnostics).toEqual([]);

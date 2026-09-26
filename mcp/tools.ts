@@ -1026,14 +1026,13 @@ export function createTools(): Tool[] {
       definition: {
         name: "create_semantic_message",
         title: "Create semantic message identity",
-        description: "Create or replace an explicit project-scoped event or command identity. This never binds equal names automatically.",
-        inputSchema: objectSchema({ project: stringProp("Project id or name."), id: stringProp("Stable project-scoped id."), name: stringProp("Display name."), kind: enumProp(["event", "command"], "Architectural message kind.") }, ["id", "name", "kind"]),
+        description: "Create an explicit project-scoped event or command identity. The server generates and returns the stable id; callers must never invent one. This never binds equal names automatically.",
+        inputSchema: objectSchema({ project: stringProp("Project id or name."), name: stringProp("Display name."), kind: enumProp(["event", "command"], "Architectural message kind.") }, ["name", "kind"]),
         annotations: { ...write, title: "Create semantic message identity" },
       },
       async run(args, context) {
         const project = await context.workspace.resolveProject(optionalString(args, "project"));
-        const message = { id: requiredString(args, "id"), name: requiredString(args, "name"), kind: requiredString(args, "kind") as "event" | "command" };
-        await context.workspace.saveSemanticMessage(project, message);
+        const message = await context.workspace.createSemanticMessage(project, { name: requiredString(args, "name"), kind: requiredString(args, "kind") as "event" | "command" });
         return { text: `Created semantic message ${message.id}.`, structured: { message } };
       },
     },

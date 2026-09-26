@@ -269,14 +269,25 @@ function lexLine(
       continue;
     }
 
-    // A run of digits is a number token. Identifiers may contain digits after
-    // their first character, so this only applies at the start of a token.
+    // Keep plain numbers numeric, but allow digit-leading stable ids such as
+    // UUIDs to remain one identifier token for semantic message references.
     if (ch >= "0" && ch <= "9") {
       let j = i + 1;
-      while (j < n && line[j] >= "0" && line[j] <= "9") j++;
+      while (j < n && isIdentifierPart(line[j])) j++;
+      const word = line.slice(i, j);
+      if (/[A-Za-z_.-]/.test(word)) {
+        tokens.push({
+          type: TokenType.Identifier,
+          value: word,
+          start,
+          end: { line: lineIndex, column: j },
+        });
+        i = j;
+        continue;
+      }
       tokens.push({
         type: TokenType.Number,
-        value: line.slice(i, j),
+        value: word,
         start,
         end: { line: lineIndex, column: j },
       });

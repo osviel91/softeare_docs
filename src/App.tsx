@@ -117,6 +117,7 @@ import EventFlowPreview, {
 } from "./features/preview/EventFlowPreview";
 import { renderEventFlowDocument } from "./renderer/pipeline/eventflow-to-svg";
 import { analyzeEventFlow } from "./language/eventflow/parser";
+import { eventsOf } from "./domain/eventflow/ast";
 import {
   eventFlowNodeAtPosition,
   eventFlowNodeById,
@@ -148,6 +149,7 @@ import {
   isResourceSymbolKind,
 } from "./domain/project/project-index";
 import { nodeIdAtOffset, nodeRangeById } from "./domain/diagram/node-id";
+import { semanticMessagesOf } from "./domain/diagram/semantic-messages";
 import { messageStepNumbers } from "./domain/diagram/step-numbers";
 import { collectParticipantMentions } from "./domain/diagram/participant-mentions";
 import { collectEventFlowMentions } from "./domain/eventflow/mentions";
@@ -192,6 +194,8 @@ import {
   useResourceProposalCount,
 } from "./features/proposals/project-proposals";
 import type { ResourceMetadata } from "./domain/workspace/resource-metadata";
+import { defaultIdFactory } from "./shared/ids/ids";
+import { createEmptyMetadata } from "./domain/workspace/metadata";
 
 const PRODUCT_NAME = "Software Docs Manager";
 
@@ -1520,6 +1524,54 @@ export default function App() {
       if (nodeId) setActiveNodeId(nodeId);
     },
     [index],
+  );
+
+  const updateSemanticOccurrence = useCallback(
+    async (messageId: string, name: string, step?: number): Promise<void> => {
+      if (!selectedProjectId || !selectedDiagram) return;
+      const line = isEventFlow
+        ? eventFlow
+          ? eventsOf(eventFlow).find((entry) => entry.name === name)?.range.start.line
+          : undefined
+        : ast && step !== undefined
+          ? semanticMessagesOf(ast).find((entry) => entry.name === name && entry.step === step)?.range.start.line
+          : undefined;
+      const lineIndex = line === undefined ? undefined : isEventFlow ? line : line + 1;
+      if (lineIndex === undefined) return;
+      const lines = source.split("\n");
+      if (lines[lineIndex]?.includes("messageRef")) return;
+      lines[lineIndex] += ` messageRef ${messageId}`;
+      updateActiveSource(lines.join("\n"));
+      setActiveSemanticMessageId(messageId);
+    },
+    [ast, eventFlow, isEventFlow, selectedDiagram, selectedProjectId, source, updateActiveSource],
+  );
+
+  const createAndBindSemanticMessage = useCallback(
+    async (name: string, kind: "event" | "command", step?: number): Promise<void> => {
+      if (!selectedProjectId) return;
+      try {
+        const created = workspaceMode === "server"
+          ? await apiClient.createSemanticMessage(selectedProjectId, { name, kind })
+          : await (async () => {
+              const current = await activeRepo.readProjectMetadata(selectedProjectId);
+              if (!isOk(current)) throw current.error;
+              const existing = current.value ?? createEmptyMetadata();
+              let id = defaultIdFactory();
+              while ((existing.semanticMessages ?? []).some((message) => message.id === id)) id = defaultIdFactory();
+              const message = { id, name, kind };
+              const next = { ...existing, semanticMessages: [...(existing.semanticMessages ?? []), message], manifestRevision: (existing.manifestRevision ?? 0) + 1 };
+              const written = await activeRepo.writeProjectMetadata(selectedProjectId, next);
+              if (!isOk(written)) throw written.error;
+              return { message, manifestRevision: next.manifestRevision ?? 0 };
+            })();
+        await updateSemanticOccurrence(created.message.id, name, step);
+        await refreshWorkspace();
+      } catch (error) {
+        console.error(error);
+      }
+    },
+    [activeRepo, apiClient, refreshWorkspace, selectedProjectId, updateSemanticOccurrence, workspaceMode],
   );
 
   useEffect(() => {
@@ -3020,7 +3072,7 @@ export default function App() {
                           setPreviewMaximized((value) => !value)
                         }
                       />
-                      <SemanticMessageInspector index={index} eventFlow={eventFlow} activeResourceId={activeResourceId} activeNodeId={activeNodeId} activeSemanticMessageId={activeSemanticMessageId} onOpenResource={openResourceById} />
+                      <SemanticMessageInspector index={index} eventFlow={eventFlow} activeResourceId={activeResourceId} activeNodeId={activeNodeId} activeSemanticMessageId={activeSemanticMessageId} onOpenResource={openResourceById} onBind={updateSemanticOccurrence} onCreateIdentity={createAndBindSemanticMessage} />
                     </>
                   ) : (
                     <>
@@ -3038,7 +3090,7 @@ export default function App() {
                           setPreviewMaximized((value) => !value)
                         }
                       />
-                      <SemanticMessageInspector index={index} sequence={ast} activeResourceId={activeResourceId} activeNodeId={activeNodeId} activeSemanticMessageId={activeSemanticMessageId} onOpenResource={openResourceById} />
+                      <SemanticMessageInspector index={index} sequence={ast} activeResourceId={activeResourceId} activeNodeId={activeNodeId} activeSemanticMessageId={activeSemanticMessageId} onOpenResource={openResourceById} onBind={updateSemanticOccurrence} onCreateIdentity={createAndBindSemanticMessage} />
                     </>
                   )}
                 </section>

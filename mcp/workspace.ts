@@ -72,6 +72,7 @@ import {
 } from "../src/domain/workspace/resource-relationship";
 import { ensureMarkdownExtension } from "../src/domain/workspace/note";
 import { createEmptyMetadata } from "../src/domain/workspace/metadata";
+import { defaultIdFactory } from "../src/shared/ids/ids";
 import type {
   DiagramFile,
   NoteFile,
@@ -508,6 +509,16 @@ export class DocumentationWorkspace {
     const snapshot = await this.snapshot(project);
     const existing = snapshot.metadata.semanticMessages?.find((entry) => entry.id === message.id);
     if (existing && existing.kind !== message.kind) throw new Error(`Semantic message "${message.id}" cannot change kind.`);
+    unwrap(await (await this.workspaceOf(project)).repo.writeProjectMetadata(project.id, upsertSemanticMessage(snapshot.metadata, message)));
+    return message;
+  }
+
+  async createSemanticMessage(project: Project, input: { name: string; kind: "event" | "command" }): Promise<SemanticMessageIdentity> {
+    const snapshot = await this.snapshot(project);
+    const existing = snapshot.metadata.semanticMessages ?? [];
+    let id = defaultIdFactory();
+    while (existing.some((message) => message.id === id)) id = defaultIdFactory();
+    const message = { id, ...input };
     unwrap(await (await this.workspaceOf(project)).repo.writeProjectMetadata(project.id, upsertSemanticMessage(snapshot.metadata, message)));
     return message;
   }

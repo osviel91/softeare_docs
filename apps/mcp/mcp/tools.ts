@@ -1715,17 +1715,14 @@ export function createMcpTools(): McpTool[] {
     {
       name: "create_semantic_message",
       title: "Create semantic message identity",
-      description: "Create an explicit project-scoped event or command identity. This operation never infers bindings from equal names.",
-      inputSchema: { projectId: projectId(), id: z.string().min(1), name: z.string().min(1), kind: z.enum(["event", "command"]), expectedManifestRevision: z.number().int().min(0).optional() },
+      description: "Create an explicit project-scoped event or command identity. The server generates the stable id and returns it; callers must never invent an id. This operation never infers bindings from equal names.",
+      inputSchema: { projectId: projectId(), name: z.string().min(1), kind: z.enum(["event", "command"]) },
       annotations: { ...WRITE, title: "Create semantic message identity" },
       requiredPermissions: ["project:update"],
       async run(args, toolContext) {
         const id = stringArg(args, "projectId");
-        const messages = await toolContext.catalog.listSemanticMessages(toolContext.context, id);
-        const message = { id: stringArg(args, "id"), name: stringArg(args, "name"), kind: args.kind as "event" | "command" };
-        if (messages.some((entry) => entry.id === message.id)) throw invalid(`Semantic message "${message.id}" already exists.`);
-        const result = await toolContext.catalog.updateSemanticMessages(toolContext.context, id, [...messages, message], numberArg(args, "expectedManifestRevision") ?? 0);
-        return { text: `Created semantic message ${message.id}.`, structured: { message, manifestRevision: result.manifestRevision } };
+        const result = await toolContext.catalog.createSemanticMessage(toolContext.context, id, { name: stringArg(args, "name"), kind: args.kind as "event" | "command" });
+        return { text: `Created semantic message ${result.message.id}.`, structured: result };
       },
     },
     {

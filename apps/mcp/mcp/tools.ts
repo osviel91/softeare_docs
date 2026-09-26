@@ -60,6 +60,7 @@ import { analyzeResource } from "../../../src/domain/project/resource-analysis";
 import { validateProject } from "../../../src/domain/project/validate";
 import { semanticMessagesOf } from "../../../src/domain/diagram/semantic-messages";
 import { semanticMessageCandidates, traceSemanticMessage } from "../../../src/domain/project/semantic-message-trace";
+import { traceArchitectureQuery } from "../../../src/domain/project/architecture-trace";
 import {
   createEmptyMetadata,
   type ProjectMetadata,
@@ -1681,6 +1682,46 @@ export function createMcpTools(): McpTool[] {
         }
         const result = { ...trace, downstream };
         return { text: JSON.stringify(result), structured: result };
+      },
+    },
+    {
+      name: "trace_architecture",
+      title: "Trace architecture",
+      description: "Trace authoritative architecture upstream, downstream, or both from a semantic message identity or an exact indexed occurrence. Use resource, name, and optional step when no messageId is available; unbound and legacy starts return structured candidate or unknown resolution instead of inferred connections.",
+      inputSchema: {
+        projectId: projectId(),
+        messageId: z.string().min(1).optional(),
+        resource: z.string().min(1).optional(),
+        name: z.string().min(1).optional(),
+        step: z.number().int().min(1).optional(),
+        direction: z.enum(["upstream", "downstream", "both"]).optional(),
+        maxDepth: z.number().int().min(0).max(32).optional(),
+        maxNodes: z.number().int().min(1).max(5000).optional(),
+        includeCandidates: z.boolean().optional(),
+        includeRecovery: z.boolean().optional(),
+      },
+      annotations: { ...READ_ONLY, title: "Trace architecture" },
+      requiredPermissions: ["project:search"],
+      async run(args, toolContext) {
+        const projectIdValue = stringArg(args, "projectId");
+        const indexed = await semanticIndex(toolContext, projectIdValue);
+        const messageId = typeof args.messageId === "string" ? args.messageId : undefined;
+        const resource = typeof args.resource === "string" ? args.resource : undefined;
+        const name = typeof args.name === "string" ? args.name : undefined;
+        if (messageId && (resource || name)) throw invalid("Provide messageId or resource and name, not both.");
+        const start = messageId
+          ? { messageId }
+          : resource && name
+            ? { resourceId: (await resolveResource(toolContext, projectIdValue, resource)).id, name, ...(args.step === undefined ? {} : { step: numberArg(args, "step") }) }
+            : (() => { throw invalid("Provide messageId or both resource and name."); })();
+        const result = traceArchitectureQuery(indexed.index, start, {
+          direction: args.direction as "upstream" | "downstream" | "both" | undefined,
+          maxDepth: numberArg(args, "maxDepth"),
+          maxNodes: numberArg(args, "maxNodes"),
+          includeCandidates: typeof args.includeCandidates === "boolean" ? args.includeCandidates : undefined,
+          includeRecovery: typeof args.includeRecovery === "boolean" ? args.includeRecovery : undefined,
+        });
+        return { text: JSON.stringify(result), structured: { ...result } };
       },
     },
     {

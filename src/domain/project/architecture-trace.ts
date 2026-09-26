@@ -112,6 +112,23 @@ export interface TraceArchitectureOptions {
   includeRecovery?: boolean;
 }
 
+export type TraceQueryStart =
+  | { messageId: string }
+  | { resourceId: ResourceId; name: string; step?: number };
+
+export interface TraceQueryResolution {
+  status: "authoritative" | "candidate" | "unknown";
+  messageId?: string;
+  source?: TraceSource;
+  candidates: TraceResolutionCandidate[];
+  reason?: "unbound-start" | "unresolved-reference";
+}
+
+export interface ArchitectureTraceQuery {
+  resolution: TraceQueryResolution;
+  trace: ArchitectureTrace | null;
+}
+
 interface FactNode {
   id: string;
   node: TraceNode;
@@ -243,6 +260,50 @@ export function traceArchitecture(
     truncated,
     limits: { maxDepth, maxNodes },
   };
+}
+
+/** Resolve a stable identity or exact indexed occurrence before traversing. */
+export function traceArchitectureQuery(
+  index: ProjectIndex,
+  start: TraceQueryStart,
+  options: Omit<TraceArchitectureOptions, "messageId"> = {},
+): ArchitectureTraceQuery {
+  if ("messageId" in start) {
+    const identity = (index.semanticMessages ?? []).find((message) => message.id === start.messageId);
+    return identity
+      ? {
+          resolution: { status: "authoritative", messageId: identity.id, candidates: [] },
+          trace: traceArchitecture(index, { ...options, messageId: identity.id }),
+        }
+      : { resolution: { status: "unknown", candidates: [], reason: "unresolved-reference" }, trace: null };
+  }
+
+  const sequenceMatches = (index.semanticOccurrences ?? []).filter(
+    (entry) => entry.resourceId === start.resourceId && entry.name === start.name && (start.step === undefined || entry.step === start.step),
+  );
+  const sequence = sequenceMatches.length === 1 ? sequenceMatches[0] : undefined;
+  const eventMatches = (index.eventFlowMessages ?? []).filter(
+    (entry) => entry.resourceId === start.resourceId && entry.name === start.name,
+  );
+  const event = eventMatches.length === 1 ? eventMatches[0] : undefined;
+  const occurrence = sequence ?? event;
+  if (!occurrence) {
+    return { resolution: { status: "unknown", candidates: [], reason: "unresolved-reference" }, trace: null };
+  }
+
+  const kind = occurrence.kind;
+  const messageRef = "messageRef" in occurrence ? occurrence.messageRef : undefined;
+  const identity = (index.semanticMessages ?? []).find((message) => message.id === messageRef && message.kind === kind);
+  const source = "range" in occurrence
+    ? sourceOf(occurrence.resourceId, new Map(index.resources.map((resource) => [resource.id, { path: resource.path }])), nodeIdOf("message", occurrence.range), occurrence.range)
+    : sourceOf(occurrence.resourceId, new Map(index.resources.map((resource) => [resource.id, { path: resource.path }])), occurrence.nodeId, occurrence.sourceRange);
+  const candidates = compatibleCandidatesByName(index, occurrence.name, kind);
+  return identity
+    ? {
+        resolution: { status: "authoritative", messageId: identity.id, source, candidates },
+        trace: traceArchitecture(index, { ...options, messageId: identity.id }),
+      }
+    : { resolution: { status: "candidate", source, candidates, reason: "unbound-start" }, trace: null };
 }
 
 function buildFactGraph(index: ProjectIndex, includeCandidates: boolean, includeRecovery: boolean): FactGraph {
@@ -555,6 +616,15 @@ function compatibleCandidates(
     result.push({ name: entity.name, kind: entity.kind, representation: "event-flow-message", source: sourceOf(entity.resourceId, resources, entity.nodeId, entity.sourceRange) });
   }
   return result.sort((a, b) => `${a.source.resourceId}:${a.source.nodeId}`.localeCompare(`${b.source.resourceId}:${b.source.nodeId}`));
+}
+
+function compatibleCandidatesByName(
+  index: ProjectIndex,
+  name: string,
+  kind: "event" | "command",
+): TraceResolutionCandidate[] {
+  const resources = new Map(index.resources.map((resource) => [resource.id, { path: resource.path }]));
+  return compatibleCandidates(index, { id: "", name, kind }, resources);
 }
 
 function sourceOf(

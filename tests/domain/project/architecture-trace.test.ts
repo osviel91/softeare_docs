@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createProjectIndexer, type ProjectSourceFile } from "../../../src/domain/project/indexer";
-import { traceArchitecture } from "../../../src/domain/project/architecture-trace";
+import { traceArchitecture, traceArchitectureQuery } from "../../../src/domain/project/architecture-trace";
 import type { ProjectMetadata } from "../../../src/domain/workspace/metadata";
 import type { ResourceDescriptor } from "../../../src/domain/project/project-index";
 
@@ -32,6 +32,33 @@ function source(path: string, content: string, type: ResourceDescriptor["type"] 
 }
 
 describe("traceArchitecture", () => {
+  it("resolves an exact occurrence and preserves unbound starts as candidates", () => {
+    const index = project([
+      source("execution", [
+        "participant API",
+        "participant Worker",
+        "API ->> Worker: Raised",
+        "semantic event publish Raised messageRef raised",
+      ].join("\n"), "sequence-diagram"),
+    ]);
+    const bound = traceArchitectureQuery(index, { resourceId: "execution", name: "Raised", step: 1 });
+    expect(bound.resolution.status).toBe("authoritative");
+    expect(bound.trace?.selected).toBe("identity:raised");
+
+    const unbound = project([
+      source("execution", [
+        "participant API",
+        "participant Worker",
+        "API ->> Worker: Raised",
+        "semantic event publish Raised",
+      ].join("\n"), "sequence-diagram"),
+    ]);
+    const candidate = traceArchitectureQuery(unbound, { resourceId: "execution", name: "Raised", step: 1 });
+    expect(candidate.resolution.status).toBe("candidate");
+    expect(candidate.resolution.reason).toBe("unbound-start");
+    expect(candidate.trace).toBeNull();
+  });
+
   it("indexes authoritative fan-out, fan-in, effects, and sequence occurrences", () => {
     const index = project([
       source("flow", [

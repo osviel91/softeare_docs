@@ -164,7 +164,7 @@ describe("McpServer", () => {
       resultType: string;
     };
     expect(result.resultType).toBe("complete");
-    expect(result.tools.length).toBe(27);
+    expect(result.tools.length).toBe(28);
     expect(result.tools.map((tool) => tool.name)).toEqual([
       "list_projects",
       "find_retry_behavior",
@@ -188,6 +188,7 @@ describe("McpServer", () => {
       "list_semantic_occurrences",
       "find_semantic_message_candidates",
       "get_semantic_message",
+      "trace_architecture",
       "list_semantic_messages",
       "create_semantic_message",
       "bind_semantic_message",

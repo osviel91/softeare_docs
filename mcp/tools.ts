@@ -29,6 +29,7 @@ import { analyze } from "../src/language/analyze";
 import { semanticMessagesOf } from "../src/domain/diagram/semantic-messages";
 import { walkStatements } from "../src/domain/diagram/ast";
 import { semanticMessageCandidates, traceSemanticMessage } from "../src/domain/project/semantic-message-trace";
+import { traceArchitectureQuery } from "../src/domain/project/architecture-trace";
 
 /** What a tool handler returns before it is wrapped in an MCP result. */
 export interface ToolOutcome {
@@ -1005,6 +1006,49 @@ export function createTools(): Tool[] {
           for (const handler of handlersFor(flow, entity.name)) downstream.push({ resourceId: entity.resourceId, handler: handler.id, messages: resultingEventsFor(flow, handler.id), effects: effectsFor(flow, handler.id) });
         }
         const result = { ...trace, downstream };
+        return { text: JSON.stringify(result), structured: result };
+      },
+    },
+    {
+      definition: {
+        name: "trace_architecture",
+        title: "Trace architecture",
+        description: "Trace authoritative architecture upstream, downstream, or both from a semantic message identity or an exact indexed occurrence. Use resource, name, and optional step when no messageId is available; unbound and legacy starts return structured candidate or unknown resolution instead of inferred connections.",
+        inputSchema: objectSchema({
+          project: stringProp("Project id or name."),
+          messageId: stringProp("Stable semantic message identity. Provide this or resource plus name."),
+          resource: stringProp("Resource id or project-relative path for an exact indexed occurrence."),
+          name: stringProp("Exact indexed message/event name when starting from a resource occurrence."),
+          step: numberProp("1-based Sequence occurrence step; omit for Event Flow."),
+          direction: enumProp(["upstream", "downstream", "both"], "Trace direction; defaults to downstream."),
+          maxDepth: numberProp("Maximum traversal depth."),
+          maxNodes: numberProp("Maximum returned nodes."),
+          includeCandidates: booleanProp("Include candidate representation nodes."),
+          includeRecovery: booleanProp("Include documented failure and retry edges."),
+        }),
+        annotations: { ...readOnly, title: "Trace architecture" },
+      },
+      async run(args, context) {
+        const project = await context.workspace.resolveProject(optionalString(args, "project"));
+        const index = await context.workspace.index(project);
+        const messageId = optionalString(args, "messageId");
+        const resource = optionalString(args, "resource");
+        const name = optionalString(args, "name");
+        if (messageId && (resource || name)) throw new Error("Provide messageId or resource and name, not both.");
+        const start = messageId
+          ? { messageId }
+          : resource && name
+            ? { resourceId: context.workspace.resolveResource(index, resource).id, name, ...(args.step === undefined ? {} : { step: optionalNumber(args, "step") }) }
+            : (() => { throw new Error("Provide messageId or both resource and name."); })();
+        const direction = optionalString(args, "direction");
+        if (direction && !["upstream", "downstream", "both"].includes(direction)) throw new Error("direction must be upstream, downstream, or both.");
+        const result = traceArchitectureQuery(index, start, {
+          direction: direction as "upstream" | "downstream" | "both" | undefined,
+          maxDepth: optionalNumber(args, "maxDepth"),
+          maxNodes: optionalNumber(args, "maxNodes"),
+          includeCandidates: args.includeCandidates === undefined ? undefined : optionalBoolean(args, "includeCandidates"),
+          includeRecovery: args.includeRecovery === undefined ? undefined : optionalBoolean(args, "includeRecovery"),
+        });
         return { text: JSON.stringify(result), structured: result };
       },
     },

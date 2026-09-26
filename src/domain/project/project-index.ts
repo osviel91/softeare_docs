@@ -43,6 +43,7 @@ import type { SemanticMessageOccurrence } from "../diagram/semantic-messages";
 import type { MessageKind } from "../eventflow/ast";
 import type { SemanticMessageIdentity } from "../workspace/metadata";
 import type { AstNodeId } from "../diagram/node-id";
+import type { CausalViewModel } from "../eventflow/causal-projection";
 
 export interface EventFlowMessageEntity {
   /** The Event Flow node identity; never replaced by the semantic identity. */
@@ -54,6 +55,13 @@ export interface EventFlowMessageEntity {
   messageRef?: string;
   resourceId: ResourceId;
   sourceRange?: SourceRange;
+}
+
+/** Indexed causal facts for one Event Flow resource. */
+export interface EventFlowCausalIndex {
+  resourceId: ResourceId;
+  resourcePath: string;
+  view: CausalViewModel;
 }
 
 /** A resource as the index describes it: stable identity plus current location. */
@@ -242,6 +250,7 @@ export interface ProjectIndex {
   semanticMessages?: SemanticMessageIdentity[];
   semanticOccurrences?: Array<SemanticMessageOccurrence & { resourceId: ResourceId }>;
   eventFlowMessages?: EventFlowMessageEntity[];
+  eventFlowCausality?: EventFlowCausalIndex[];
   diagnostics: ProjectDiagnostic[];
 }
 
@@ -277,6 +286,7 @@ export interface ResourceAnalysis {
   references: ReferenceCandidate[];
   semanticOccurrences: SemanticMessageOccurrence[];
   eventFlowMessages: EventFlowMessageEntity[];
+  eventFlowCausality?: EventFlowCausalIndex;
   /** Problems found inside this resource without looking at any other file. */
   diagnostics: ProjectDiagnostic[];
   headings: MarkdownHeading[];
@@ -529,6 +539,13 @@ export function buildProjectIndex(
     analysis.semanticOccurrences.map((occurrence) => ({ ...occurrence, resourceId: analysis.descriptor.id })),
   );
   const eventFlowMessages = ordered.flatMap((analysis) => analysis.eventFlowMessages);
+  const eventFlowCausality = ordered
+    .map((analysis) => analysis.eventFlowCausality)
+    .filter((entry): entry is EventFlowCausalIndex => entry !== undefined)
+    .map((entry) => ({
+      ...entry,
+      resourcePath: resources.find((resource) => resource.id === entry.resourceId)?.path ?? entry.resourcePath,
+    }));
 
   // A resource is itself a symbol, so quick-open and find-references can treat
   // "the payment diagram" and "the PaymentService participant" alike.
@@ -576,6 +593,7 @@ export function buildProjectIndex(
     semanticMessages: metadata.semanticMessages ?? [],
     semanticOccurrences,
     eventFlowMessages,
+    eventFlowCausality,
   };
 
   return { ...core, diagnostics: validate(core) };

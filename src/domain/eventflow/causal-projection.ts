@@ -42,6 +42,8 @@ export interface CausalTopologyContext {
 export interface CausalMessage {
   id: CausalMessageId;
   name: string;
+  /** Explicit project identity; absent messages remain local facts only. */
+  messageRef?: string;
   description?: string;
   details?: string;
   metadata: EventMetadataEntry[];
@@ -143,8 +145,9 @@ export function projectEventFlowToCausalView(flow: EventFlow): CausalViewModel {
     const message: CausalMessage = {
       id: messageId(name),
       name,
-        description: declaration?.description,
-        details: declaration?.details,
+      messageRef: declaration?.messageRef,
+      description: declaration?.description,
+      details: declaration?.details,
       metadata: declaration?.metadata ?? [],
       provenance: normalizeEventProvenance(declaration?.provenance),
       kind: declaration?.kind ?? "event",

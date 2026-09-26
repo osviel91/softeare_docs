@@ -50,6 +50,7 @@ import {
 } from "../../language/markdown/markdown";
 import { noteTitle } from "../../language/markdown/note-title";
 import { semanticMessagesOf } from "../diagram/semantic-messages";
+import { projectEventFlowToCausalView } from "../eventflow/causal-projection";
 
 /** A salt so a change to the analysis rules invalidates cached fingerprints. */
 const ANALYSIS_VERSION = "1";
@@ -338,6 +339,7 @@ export function analyzeResource(
       usages: ast ? participantUsages(ast, content, descriptor.id) : [],
       semanticOccurrences: ast ? semanticMessagesOf(ast) : [],
       eventFlowMessages: [],
+      eventFlowCausality: undefined,
       diagnostics: diagramDiagnostics(ast, content, descriptor.id),
       metrics: {
         participants: ast?.participants.length ?? 0,
@@ -424,6 +426,11 @@ export function analyzeResource(
         resourceId: descriptor.id,
         sourceRange: event.range,
       })),
+      eventFlowCausality: {
+        resourceId: descriptor.id,
+        resourcePath: descriptor.path,
+        view: projectEventFlowToCausalView(flow),
+      },
       diagnostics: diagnostics.map((diagnostic) =>
         eventFlowDiagnostic(diagnostic, descriptor.id),
       ),

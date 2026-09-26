@@ -6,6 +6,7 @@ import { eventsOf } from "../../domain/eventflow/ast";
 import type { ProjectIndex } from "../../domain/project/project-index";
 import { traceSemanticMessage } from "../../domain/project/semantic-message-trace";
 import { semanticMessageCandidates } from "../../domain/project/semantic-message-trace";
+import type { TraceDirection, TraceQueryStart } from "../../domain/project/architecture-trace";
 
 interface Props {
   index: ProjectIndex | null;
@@ -17,6 +18,7 @@ interface Props {
   onOpenResource: (resourceId: string, nodeId?: string) => void;
   onBind?: (messageId: string, name: string, step?: number) => void;
   onCreateIdentity?: (name: string, kind: "event" | "command", step?: number) => void;
+  onTrace?: (start: TraceQueryStart, direction: TraceDirection) => void;
 }
 
 /** Compact, authoritative-only cross-view details for the selected message. */
@@ -30,6 +32,7 @@ export default function SemanticMessageInspector({
   onOpenResource,
   onBind,
   onCreateIdentity,
+  onTrace,
 }: Props) {
   if (!index || !activeResourceId || !activeNodeId) return null;
   const occurrence = sequence
@@ -54,6 +57,7 @@ export default function SemanticMessageInspector({
           {identities.map((identity) => <button type="button" key={identity.id} onClick={() => onBind?.(identity.id, name, occurrence?.step)}>Bind compatible identity {identity.id}</button>)}
           {candidates.length > 0 && identities.length === 0 ? <span>Compatible names are candidates only; inspect evidence before creating an identity.</span> : null}
           <button type="button" onClick={() => onCreateIdentity?.(name, kind, occurrence?.step)}>Create identity</button>
+          <button type="button" onClick={() => onTrace?.({ resourceId: activeResourceId, name, ...(occurrence?.step === undefined ? {} : { step: occurrence.step }) }, "both")}>Trace candidate</button>
         </div>
       </aside>
     );
@@ -72,6 +76,11 @@ export default function SemanticMessageInspector({
         <span className="semantic-message-inspector__label">Architectural message</span>
         <span>{trace.identity.name}</span>
         <span>Provenance: {provenance}</span>
+        <div className="semantic-message-inspector__trace-actions">
+          <button type="button" onClick={() => onTrace?.({ messageId }, "upstream")}>Trace upstream</button>
+          <button type="button" onClick={() => onTrace?.({ messageId }, "downstream")}>Trace downstream</button>
+          <button type="button" onClick={() => onTrace?.({ messageId }, "both")}>Trace both</button>
+        </div>
       </div>
       <div className="semantic-message-inspector__section">
         <span className="semantic-message-inspector__label">Execution</span>

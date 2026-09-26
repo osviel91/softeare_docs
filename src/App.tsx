@@ -36,6 +36,8 @@ import {
 } from "./features/editor/snippets";
 import Preview from "./features/preview/Preview";
 import SemanticMessageInspector from "./features/preview/SemanticMessageInspector";
+import TraceExplorer from "./features/preview/TraceExplorer";
+import type { TraceDirection, TraceQueryStart } from "./domain/project/architecture-trace";
 import Explorer, { type MenuPosition } from "./features/explorer/Explorer";
 import WorkspaceSwitcher, {
   type WorkspaceMode,
@@ -148,7 +150,7 @@ import {
   embedResourceType,
   isResourceSymbolKind,
 } from "./domain/project/project-index";
-import { nodeIdAtOffset, nodeRangeById } from "./domain/diagram/node-id";
+import { nodeIdAtOffset, nodeRangeById, nodeIdOf } from "./domain/diagram/node-id";
 import { semanticMessagesOf } from "./domain/diagram/semantic-messages";
 import { messageStepNumbers } from "./domain/diagram/step-numbers";
 import { collectParticipantMentions } from "./domain/diagram/participant-mentions";
@@ -435,6 +437,8 @@ export default function App() {
   const [caretOffset, setCaretOffset] = useState(0);
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
   const [activeSemanticMessageId, setActiveSemanticMessageId] = useState<string | null>(null);
+  const [traceStart, setTraceStart] = useState<TraceQueryStart | null>(null);
+  const [traceDirection, setTraceDirection] = useState<TraceDirection>("both");
   // A find-references result, shown in the same overlay the project search uses
   // so there is one result surface rather than two.
   const [referenceMatches, setReferenceMatches] = useState<
@@ -1524,6 +1528,23 @@ export default function App() {
       if (nodeId) setActiveNodeId(nodeId);
     },
     [index],
+  );
+
+  const openTrace = useCallback((start: TraceQueryStart, direction: TraceDirection) => {
+    setTraceStart(start);
+    setTraceDirection(direction);
+  }, []);
+
+  const onSemanticOccurrenceSelect = useCallback(
+    (name: string, nodeId: string | null) => {
+      if (!activeResourceId || name === "") return;
+      if (nodeId) onNodeSelect(nodeId);
+      const step = ast && nodeId
+        ? semanticMessagesOf(ast).find((entry) => nodeIdOf("message", entry.range) === nodeId)?.step
+        : undefined;
+      openTrace({ resourceId: activeResourceId, name, ...(step === undefined ? {} : { step }) }, "both");
+    },
+    [activeResourceId, ast, onNodeSelect, openTrace],
   );
 
   const updateSemanticOccurrence = useCallback(
@@ -3065,6 +3086,7 @@ export default function App() {
                         onViewChange={changeEventFlowView}
                         onNodeSelect={onNodeSelect}
                         onSemanticMessageSelect={onSemanticMessageSelect}
+                        onSemanticOccurrenceSelect={onSemanticOccurrenceSelect}
                         activeNodeId={activeNodeId}
                         activeSemanticMessageId={activeSemanticMessageId}
                         maximized={previewMaximized}
@@ -3072,7 +3094,8 @@ export default function App() {
                           setPreviewMaximized((value) => !value)
                         }
                       />
-                      <SemanticMessageInspector index={index} eventFlow={eventFlow} activeResourceId={activeResourceId} activeNodeId={activeNodeId} activeSemanticMessageId={activeSemanticMessageId} onOpenResource={openResourceById} onBind={updateSemanticOccurrence} onCreateIdentity={createAndBindSemanticMessage} />
+                      <SemanticMessageInspector index={index} eventFlow={eventFlow} activeResourceId={activeResourceId} activeNodeId={activeNodeId} activeSemanticMessageId={activeSemanticMessageId} onOpenResource={openResourceById} onBind={updateSemanticOccurrence} onCreateIdentity={createAndBindSemanticMessage} onTrace={openTrace} />
+                      {traceStart && index ? <TraceExplorer index={index} start={traceStart} direction={traceDirection} onClose={() => setTraceStart(null)} onOpenResource={openResourceById} /> : null}
                     </>
                   ) : (
                     <>
@@ -3083,6 +3106,7 @@ export default function App() {
                         onRender={() => setRenderedSource(source)}
                         onNodeSelect={onNodeSelect}
                         onSemanticMessageSelect={onSemanticMessageSelect}
+                        onSemanticOccurrenceSelect={onSemanticOccurrenceSelect}
                         activeNodeId={activeNodeId}
                         activeSemanticMessageId={activeSemanticMessageId}
                         maximized={previewMaximized}
@@ -3090,7 +3114,8 @@ export default function App() {
                           setPreviewMaximized((value) => !value)
                         }
                       />
-                      <SemanticMessageInspector index={index} sequence={ast} activeResourceId={activeResourceId} activeNodeId={activeNodeId} activeSemanticMessageId={activeSemanticMessageId} onOpenResource={openResourceById} onBind={updateSemanticOccurrence} onCreateIdentity={createAndBindSemanticMessage} />
+                      <SemanticMessageInspector index={index} sequence={ast} activeResourceId={activeResourceId} activeNodeId={activeNodeId} activeSemanticMessageId={activeSemanticMessageId} onOpenResource={openResourceById} onBind={updateSemanticOccurrence} onCreateIdentity={createAndBindSemanticMessage} onTrace={openTrace} />
+                      {traceStart && index ? <TraceExplorer index={index} start={traceStart} direction={traceDirection} onClose={() => setTraceStart(null)} onOpenResource={openResourceById} /> : null}
                     </>
                   )}
                 </section>

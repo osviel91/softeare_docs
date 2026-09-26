@@ -34,6 +34,7 @@ export interface EventFlowPreviewProps {
   /** Called with a node id when the user clicks the element it represents. */
   onNodeSelect?: (nodeId: string) => void;
   onSemanticMessageSelect?: (messageId: string, nodeId: string | null) => void;
+  onSemanticOccurrenceSelect?: (name: string, nodeId: string | null) => void;
   /** The node to highlight, following the editor's caret. */
   activeNodeId?: string | null;
   activeSemanticMessageId?: string | null;
@@ -57,6 +58,7 @@ export default function EventFlowPreview({
   source,
   onNodeSelect,
   onSemanticMessageSelect,
+  onSemanticOccurrenceSelect,
   activeNodeId = null,
   activeSemanticMessageId = null,
   maximized = false,
@@ -284,6 +286,7 @@ export default function EventFlowPreview({
                 resetKey={source}
                 onNodeSelect={onNodeSelect}
                 onSemanticMessageSelect={onSemanticMessageSelect}
+                onSemanticOccurrenceSelect={onSemanticOccurrenceSelect}
                 activeNodeId={activeNodeId}
                 activeSemanticMessageId={activeSemanticMessageId}
                 maximized={maximized}
@@ -396,6 +399,7 @@ export default function EventFlowPreview({
                 resetKey={source}
                 onNodeSelect={onNodeSelect}
                 onSemanticMessageSelect={onSemanticMessageSelect}
+                onSemanticOccurrenceSelect={onSemanticOccurrenceSelect}
                 onCausalNodeSelect={selectCausal}
                 activeNodeId={activeNodeId}
                 activeSemanticMessageId={activeSemanticMessageId}
@@ -438,6 +442,7 @@ export default function EventFlowPreview({
         resetKey={source}
         onNodeSelect={onNodeSelect}
         onSemanticMessageSelect={onSemanticMessageSelect}
+        onSemanticOccurrenceSelect={onSemanticOccurrenceSelect}
         activeNodeId={activeNodeId}
         activeSemanticMessageId={activeSemanticMessageId}
         maximized={maximized}

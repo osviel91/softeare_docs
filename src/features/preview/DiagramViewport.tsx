@@ -61,6 +61,7 @@ export interface DiagramViewportProps {
    */
   onNodeSelect?: (nodeId: string) => void;
   onSemanticMessageSelect?: (messageId: string, nodeId: string | null) => void;
+  onSemanticOccurrenceSelect?: (name: string, nodeId: string | null) => void;
   onCausalNodeSelect?: (nodeId: string) => void;
   /**
    * The node to highlight — the statement the editor's caret is on. Highlighting
@@ -152,6 +153,7 @@ export default function DiagramViewport({
   onNoteToggle,
   onNodeSelect,
   onSemanticMessageSelect,
+  onSemanticOccurrenceSelect,
   onCausalNodeSelect,
   activeNodeId = null,
   activeSemanticMessageId = null,
@@ -376,7 +378,8 @@ export default function DiagramViewport({
       if (messageId) onSemanticMessageSelect?.(messageId, nodeIdFromTarget(semantic));
       else {
         const nodeId = nodeIdFromTarget(semantic);
-        if (nodeId) onNodeSelect?.(nodeId);
+        if (onSemanticOccurrenceSelect) onSemanticOccurrenceSelect(semantic.getAttribute("data-semantic-message-name") ?? "", nodeId);
+        else if (nodeId) onNodeSelect?.(nodeId);
       }
       return;
     }
@@ -458,7 +461,8 @@ export default function DiagramViewport({
       if (messageId) onSemanticMessageSelect?.(messageId, nodeIdFromTarget(semantic));
       else {
         const nodeId = nodeIdFromTarget(semantic);
-        if (nodeId) onNodeSelect?.(nodeId);
+        if (onSemanticOccurrenceSelect) onSemanticOccurrenceSelect(semantic.getAttribute("data-semantic-message-name") ?? "", nodeId);
+        else if (nodeId) onNodeSelect?.(nodeId);
       }
       return;
     }
